@@ -27,6 +27,7 @@ main {
 
 header {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
 }
@@ -37,6 +38,10 @@ h1 {
 }
 
 #voice-select {
+  /* Labels carry the language and accent: a full-width row under the title. */
+  order: 3;
+  flex-basis: 100%;
+  margin-bottom: 0.5rem;
   background: #222;
   color: var(--fg);
   border: 1px solid #444;

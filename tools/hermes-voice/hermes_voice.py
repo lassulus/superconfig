@@ -43,12 +43,44 @@ log = logging.getLogger("hermes-voice")
 OPENAI_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_MODEL = "gpt-live-1"
 DEFAULT_VOICE = "marin"
-# gpt-live-1 built-in voices (live-conversations guide voice table, plus the
-# realtime defaults marin and cedar).
-BUILT_IN_VOICES = (
-    "marin", "cedar", "quartz", "ripple", "vesper", "willow", "stone", "gleam",
-    "meridian", "bossa", "tempo", "beacon", "delta", "cinder",
-)
+# gpt-live-1 voices as OpenAI's voice picker lists them: language, regional
+# influence, presentation and character, natural voices first, then the
+# generated ones. The docs' voice table and the openai SDK (3.28.0) list only
+# part of them; /v1/live/sessions accepts the German, French, Hindi, Japanese
+# and Korean voices as well, while an unknown name is refused with 403.
+BUILT_IN_VOICES = {
+    "gleam": "English, North American, female: warm and conversational",
+    "ripple": "English, Australian, male: warm and conversational",
+    "vesper": "English, British, male: clear and direct",
+    "willow": "English, Irish, female: expressive and bright",
+    "stone": "English, Irish, male: calm and precise",
+    "meridian": "English, North American, male: grounded and measured",
+    "bossa": "Portuguese, Brazilian, female: clear and direct",
+    "tempo": "Portuguese, Brazilian, male: grounded and measured",
+    "cedar": "English, North American, male: open and upbeat",
+    "marin": "English, North American, female: animated and earnest",
+    "nuri": "German, female: warm and animated",
+    "juni": "German, female: bright and expressive",
+    "flitz": "German, male: rich and playful",
+    "brise": "French, female: clear and conversational",
+    "sillage": "French, male: warm and grounded",
+    "nira": "Hindi, female: soft and thoughtful",
+    "harema": "Japanese, female: gentle and engaging",
+    "shida": "Japanese, male: quiet and grounded",
+    "noeul": "Korean, female: airy and expressive",
+    "quartz": "English, Australian, female, generated: warm and conversational",
+    "alloy": "English, North American, male, generated: balanced and clear",
+    "ash": "English, North American, male, generated: savvy and relaxed",
+    "ballad": "English, North American, male, generated: cheerful and candid",
+    "coral": "English, North American, female, generated: easygoing and versatile",
+    "echo": "English, North American, male, generated: bright and inquisitive",
+    "sage": "English, North American, female, generated: confident and optimistic",
+    "shimmer": "English, North American, female, generated: composed and direct",
+    "verse": "English, North American, male, generated: calm and affirming",
+    "beacon": "English, Filipino, male, generated: clear and personable",
+    "delta": "English, Southern U.S., female, generated: warm and easygoing",
+    "cinder": "English, Southern U.S., male, generated: steady and grounded",
+}
 # gpt-live-1 bills every second a session is open, silence included; the page
 # closes the session after this much inactivity.
 DEFAULT_IDLE_SECONDS = 90
@@ -137,9 +169,11 @@ class Config:
         )
 
     def voices(self):
-        """Voices the page may pick: the built-ins plus the configured one
-        (which may be a custom voice id)."""
-        return list(dict.fromkeys([self.voice, *BUILT_IN_VOICES]))
+        """Voices the page may pick, name -> description: the built-ins plus
+        the configured one (which may be a custom voice id)."""
+        voices = dict(BUILT_IN_VOICES)
+        voices.setdefault(self.voice, "custom voice")
+        return voices
 
 
 def voice_param(voice):

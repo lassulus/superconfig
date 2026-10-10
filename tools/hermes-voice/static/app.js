@@ -625,9 +625,11 @@ async function loadConfig() {
   setStatus("Idle");
   const saved = localStorage.getItem(VOICE_KEY);
   voiceSelect.replaceChildren(
-    ...config.voices.map((name) => new Option(name, name)),
+    ...Object.entries(config.voices).map(
+      ([name, description]) => new Option(`${name} — ${description}`, name),
+    ),
   );
-  voiceSelect.value = config.voices.includes(saved) ? saved : config.voice;
+  voiceSelect.value = saved in config.voices ? saved : config.voice;
 }
 
 loadConfig();
