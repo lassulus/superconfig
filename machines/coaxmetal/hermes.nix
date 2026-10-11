@@ -76,6 +76,9 @@ in
   imports = [
     self.inputs.hermes-agent.nixosModules.default
     ../../configs/hermes-mail-vars.nix
+    # Phone-approved ssh for the agent: the phonetpm user service runs in the
+    # hermes user manager (the module sets linger), see SSH_AUTH_SOCK below.
+    ../../configs/phonetpm.nix
   ];
 
   # Hermes Agent (Nous Research) — autonomous agent run as a native systemd
@@ -117,6 +120,8 @@ in
       # CalDAV (calendar skill below) is plain HTTP; curl is not otherwise on
       # the gateway PATH.
       pkgs.curl
+      # ssh through the phonetpm agent (SSH_AUTH_SOCK below).
+      pkgs.openssh
     ];
 
     settings.model = {
@@ -467,6 +472,14 @@ in
   # binary the agent is pointed at.
   # The module hardens the unit with NoNewPrivileges = true, hence mkForce.
   systemd.services.hermes-agent.serviceConfig.NoNewPrivileges = lib.mkForce false;
+
+  # ssh as hermes signs with the phone key (keys/ssh/phonetpm_massulus.pub,
+  # authorized on all hosts): every login asks for a fingerprint on the phone.
+  # The daemon only starts once paired:
+  #   sudo -u hermes phonetpm pair <endpoint id>
+  #   systemctl --user -M hermes@ start phonetpm
+  # %U is the hermes uid, so this is the user manager's %t/phonetpm/agent.sock.
+  systemd.services.hermes-agent.environment.SSH_AUTH_SOCK = "/run/user/%U/phonetpm/agent.sock";
 
   # Boot-race guard. matrix.lassul.us is IPv6-only; on this desktop
   # network-online.target can fire before v6 DNS is ready, so the gateway's
