@@ -6,16 +6,16 @@
 
 rustPlatform.buildRustPackage rec {
   pname = "phonetpm";
-  version = "0.1.0";
+  version = "0.4.1";
 
   src = fetchFromGitHub {
     owner = "Lassulus";
     repo = "phonetpm";
     tag = "v${version}";
-    hash = "sha256-8WjjbDDHZeYhtnoj/judDrsWT68Z4lnpySM8rSqP+Ao=";
+    hash = "sha256-K8R0lEMQ9ZjoRlMKpLEAH3qriQ5VyrOXkVuYI+J7nBY=";
   };
 
-  cargoHash = "sha256-VNw5Hw8E0ReSJhYVLh6XOzQRSyqfFe3uu0522XOeaoA=";
+  cargoHash = "sha256-pTgkA+jc+G8GxiDsVHP5q9Zt55k1nyr1ltAAqRXEpqc=";
 
   # Host side only: `phonetpm` (daemon/pair/keys) and `age-plugin-phone`.
   # The workspace also holds the Android core (uniffi cdylib), not needed here.
