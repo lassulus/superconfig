@@ -65,6 +65,13 @@ in
     apiTokenFile = vars.niks3.files."api-token".path;
     signKeyFiles = [ vars.nix-cache-signing.files."key.sec".path ];
     cacheUrl = "https://cache.lassul.us";
+    # The CI build farm (tools/ci-farm) pushes with the job's GitHub OIDC
+    # token. Fork PRs don't get one.
+    oidc.providers.github = {
+      issuer = "https://token.actions.githubusercontent.com";
+      audience = "https://niks3.lassul.us";
+      boundClaims.repository = [ "lassulus/superconfig" ];
+    };
     nginx = {
       enable = true;
       domain = "niks3.lassul.us";
