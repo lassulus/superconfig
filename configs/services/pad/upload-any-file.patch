@@ -1,0 +1,226 @@
+diff -r a/lib/config/default.js b/lib/config/default.js
+--- a/lib/config/default.js	2026-10-11 08:22:28.833011861 +0200
++++ b/lib/config/default.js	2026-10-11 08:22:52.996391760 +0200
+@@ -71,11 +71,14 @@
+   tooBusyLag: 70,
+   // document
+   documentMaxLength: 100000,
+-  // image upload setting, available options are imgur/s3/filesystem/azure/lutim
++  // image upload setting, available options are imgur/s3/filesystem/azure/lutim/krebspaste
+   imageUploadType: 'filesystem',
+   lutim: {
+     url: 'https://framapic.org/'
+   },
++  krebspaste: {
++    url: 'https://p.krebsco.de'
++  },
+   imgur: {
+     clientID: undefined
+   },
+diff -r a/lib/config/index.js b/lib/config/index.js
+--- a/lib/config/index.js	2026-10-11 08:22:28.832388404 +0200
++++ b/lib/config/index.js	2026-10-11 08:22:52.994753055 +0200
+@@ -170,8 +170,8 @@
+ }
+ 
+ // Validate upload upload providers
+-if (['filesystem', 's3', 'minio', 'imgur', 'azure', 'lutim'].indexOf(config.imageUploadType) === -1) {
+-  logger.error('"imageuploadtype" is not correctly set. Please use "filesystem", "s3", "minio", "azure", "lutim" or "imgur". Defaulting to "filesystem"')
++if (['filesystem', 's3', 'minio', 'imgur', 'azure', 'lutim', 'krebspaste'].indexOf(config.imageUploadType) === -1) {
++  logger.error('"imageuploadtype" is not correctly set. Please use "filesystem", "s3", "minio", "azure", "lutim", "krebspaste" or "imgur". Defaulting to "filesystem"')
+   config.imageUploadType = 'filesystem'
+ }
+ 
+@@ -179,23 +179,26 @@
+   logger.error('You can only deactivate one of "saml.wantAssertionsSigned" and "saml.wantAuthnResponseSigned"')
+ }
+ 
+-// figure out mime types for image uploads
+-switch (config.imageUploadType) {
+-  case 'imgur':
+-    config.allowedUploadMimeTypes = [
+-      'image/jpeg',
+-      'image/png',
+-      'image/gif'
+-    ]
+-    break
+-  default:
+-    config.allowedUploadMimeTypes = [
+-      'image/jpeg',
+-      'image/png',
+-      'image/gif',
+-      'image/svg+xml',
+-      'image/webp'
+-    ]
++// figure out mime types for image uploads, unless set explicitly.
++// ['*'] allows any file type.
++if (!Array.isArray(config.allowedUploadMimeTypes)) {
++  switch (config.imageUploadType) {
++    case 'imgur':
++      config.allowedUploadMimeTypes = [
++        'image/jpeg',
++        'image/png',
++        'image/gif'
++      ]
++      break
++    default:
++      config.allowedUploadMimeTypes = [
++        'image/jpeg',
++        'image/png',
++        'image/gif',
++        'image/svg+xml',
++        'image/webp'
++      ]
++  }
+ }
+ 
+ // generate correct path
+diff -r a/lib/web/imageRouter/index.js b/lib/web/imageRouter/index.js
+--- a/lib/web/imageRouter/index.js	2026-10-11 08:22:28.837198185 +0200
++++ b/lib/web/imageRouter/index.js	2026-10-11 08:22:29.024913829 +0200
+@@ -32,6 +32,9 @@
+ export default imageRouter
+ 
+ async function checkUploadType (filePath) {
++  if (config.allowedUploadMimeTypes.includes('*')) {
++    return true
++  }
+   const extension = path.extname(filePath).toLowerCase()
+   const FileType = await import('file-type')
+   let typeFromMagic = await FileType.fileTypeFromFile(filePath)
+diff -r a/lib/web/imageRouter/krebspaste.js b/lib/web/imageRouter/krebspaste.js
+--- a/lib/web/imageRouter/krebspaste.js	1970-01-01 01:00:00.000000000 +0100
++++ b/lib/web/imageRouter/krebspaste.js	2026-10-11 08:22:41.108085483 +0200
+@@ -0,0 +1,62 @@
++'use strict'
++// Uploads to a krebs paste service (https://p.krebsco.de): images to its
++// imgur-compatible /image endpoint, everything else (and images /image
++// rejects) as a plain paste to /.
++const fs = require('fs')
++
++const config = require('../../config')
++const logger = require('../../logger')
++
++async function post (url, body) {
++  const res = await fetch(url, { method: 'POST', body })
++  const text = await res.text()
++  return { status: res.status, ok: res.ok, text }
++}
++
++// The service reports links with the scheme/host it saw; keep only the path.
++function rebase (link, base) {
++  return new URL(new URL(link).pathname, base).href
++}
++
++async function upload (filePath) {
++  const base = config.krebspaste.url
++  const body = fs.readFileSync(filePath)
++  const FileType = await import('file-type')
++  const type = await FileType.fileTypeFromBuffer(body)
++
++  if (type && type.mime.startsWith('image/')) {
++    const res = await post(new URL('/image', base), body)
++    if (res.ok) {
++      return rebase(JSON.parse(res.text).data.link, base)
++    }
++    if (res.status !== 400) {
++      throw new Error(`krebspaste /image: ${res.status} ${res.text}`)
++    }
++    logger.debug(`krebspaste: /image rejected ${type.mime}, pasting instead`)
++  }
++
++  const res = await post(new URL('/', base), body)
++  if (!res.ok) {
++    throw new Error(`krebspaste /: ${res.status} ${res.text}`)
++  }
++  // one link per line: full hash, then the short one if unambiguous
++  const links = res.text.trim().split('\n')
++  return rebase(links[links.length - 1], base)
++}
++
++exports.uploadImage = function (imagePath, callback) {
++  if (!callback || typeof callback !== 'function') {
++    logger.error('Callback has to be a function')
++    return
++  }
++
++  if (!imagePath || typeof imagePath !== 'string') {
++    callback(new Error('Image path is missing or wrong'), null)
++    return
++  }
++
++  upload(imagePath).then(
++    (url) => callback(null, url),
++    (err) => callback(err, null)
++  )
++}
+diff -r a/public/js/lib/editor/toolbar.html b/public/js/lib/editor/toolbar.html
+--- a/public/js/lib/editor/toolbar.html	2026-10-11 08:22:28.849861030 +0200
++++ b/public/js/lib/editor/toolbar.html	2026-10-11 08:22:29.025254870 +0200
+@@ -34,8 +34,8 @@
+       <a id="makeImage" class="btn btn-sm text-uppercase" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false" title="Image">
+           <i class="fa fa-image fa-fw"></i>
+       </a>
+-      <a id="uploadImage" class="btn btn-sm btn-file ui-upload-image" title="Upload Image">
+-          <i class="fa fa-upload fa-fw"></i><input type="file" accept="image/*" name="upload" multiple title="Upload Image">
++      <a id="uploadImage" class="btn btn-sm btn-file ui-upload-image" title="Upload File">
++          <i class="fa fa-upload fa-fw"></i><input type="file" name="upload" multiple title="Upload File">
+       </a>
+       <a id="makeTable" class="btn btn-sm text-uppercase" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false" title="Table">
+           <i class="fa fa-table fa-fw"></i>
+diff -r a/public/vendor/inlineAttachment/inline-attachment.js b/public/vendor/inlineAttachment/inline-attachment.js
+--- a/public/vendor/inlineAttachment/inline-attachment.js	2026-10-11 08:22:28.904847610 +0200
++++ b/public/vendor/inlineAttachment/inline-attachment.js	2026-10-11 08:22:29.025553536 +0200
+@@ -232,6 +232,8 @@
+       var fileNameMatches = file.name.match(/\.(.+)$/);
+       if (fileNameMatches) {
+         extension = fileNameMatches[1];
++      } else if (file.type.indexOf('image/') !== 0) {
++        extension = 'bin';
+       }
+     }
+ 
+@@ -265,7 +267,7 @@
+     xhr.onload = function() {
+       // If HTTP status is OK or Created
+       if (xhr.status === 200 || xhr.status === 201) {
+-        me.onFileUploadResponse(xhr, id);
++        me.onFileUploadResponse(xhr, id, file);
+       } else {
+         me.onFileUploadError(xhr, id);
+       }
+@@ -295,7 +297,7 @@
+    * @param  {XMLHttpRequest} xhr
+    * @return {Void}
+    */
+-  inlineAttachment.prototype.onFileUploadResponse = function(xhr, id) {
++  inlineAttachment.prototype.onFileUploadResponse = function(xhr, id, file) {
+     if (this.settings.onFileUploadResponse.call(this, xhr) !== false) {
+       var result = JSON.parse(xhr.responseText),
+         filename = result[this.settings.jsonFieldName];
+@@ -305,6 +307,11 @@
+           var string = this.settings.progressText.replace(this.filenameTag, id);
+           var lines = this.editor.getValue().split('\n');
+         var newValue = this.settings.urlText.replace(this.filenameTag, filename);
++        // Non-image files become a plain link named after the file.
++        if (file && file.type.indexOf('image/') !== 0) {
++          var name = (file.name || 'file').replace(/([\\\[\]])/g, '\\$1');
++          newValue = '[' + name + '](' + filename + ')';
++        }
+           for(var i = 0; i < lines.length; i++) {
+             var ch = lines[i].indexOf(string);
+             if(ch != -1)
+@@ -368,10 +375,12 @@
+       for (var i = 0; i < items.length; i++) {
+         var item = items[i];
+         if (this.isFileAllowed(item)) {
+-          result = true;
+           var id = ID();
+           var file = item.getAsFile();
++          // Only file items count; with allowedTypes '*' string items
++          // (plain text, html) also pass isFileAllowed.
+           if (file !== null) {
++            result = true;
+             this.onFileInserted(file, id);
+             this.uploadFile(file, id);
+           }

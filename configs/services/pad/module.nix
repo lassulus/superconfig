@@ -21,6 +21,13 @@
 
     services.hedgedoc = {
       enable = true;
+      # Adds the krebspaste upload type (images to p.krebsco.de/image, other
+      # files as pastes to p.krebsco.de, GCed after 30 days),
+      # allowedUploadMimeTypes = [ "*" ] for any file type, and links
+      # non-image uploads as [name](url) instead of embedding them.
+      package = pkgs.hedgedoc.overrideAttrs (old: {
+        patches = (old.patches or [ ]) ++ [ ./upload-any-file.patch ];
+      });
       settings = {
         allowOrigin = [
           "localhost"
@@ -31,6 +38,10 @@
         domain = config.clan.hedgedoc.domain;
         allowFreeURL = true;
         defaultPermission = "freely";
+        # No "you are leaving HedgeDoc" interstitial on external links.
+        externalLinkWarning = false;
+        allowedUploadMimeTypes = [ "*" ];
+        imageUploadType = "krebspaste";
         # debug = true;
         # useSSL = true;
         # hsts.enable = false;
