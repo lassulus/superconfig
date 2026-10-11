@@ -60,6 +60,8 @@ daemon=(
   --allow farm=trusted
   --niks3 "$niks3_url"
   --niks3-token-file "$state/niks3-token"
+  # cache.nixos.org keeps serving what it signed; only push our own paths
+  --niks3-push "niks3 push --ignore-upstream-key cache.nixos.org-1"
   --min-free 2G
 )
 

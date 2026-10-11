@@ -73,6 +73,11 @@ in
       publicKeys = lib.optional (builtins.pathExists cachePub) (
         lib.removeSuffix "\n" (builtins.readFile cachePub)
       );
+      # cache.nixos.org keeps serving what it signed; only push our own paths
+      pushFlags = [
+        "--ignore-upstream-key"
+        "cache.nixos.org-1"
+      ];
     };
   };
 
