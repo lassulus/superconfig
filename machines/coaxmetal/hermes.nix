@@ -536,6 +536,19 @@ in
       echo "retiolum has no global address after 60s; API server stays on localhost" >&2
       exit 0
     ''}"
+    # Bundled skills are copied out of the Nix store with shutil.copytree,
+    # which keeps the store's r-x/r-- modes, so skill_manage could not patch
+    # them ("Permission denied: skills/productivity/maps/.tmp_…"). Seed them
+    # here instead of at gateway start, then make them writable; the gateway's
+    # own sync then finds nothing to copy (its hash is content-only, so the
+    # chmod does not mark them user-modified). `opt-in` only drops the
+    # .no-bundled-skills marker, which this host never sets.
+    "${pkgs.writeShellScript "hermes-skills-writable" ''
+      set -eu
+      hermes skills opt-in --sync
+      ${pkgs.findutils}/bin/find ${config.services.hermes-agent.stateDir}/.hermes/skills \
+        ! -perm -u+w -exec ${pkgs.coreutils}/bin/chmod u+w {} +
+    ''}"
   ];
 
   # The packet filter drops INPUT by default here (configs/default.nix sets
