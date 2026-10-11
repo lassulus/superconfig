@@ -10,6 +10,7 @@
     self.inputs.nix-index-database.darwinModules.nix-index
     self.inputs.nix-rosetta-builder.darwinModules.default
     ./retiolum.nix
+    ../../configs/nix-farm/client.nix
   ];
   clan.core.networking.targetHost = "root@localhost";
   programs.nix-index-database.comma.enable = true;
