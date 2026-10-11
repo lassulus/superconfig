@@ -32,7 +32,6 @@
       "/var/lib/matrix-synapse/media_store/local_content"
       "/var/lib/radicale"
       "/home/bot"
-      "/var/lib/kannix"
       "/var/vmail"
       "/var/dkim"
       "/var/sieve"
@@ -46,7 +45,6 @@
       "/home/bot/.cache"
       "/home/bot/.nix-defexpr"
       "/home/bot/.nix-profile"
-      "/var/lib/kannix/.cache"
       "/var/lib/parley/*.db*"
     ];
     repo = "u550643@u550643.your-storagebox.de:/./neoprism";

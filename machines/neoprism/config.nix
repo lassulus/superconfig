@@ -91,9 +91,6 @@
     # document signing
     ../../configs/docuseal.nix
 
-    # kannix (kanban board)
-    ../../configs/kannix.nix
-
     # timeful availability polls (when.lassul.us)
     ../../configs/timeful.nix
 
