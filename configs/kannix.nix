@@ -76,6 +76,7 @@ in
       self.keys.ssh.solo2.public
       self.keys.ssh.xerxes.public
       self.keys.ssh.ignavia.public
+      self.keys.ssh.phonetpm_massulus.public
       self.keys.ssh.massulus.public
     ];
     packages = [

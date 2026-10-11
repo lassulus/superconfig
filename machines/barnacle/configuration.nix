@@ -172,6 +172,7 @@
     self.keys.ssh.solo2.public
     self.keys.ssh.xerxes.public
     self.keys.ssh.ignavia.public
+    self.keys.ssh.phonetpm_massulus.public
   ];
   users.users.root.openssh.authorizedKeys.keys = [
     self.keys.ssh.barnacle.public
@@ -182,6 +183,7 @@
     self.keys.ssh.solo2.public
     self.keys.ssh.xerxes.public
     self.keys.ssh.ignavia.public
+    self.keys.ssh.phonetpm_massulus.public
   ];
 
   users.users.root.shell = pkgs.zsh;
