@@ -11,7 +11,7 @@
     ../../configs
     ../../configs/retiolum.nix
     ../../configs/tpm2.nix
-    ../../configs/phonetpm.nix
+    ../../configs/phonetpm-ssh.nix
     ../../configs/desktops/sway/default.nix
     self.wrapperModules.workspace-manager
     ../../configs/power-action.nix

@@ -15,6 +15,7 @@
     ../../configs/autoupdate.nix
     ../../configs/sigexec/executor.nix
     ../../configs/rad.nix
+    ../../configs/phonetpm-ssh.nix
   ];
 
   lass.workspace-manager.enable = true;

@@ -12,6 +12,7 @@
     ../../configs/snapclient.nix
     ../../configs/sigexec/executor.nix
     ../../configs/rad.nix
+    ../../configs/phonetpm-ssh.nix
   ];
 
   services.logind.lidSwitch = "ignore";

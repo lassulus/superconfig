@@ -9,8 +9,8 @@ in
 {
   # Phone-backed ssh-agent / age plugin (https://github.com/Lassulus/phonetpm).
   # The daemon serves %t/phonetpm/{agent,control}.sock; age-plugin-phone finds
-  # the control socket on its own. SSH_AUTH_SOCK is intentionally left on the
-  # TPM agent for now (configs/tpm2.nix).
+  # the control socket on its own. configs/phonetpm-ssh.nix makes it the
+  # SSH_AUTH_SOCK.
   environment.systemPackages = [ phonetpm ];
 
   systemd.user.services.phonetpm = {
