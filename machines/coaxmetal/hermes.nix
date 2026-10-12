@@ -124,6 +124,39 @@ in
       pkgs.openssh
     ];
 
+    # Home Assistant (styx, configs/hass) left hermes core for the
+    # `homeassistant` catalog plugin: the ha_* tools plus a gateway platform
+    # for state-change events. Pinned to the sha plugin-catalog/homeassistant.yaml
+    # ships; its only Python dependency, aiohttp, is already in the venv via
+    # the "matrix" group. HASS_TOKEN comes from hermes-env.
+    #
+    # The flake builds hermes as version 0.0.0 (pyproject.toml; no release
+    # version is stamped), so the plugin's `requires_hermes: ">=0.21.5"` gate
+    # refused to load it. The pinned hermes-agent input already has Home
+    # Assistant moved out of core (hermes_cli/left_core_migration.py), so the
+    # gate is met in substance; drop it.
+    extraPlugins = [
+      (pkgs.applyPatches {
+        name = "homeassistant";
+        src = pkgs.fetchFromGitHub {
+          owner = "NousResearch";
+          repo = "hermes-homeassistant";
+          rev = "ba30cb0cf86c52bdb5cde98974bc062e97966529";
+          hash = "sha256-Pg4smvkiVpmcmUola0rziMBfq5V7UjzX8864Dem76pI=";
+        };
+        postPatch = ''
+          sed -i '/^requires_hermes:/d' plugin.yaml
+        '';
+      })
+    ];
+    # Non-bundled plugins are opt-in. The module links the plugin as
+    # plugins/nix-managed-homeassistant, but the left-core migration only
+    # recognizes plugins/homeassistant: without the marker it would see
+    # HASS_TOKEN, call the plugin missing, and warn on every start that it
+    # cannot fetch it (lazy installs are off in the sealed venv).
+    settings.plugins.enabled = [ "homeassistant" ];
+    settings._left_core_installed = [ "homeassistant" ];
+
     settings.model = {
       # Claude Opus 5.5 on lass's Claude subscription: the anthropic provider
       # takes the `claude setup-token` OAuth token (sk-ant-oat…) from
@@ -401,6 +434,9 @@ in
       CALDAV_USER = "hermes";
       CALDAV_CALENDAR_URL = "https://cal.lassul.us/lass/calendar/";
 
+      # Home Assistant on styx, over retiolum (configs/hass opens 8123 there).
+      HASS_URL = "http://styx.r:8123";
+
       # Element makes DMs end-to-end encrypted by default, so the bot must do
       # E2EE or it can't read messages. The `matrix` dep group already bundles
       # mautrix[encryption] (python-olm); "optional" initializes E2EE when those
@@ -430,7 +466,7 @@ in
     };
 
     # Secrets (MATRIX_ACCESS_TOKEN, LLAMA_API_TOKEN, API_SERVER_KEY,
-    # EMAIL_PASSWORD) come from clan vars below,
+    # EMAIL_PASSWORD, HASS_TOKEN) come from clan vars below,
     # merged into $HERMES_HOME/.env at activation.
     environmentFiles = [
       config.clan.core.vars.generators.hermes-env.files."hermes.env".path
@@ -615,6 +651,15 @@ in
     persist = true;
   };
 
+  # Home Assistant long-lived access token for the homeassistant plugin
+  # (HA profile -> Security -> Long-lived access tokens). persist=true so the
+  # prompt value is stored once.
+  clan.core.vars.generators.hermes-homeassistant.prompts.token = {
+    description = "Home Assistant long-lived access token for hermes";
+    type = "hidden";
+    persist = true;
+  };
+
   # Assemble the .env Hermes reads (mirrors the opencrow-env pattern).
   clan.core.vars.generators.hermes-env = {
     dependencies = [
@@ -624,6 +669,7 @@ in
       "radicale-hermes"
       "hermes-anthropic"
       "hermes-mail"
+      "hermes-homeassistant"
     ];
     files."hermes.env" = { };
     runtimeInputs = [ pkgs.coreutils ];
@@ -635,6 +681,7 @@ in
       CALDAV_PASSWORD=$(cat "$in"/radicale-hermes/password)
       ANTHROPIC_TOKEN=$(cat "$in"/hermes-anthropic/oauth-token)
       EMAIL_PASSWORD=$(cat "$in"/hermes-mail/password)
+      HASS_TOKEN=$(cat "$in"/hermes-homeassistant/token)
       EOF
     '';
   };
