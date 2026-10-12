@@ -46,8 +46,6 @@ let
         alacritty --execute vim "$FILE" ;;
       image/*)
         nsxiv "$FILE" ;;
-      application/x-bittorrent)
-        env DISPLAY=:0 transgui "$FILE" ;;
       application/pdf)
         zathura "$FILE" ;;
       inode/directory)
