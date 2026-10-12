@@ -8,6 +8,7 @@
     ../../configs
     ../../configs/retiolum.nix
     ../../configs/gg23.nix
+    ../../configs/hass
   ];
 
   services.earlyoom.enable = true;

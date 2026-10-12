@@ -124,7 +124,7 @@ in
       pkgs.openssh
     ];
 
-    # Home Assistant (styx, configs/hass) left hermes core for the
+    # Home Assistant (acheron, configs/hass) left hermes core for the
     # `homeassistant` catalog plugin: the ha_* tools plus a gateway platform
     # for state-change events. Pinned to the sha plugin-catalog/homeassistant.yaml
     # ships; its only Python dependency, aiohttp, is already in the venv via
@@ -434,8 +434,8 @@ in
       CALDAV_USER = "hermes";
       CALDAV_CALENDAR_URL = "https://cal.lassul.us/lass/calendar/";
 
-      # Home Assistant on styx, over retiolum (configs/hass opens 8123 there).
-      HASS_URL = "http://styx.r:8123";
+      # Home Assistant on acheron, over retiolum (configs/hass opens 8123 there).
+      HASS_URL = "http://acheron.r:8123";
 
       # Element makes DMs end-to-end encrypted by default, so the bot must do
       # E2EE or it can't read messages. The `matrix` dep group already bundles

@@ -69,7 +69,7 @@
         };
       }
       {
-        # styx (et0), ex-router: snapserver, mosquitto, mycelium peer
+        # styx (et0), ex-router: snapserver, mycelium peer
         dhcpServerStaticLeaseConfig = {
           Address = "10.42.0.3";
           MACAddress = "3c:7c:3f:7e:e2:39";
@@ -131,9 +131,9 @@
 
   environment.systemPackages = [
     (pkgs.writers.writeDashBin "restart_router" ''
-      ${pkgs.mosquitto}/bin/mosquitto_pub -h 10.42.0.3 -t 'cmnd/router/POWER' -u gg23 -P gg23-mqtt -m OFF
+      ${pkgs.mosquitto}/bin/mosquitto_pub -h localhost -t 'cmnd/router/POWER' -u gg23 -P gg23-mqtt -m OFF
       sleep 2
-      ${pkgs.mosquitto}/bin/mosquitto_pub -h 10.42.0.3 -t 'cmnd/router/POWER' -u gg23 -P gg23-mqtt -m ON
+      ${pkgs.mosquitto}/bin/mosquitto_pub -h localhost -t 'cmnd/router/POWER' -u gg23 -P gg23-mqtt -m ON
     '')
   ];
 }

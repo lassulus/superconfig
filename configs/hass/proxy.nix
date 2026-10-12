@@ -5,7 +5,7 @@
     locations."/" = {
       recommendedProxySettings = true;
       proxyWebsockets = true;
-      proxyPass = "http://styx.r:8123";
+      proxyPass = "http://acheron.r:8123";
     };
   };
 }

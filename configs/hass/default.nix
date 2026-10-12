@@ -4,13 +4,9 @@
     ./zigbee.nix
   ];
 
+  # Runs on the gg23 router: the LAN (int0) is a trusted interface there
+  # (configs/gg23.nix), et0 is the WAN and stays closed.
   networking.firewall.interfaces = {
-    et0.allowedTCPPorts = [
-      1883 # mosquitto
-      8123 # hass
-      1337 # zigbee2mqtt frontend
-    ];
-    docker0.allowedTCPPorts = [ 1883 ]; # mosquitto
     retiolum.allowedTCPPorts = [
       8123 # hass
       1337 # zigbee2mqtt frontend
@@ -53,10 +49,8 @@
     ];
   };
 
-  services.ollama = {
-    enable = true;
-    openFirewall = true;
-  };
+  # used by hass via localhost only; no openFirewall, et0 is the WAN here
+  services.ollama.enable = true;
 
   environment.systemPackages = [ pkgs.mosquitto ];
 }

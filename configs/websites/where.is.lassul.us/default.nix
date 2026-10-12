@@ -1,8 +1,8 @@
 { config, pkgs, ... }:
 let
   domain = "where.is.lassul.us";
-  # home-assistant on styx, reached over retiolum (same as hass/proxy.nix).
-  hass = "http://styx.r:8123";
+  # home-assistant on acheron, reached over retiolum (same as hass/proxy.nix).
+  hass = "http://acheron.r:8123";
   entity = "person.lass";
   stateDir = "/var/lib/where-lassul-us";
 
