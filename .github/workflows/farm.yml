@@ -12,26 +12,26 @@ on:
   workflow_dispatch:
     inputs:
       machines:
-        description: NixOS machines to build, space separated
-        default: ignavia neoprism green
+        description: NixOS machines to build, space separated (empty for all)
+        default: ""
   push:
-    paths:
-      - .github/workflows/farm.yml
-      - tools/ci-farm/**
+    branches: [master]
 
 permissions:
   contents: read
   id-token: write # niks3 push
   actions: read # workers watch the farm job
 
-# The farm's iroh endpoint id is fixed, so only one run at a time.
+# The farm's iroh endpoint id is fixed, so only one run at a time; a newer
+# push replaces a running build.
 concurrency:
   group: farm
+  cancel-in-progress: true
 
 env:
   # must match the worker matrix below
   FARM_WORKERS: 2
-  MACHINES: ${{ inputs.machines || 'ignavia neoprism green' }}
+  MACHINES: ${{ inputs.machines }}
 
 jobs:
   farm:
@@ -49,11 +49,15 @@ jobs:
             # a remembered miss (default: 1 h) fails the build instead.
             narinfo-cache-negative-ttl = 0
       - run: nix build -L .#ci-farm -o ci-farm
-      - name: build ${{ env.MACHINES }}
+      - name: build ${{ env.MACHINES || 'all machines' }}
         env:
           FARM_KEY: ${{ secrets.FARM_KEY }}
         # MACHINES unquoted: one argument per machine
-        run: ./ci-farm/bin/ci-farm farm $MACHINES
+        run: |
+          if [ -z "$MACHINES" ]; then
+            MACHINES=$(nix eval --raw .#nixosConfigurations --apply "c: builtins.concatStringsSep \" \" (builtins.attrNames c)")
+          fi
+          ./ci-farm/bin/ci-farm farm $MACHINES
 
   worker:
     name: worker ${{ matrix.index }}

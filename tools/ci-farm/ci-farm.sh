@@ -105,21 +105,39 @@ farm() {
   wait_workers "$workers"
 
   local store="grpc://127.0.0.1:50051?insecure=1&system=x86_64-linux"
-  declare -A builds
+  declare -A builds=() evals=()
+  local failed=()
+  build() {
+    echo "ci-farm: $1: $2"
+    "$NIX_WITH_PLUGIN" build --no-link --print-out-paths --store "$store" --eval-store auto "$2^*" 2>&1 |
+      sed -u "s|^|[$1] |" &
+    builds[$1]=$!
+  }
+  # Waits for one eval, then starts its build.
+  eval_done() {
+    local pid status=0 arg
+    wait -n -p pid "${!evals[@]}" || status=$?
+    arg=${evals[$pid]}
+    unset "evals[$pid]"
+    if [ "$status" -eq 0 ]; then
+      build "$arg" "$(<"$state/$arg.drv")"
+    else
+      failed+=("$arg")
+    fi
+  }
   for arg in "$@"; do
     if [[ $arg == /nix/store/*.drv ]]; then
-      drv=$arg
-    else
-      # One eval process per machine: all hosts at once don't fit in 16 GB.
-      drv=$(nix eval --raw ".#nixosConfigurations.$arg.config.system.build.toplevel.drvPath")
+      build "$arg" "$arg"
+      continue
     fi
-    echo "ci-farm: $arg: $drv"
-    "$NIX_WITH_PLUGIN" build --no-link --print-out-paths --store "$store" --eval-store auto "$drv^*" 2>&1 |
-      sed -u "s|^|[$arg] |" &
-    builds[$arg]=$!
+    # One eval process per machine, at most 3 at a time: all hosts at once
+    # don't fit in 16 GB.
+    while [ ${#evals[@]} -ge 3 ]; do eval_done; done
+    nix eval --raw ".#nixosConfigurations.$arg.config.system.build.toplevel.drvPath" >"$state/$arg.drv" &
+    evals[$!]=$arg
   done
+  while [ ${#evals[@]} -gt 0 ]; do eval_done; done
 
-  local failed=()
   for arg in "${!builds[@]}"; do
     wait "${builds[$arg]}" || failed+=("$arg")
   done
