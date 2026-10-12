@@ -8,10 +8,8 @@ repo=tincr
 branch=lassulus/fixes
 attr=tincr
 
-pkg="$(dirname "$(realpath "$0")")/package.nix"
-
-cd "$(dirname "$(realpath "$0")")"
-while [ ! -e flake.nix ] && [ "$PWD" != / ]; do cd ..; done
+# Run by update-pkgs from the flake root ($0 is a read-only store copy).
+pkg=pkgs/tincr/package.nix
 system=$(nix eval --raw --impure --expr 'builtins.currentSystem')
 
 new_rev=$(curl -fsSL "https://api.github.com/repos/$owner/$repo/commits/$branch" | jq -r .sha)

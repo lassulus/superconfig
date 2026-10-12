@@ -2,7 +2,8 @@
 set -euo pipefail
 
 url="https://boosteroid.com/linux/installer/boosteroid_portable.tar"
-pkg="$(dirname "$(realpath "$0")")/package.nix"
+# Run by update-pkgs from the flake root ($0 is a read-only store copy).
+pkg=tools/boosteroid/package.nix
 
 old_hash=$(grep -oP 'hash = "\K[^"]+' "$pkg")
 

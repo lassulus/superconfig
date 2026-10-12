@@ -1,0 +1,5 @@
+bin "update-pkgs"
+about "Run the passthru.updateScript of flake packages, like nixpkgs' update.py"
+
+flag "--list" help="Only list the packages with an updateScript and their command"
+arg "[attr]..." help="Package attributes to update (default: every package with an updateScript)" var=#true
