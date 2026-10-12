@@ -33,6 +33,13 @@ rustPlatform.buildRustPackage {
   # netns tests need bwrap+userns the build sandbox lacks.
   doCheck = false;
 
+  # The repo's .cargo/config.toml builds x86_64-linux for x86-64-v3 (AVX2),
+  # which dies with SIGILL on pre-Haswell CPUs (icarus, shodan: Ivy Bridge).
+  # An env RUSTFLAGS replaces those target rustflags (cargo doesn't merge
+  # them): keep the frame pointers, drop the CPU floor. Same as upstream's
+  # nix/tincd.nix baselineCpu; the AEAD is OpenSSL with runtime dispatch.
+  env.RUSTFLAGS = "-C force-frame-pointers=yes";
+
   # tinc-crypto's ChaPoly backend links openssl-sys against system openssl.
   nativeBuildInputs = [
     installShellFiles
