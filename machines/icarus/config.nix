@@ -9,7 +9,6 @@
     self.wrapperModules.workspace-manager
     ../../configs/pipewire.nix
     ../../configs/network-manager.nix
-    ../../configs/red-host.nix
     ../../configs/snapclient.nix
     ../../configs/consul.nix
     ../../configs/autoupdate.nix
