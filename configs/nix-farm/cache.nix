@@ -90,11 +90,17 @@ in
   # decodes them via the narinfo's Compression field.
   # `resolve`: looked up at runtime via resolved's stub, so an unresolvable
   # B2 at startup doesn't keep nginx (and every other vhost) from starting.
+  # `keepalive` + HTTP/1.1 below: reuse TLS connections to B2. Without them
+  # nginx spoke HTTP/1.0 with a new handshake per request; at a farm run's
+  # ~400 req/s B2 started closing connections mid-response.
   services.nginx.appendHttpConfig = ''
     upstream cache_lassul_us_b2 {
       zone cache_lassul_us_b2 64k;
       resolver 127.0.0.53 ipv6=off;
       server ${endpoint}:443 resolve;
+      keepalive 64;
+      keepalive_requests 10000;
+      keepalive_timeout 60s;
     }
     map $uri $cache_lassul_us_encoding {
       default "";
@@ -111,6 +117,8 @@ in
       proxy_set_header Host ${endpoint};
       proxy_ssl_server_name on;
       proxy_ssl_name ${endpoint};
+      proxy_http_version 1.1;
+      proxy_set_header Connection "";
       # cache keys never have a query string; don't forward one to S3
       set $args "";
       # S3 answers 403 for keys missing from a bucket it won't list
