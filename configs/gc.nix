@@ -7,7 +7,6 @@
           "aergia"
           "ignavia"
           "mors"
-          "xerxes"
           "coaxmetal"
         ]
         || config.boot.isContainer

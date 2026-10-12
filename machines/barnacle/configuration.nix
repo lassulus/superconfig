@@ -171,7 +171,6 @@
     self.keys.ssh.yubi1.public
     self.keys.ssh.yubi2.public
     self.keys.ssh.solo2.public
-    self.keys.ssh.xerxes.public
     self.keys.ssh.ignavia.public
     self.keys.ssh.phonetpm_massulus.public
   ];
@@ -182,7 +181,6 @@
     self.keys.ssh.yubi1.public
     self.keys.ssh.yubi2.public
     self.keys.ssh.solo2.public
-    self.keys.ssh.xerxes.public
     self.keys.ssh.ignavia.public
     self.keys.ssh.phonetpm_massulus.public
   ];
