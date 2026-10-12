@@ -13,7 +13,6 @@
     ../../configs/green-host.nix
     ../../configs/syncthing.nix
     ../../configs/ppp/umts-stick.nix
-    ../../configs/snapserver.nix
     ../../configs/snapclient.nix
     ../../configs/consul.nix
   ];
@@ -22,18 +21,6 @@
     wol
     (writers.writeDashBin "wake-alien" ''
       ${wol}/bin/wol -h 10.42.0.255 10:65:30:68:83:a3
-    '')
-    (writers.writeDashBin "iptv" ''
-      set -efu
-      /run/current-system/sw/bin/mpv \
-        --audio-display=no --audio-channels=stereo \
-        --audio-samplerate=48000 --audio-format=s16 \
-        --ao-pcm-file=/run/snapserver/snapfifo --ao=pcm \
-        --audio-delay=-1 \
-        --playlist=https://iptv-org.github.io/iptv/index.nsfw.m3u \
-        --idle=yes \
-        --input-ipc-server=/tmp/mpv.ipc \
-        "$@"
     '')
   ];
 

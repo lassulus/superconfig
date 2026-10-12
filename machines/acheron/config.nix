@@ -9,6 +9,7 @@
     ../../configs/retiolum.nix
     ../../configs/gg23.nix
     ../../configs/hass
+    ../../configs/snapserver.nix
   ];
 
   services.earlyoom.enable = true;
