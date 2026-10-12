@@ -49,6 +49,10 @@ jobs:
             # a remembered miss (default: 1 h) fails the build instead.
             narinfo-cache-negative-ttl = 0
       - run: nix build -L .#ci-farm -o ci-farm
+      # so the next run substitutes it instead of compiling it on every runner
+      - env:
+          FARM_KEY: ${{ secrets.FARM_KEY }}
+        run: ./ci-farm/bin/ci-farm push ./ci-farm
       - name: build ${{ env.MACHINES || 'all machines' }}
         env:
           FARM_KEY: ${{ secrets.FARM_KEY }}

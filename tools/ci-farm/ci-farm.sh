@@ -198,11 +198,19 @@ worker() {
   wait "$pid" || true
 }
 
-cmd=${1:?usage: ci-farm farm MACHINE... | ci-farm worker INDEX}
+# ci-farm push PATH...: pushes the closures of PATH... to niks3, e.g. the
+# farm's own closure, which no other cache has.
+push() {
+  niks3 push --server-url "$niks3_url" --auth-token-path "$state/niks3-token" \
+    --ignore-upstream-key cache.nixos.org-1 "$@"
+}
+
+cmd=${1:?usage: ci-farm farm MACHINE... | ci-farm worker INDEX | ci-farm push PATH...}
 shift
 case $cmd in
 farm) farm "$@" ;;
 worker) worker "$@" ;;
+push) push "$@" ;;
 *)
   echo "ci-farm: unknown command $cmd" >&2
   exit 1

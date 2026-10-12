@@ -42,6 +42,7 @@
       # ci-farm farm MACHINE...   scheduler + builder + balancer, builds the
       #                           toplevels of MACHINE... through the farm
       # ci-farm worker INDEX      builder, until the farm job has finished
+      # ci-farm push PATH...      pushes the closures of PATH... to niks3
       #
       # Runs in .github/workflows/farm.yml. See ci-farm.sh for the layout.
       packages = lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
