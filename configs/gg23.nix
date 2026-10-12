@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ lib, pkgs, ... }:
 {
   # vodafone router drifts out of time
   services.timesyncd.servers = [
@@ -124,11 +124,16 @@
     };
   };
 
+  # dnsmasq serves /etc/hosts to the LAN; NixOS maps our own fqdn to
+  # 127.0.0.2 there, which clients would then try to reach. extraHosts in
+  # configs/default.nix already has the real 10.42.0.1 entry.
+  networking.hosts."127.0.0.2" = lib.mkForce [ ];
+
   environment.systemPackages = [
     (pkgs.writers.writeDashBin "restart_router" ''
-      ${pkgs.mosquitto}/bin/mosquitto_pub -h localhost -t 'cmnd/router/POWER' -u gg23 -P gg23-mqtt -m OFF
+      ${pkgs.mosquitto}/bin/mosquitto_pub -h 10.42.0.3 -t 'cmnd/router/POWER' -u gg23 -P gg23-mqtt -m OFF
       sleep 2
-      ${pkgs.mosquitto}/bin/mosquitto_pub -h localhost -t 'cmnd/router/POWER' -u gg23 -P gg23-mqtt -m ON
+      ${pkgs.mosquitto}/bin/mosquitto_pub -h 10.42.0.3 -t 'cmnd/router/POWER' -u gg23 -P gg23-mqtt -m ON
     '')
   ];
 }
