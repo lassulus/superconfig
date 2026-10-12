@@ -2,6 +2,9 @@
   "machines": {
     "starkstrom": {
       "installedAt": 1788097133
+    },
+    "acheron": {
+      "installedAt": 1791810638
     }
   }
 }
