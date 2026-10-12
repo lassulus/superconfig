@@ -249,7 +249,6 @@
         ./keys/flake-module.nix
         ./retiolum/flake-module.nix
         ./skills/flake-module.nix
-        ./games/flake-module.nix
 
         ./wrapperModules/pi/flake-module.nix
         ./wrapperModules/claude-code/flake-module.nix
