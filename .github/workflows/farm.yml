@@ -1,0 +1,78 @@
+name: farm
+
+# On-demand nix-grpc-store farm (tools/ci-farm): one farm job (scheduler,
+# balancer, client, builder) and a pool of worker jobs that build the
+# requested machines together, each derivation once. Outputs land in
+# cache.lassul.us via niks3.
+#
+# Needs the FARM_KEY secret: the farm's TLS private key, matching
+# tools/ci-farm/farm.crt (`pass show ci-farm/key`).
+
+on:
+  workflow_dispatch:
+    inputs:
+      machines:
+        description: NixOS machines to build, space separated
+        default: ignavia neoprism green
+  push:
+    paths:
+      - .github/workflows/farm.yml
+      - tools/ci-farm/**
+
+permissions:
+  contents: read
+  id-token: write # niks3 push
+  actions: read # workers watch the farm job
+
+# The farm's iroh endpoint id is fixed, so only one run at a time.
+concurrency:
+  group: farm
+
+env:
+  # must match the worker matrix below
+  FARM_WORKERS: 2
+  MACHINES: ${{ inputs.machines || 'ignavia neoprism green' }}
+
+jobs:
+  farm:
+    name: farm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            trusted-users = root runner
+            extra-substituters = https://cache.lassul.us
+            extra-trusted-public-keys = cache.lassul.us-1:aOMEO5TU6eLvhyPi0jmgjR2sVlGjMq3rK0MeACjTcQ0=
+            # Builders need each other's outputs as soon as they are pushed;
+            # a remembered miss (default: 1 h) fails the build instead.
+            narinfo-cache-negative-ttl = 0
+      - run: nix build -L .#ci-farm -o ci-farm
+      - name: build ${{ env.MACHINES }}
+        env:
+          FARM_KEY: ${{ secrets.FARM_KEY }}
+        # MACHINES unquoted: one argument per machine
+        run: ./ci-farm/bin/ci-farm farm $MACHINES
+
+  worker:
+    name: worker ${{ matrix.index }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        index: [1, 2] # FARM_WORKERS
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            trusted-users = root runner
+            extra-substituters = https://cache.lassul.us
+            extra-trusted-public-keys = cache.lassul.us-1:aOMEO5TU6eLvhyPi0jmgjR2sVlGjMq3rK0MeACjTcQ0=
+            # see the farm job
+            narinfo-cache-negative-ttl = 0
+      - run: nix build -L .#ci-farm -o ci-farm
+      - env:
+          FARM_KEY: ${{ secrets.FARM_KEY }}
+          GH_TOKEN: ${{ github.token }}
+        run: ./ci-farm/bin/ci-farm worker ${{ matrix.index }}

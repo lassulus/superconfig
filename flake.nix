@@ -113,6 +113,19 @@
     sigexec.url = "git+https://git.geninf.io/Lassulus/sigexec";
     sigexec.inputs.nixpkgs.follows = "nixpkgs";
 
+    # build farm (configs/nix-farm): remote builds over grpc:// ...
+    nix-grpc-store.url = "github:Mic92/nix-grpc-store";
+    nix-grpc-store.inputs.nixpkgs.follows = "nixpkgs";
+    nix-grpc-store.inputs.niks3.follows = "niks3";
+
+    # ... and the S3-backed binary cache the outputs land in. Fork for
+    # `push --ignore-upstream-key` (not upstream yet). It rebases onto
+    # Mic92/niks3 daily (its .github/workflows/rebase-upstream.yml), so
+    # `nix flake update niks3` follows upstream.
+    niks3.url = "github:lassulus/niks3";
+    niks3.inputs.nixpkgs.follows = "nixpkgs";
+    niks3.inputs.treefmt-nix.follows = "treefmt-nix";
+
   };
 
   outputs =

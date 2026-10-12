@@ -551,6 +551,29 @@
         "type": "github"
       }
     },
+    "niks3": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ],
+        "treefmt-nix": [
+          "treefmt-nix"
+        ]
+      },
+      "locked": {
+        "lastModified": 1791782818,
+        "narHash": "sha256-a9ps1IFkL2ynoUnKb1t/9VvfMYFMd4oLxq7JlqqotK4=",
+        "owner": "lassulus",
+        "repo": "niks3",
+        "rev": "96bb25d227672be9a1fc46da43baf0d0cc2bebd0",
+        "type": "github"
+      },
+      "original": {
+        "owner": "lassulus",
+        "repo": "niks3",
+        "type": "github"
+      }
+    },
     "nix-darwin": {
       "inputs": {
         "nixpkgs": [
@@ -589,6 +612,29 @@
       "original": {
         "owner": "LnL7",
         "repo": "nix-darwin",
+        "type": "github"
+      }
+    },
+    "nix-grpc-store": {
+      "inputs": {
+        "niks3": [
+          "niks3"
+        ],
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1791642748,
+        "narHash": "sha256-mHzxNM2g/U2cENihXpbnpAsY+xziZ440LzfIWFe49mo=",
+        "owner": "Mic92",
+        "repo": "nix-grpc-store",
+        "rev": "37d20b8ee7881cd63bb75d3a303efacbd3e83be4",
+        "type": "github"
+      },
+      "original": {
+        "owner": "Mic92",
+        "repo": "nix-grpc-store",
         "type": "github"
       }
     },
@@ -920,7 +966,9 @@
         "le_menu": "le_menu",
         "llm-agents": "llm-agents",
         "nether": "nether",
+        "niks3": "niks3",
         "nix-darwin": "nix-darwin_2",
+        "nix-grpc-store": "nix-grpc-store",
         "nix-index-database": "nix-index-database",
         "nix-rosetta-builder": "nix-rosetta-builder",
         "nixos-facter": "nixos-facter",

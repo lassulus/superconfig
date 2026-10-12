@@ -14,7 +14,9 @@
 
     ../../configs/pass.nix
 
-    ../../configs/et-server.nix
+    # disabled: eternal-terminal 7.0.0 fails to build in the current nixpkgs
+    # (cmake_pch.hxx.gch error)
+    # ../../configs/et-server.nix
 
     ../../configs/atuin-server.nix
     ../../configs/autoupdate.nix

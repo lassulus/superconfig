@@ -136,6 +136,18 @@ in
         };
       }
     )
+    (
+      # binary cache of the neoprism build farm (configs/nix-farm). The key
+      # only exists once `clan vars generate neoprism` has run; until then
+      # the cache is left out.
+      let
+        pub = self + "/vars/per-machine/neoprism/nix-cache-signing/key.pub/value";
+      in
+      lib.mkIf (builtins.pathExists pub) {
+        nix.settings.extra-substituters = [ "https://cache.lassul.us" ];
+        nix.settings.extra-trusted-public-keys = [ (lib.removeSuffix "\n" (builtins.readFile pub)) ];
+      }
+    )
     {
       #for sshuttle
       environment.systemPackages = [
