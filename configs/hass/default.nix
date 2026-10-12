@@ -49,8 +49,5 @@
     ];
   };
 
-  # used by hass via localhost only; no openFirewall, et0 is the WAN here
-  services.ollama.enable = true;
-
   environment.systemPackages = [ pkgs.mosquitto ];
 }
