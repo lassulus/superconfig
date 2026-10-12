@@ -65,6 +65,10 @@ in
     apiTokenFile = vars.niks3.files."api-token".path;
     signKeyFiles = [ vars.nix-cache-signing.files."key.sec".path ];
     cacheUrl = "https://cache.lassul.us";
+    # Behind cache.nixos.org (40): nix asks upstream first, so B2 only sees
+    # lookups for our own paths. At niks3's default 30 every closure path hit
+    # B2 first, and a farm run's ~1M misses got throttled with 503s.
+    priority = 50;
     # The CI build farm (tools/ci-farm) pushes with the job's GitHub OIDC
     # token. Fork PRs don't get one.
     oidc.providers.github = {
