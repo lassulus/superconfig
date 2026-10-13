@@ -28,16 +28,16 @@ let
 in
 rustPlatform.buildRustPackage (finalAttrs: {
   pname = "photocraft-web";
-  version = "0.1.1";
+  version = "0.8.2";
 
   src = fetchFromGitHub {
     owner = "storytold";
     repo = "photocraft";
     tag = "v${finalAttrs.version}";
-    hash = "sha256-lyhQ+kewBiZSNx/w/e6RO4dTKZmDD5hnsDSEKkKrtt0=";
+    hash = "sha256-kqKpZ8IBPmCd93XXvyxyAjPjJEWFfZh49qQc9KMSp4Y=";
   };
 
-  cargoHash = "sha256-MLECpUx0J0RjxHXbhhR1WK8iajiNU+gJeZBsyZZwxg4=";
+  cargoHash = "sha256-dafKVsoBYuChW0nsjUhk5GqCChAO07A4Rhhv2UAdEx0=";
 
   nativeBuildInputs = [
     trunk
@@ -63,6 +63,11 @@ rustPlatform.buildRustPackage (finalAttrs: {
     cp -r dist/web $out
     runHook postInstall
   '';
+
+  passthru = {
+    inherit wasm-bindgen-cli;
+    updateScript = ./update.sh;
+  };
 
   meta = {
     description = "PhotoCraft image editor compiled to WebAssembly, as a static site";
