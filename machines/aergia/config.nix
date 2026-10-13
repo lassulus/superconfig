@@ -7,7 +7,6 @@
     ../../configs/browsers.nix
     ../../configs/network-manager.nix
     ../../configs/syncthing.nix
-    ../../configs/yellow-mounts/samba.nix
     ../../configs/pass.nix
     ../../configs/mail.nix
     # ../../configs/review.nix

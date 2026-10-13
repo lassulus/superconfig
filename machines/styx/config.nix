@@ -8,7 +8,6 @@
     ../../configs
     ../../configs/retiolum.nix
     ../../configs/pipewire.nix
-    ../../configs/yellow-mounts/samba.nix
     ../../configs/n8n.nix
     ../../configs/green-host.nix
     ../../configs/syncthing.nix
