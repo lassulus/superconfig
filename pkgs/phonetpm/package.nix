@@ -2,6 +2,7 @@
   lib,
   rustPlatform,
   fetchFromGitHub,
+  nix-update-script,
 }:
 
 rustPlatform.buildRustPackage rec {
@@ -24,6 +25,14 @@ rustPlatform.buildRustPackage rec {
     "phonetpm"
   ];
   cargoTestFlags = cargoBuildFlags;
+
+  passthru.updateScript = nix-update-script {
+    extraArgs = [
+      "--flake"
+      "--system"
+      "x86_64-linux"
+    ];
+  };
 
   meta = {
     description = "Android phone as a biometric ssh-agent and age backend over iroh";
