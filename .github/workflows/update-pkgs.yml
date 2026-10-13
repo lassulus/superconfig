@@ -1,0 +1,272 @@
+name: update-pkgs
+
+# Daily package and flake.lock updates. Nothing reaches master without a full
+# farm build:
+#
+# 1. update (one job per package): run its passthru.updateScript through
+#    tools/update-pkgs, build the package on its platform (darwin-only
+#    packages on macOS), push update/<pkg> and open or refresh its PR.
+#    lock: `nix flake update`, pushed as update/flake-lock with its own PR.
+# 2. verify: for every open update/* PR, one after another (flake.lock
+#    first), rebase it onto the current master, build all machines with the
+#    farm (farm.yml) on that commit and squash-merge the PR only if the run
+#    succeeded. A commit that already has a finished farm run is not built
+#    again, so a failing PR stays open until its branch or master changes.
+#
+# One PR at a time because the farm has a fixed endpoint and runs in a single
+# concurrency group, where GitHub keeps only one pending run.
+#
+# Needs "Allow GitHub Actions to create and approve pull requests" in the repo
+# settings. Merges made with GITHUB_TOKEN don't trigger push workflows, so the
+# farm build of master after merging is dispatched here as well.
+
+on:
+  schedule:
+    - cron: "0 3 * * *" # daily 03:00 UTC
+  workflow_dispatch:
+    inputs:
+      packages:
+        description: Packages to update, space separated (empty for all)
+        default: ""
+      automerge:
+        description: Merge PRs whose farm build succeeded
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write # dispatch and watch farm runs
+
+concurrency:
+  group: update-pkgs
+  cancel-in-progress: false
+
+env:
+  NIX_CONFIG: |
+    extra-substituters = https://cache.lassul.us
+    extra-trusted-public-keys = cache.lassul.us-1:aOMEO5TU6eLvhyPi0jmgjR2sVlGjMq3rK0MeACjTcQ0=
+
+jobs:
+  list:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.list.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - id: list
+        env:
+          PACKAGES: ${{ inputs.packages }}
+        run: |
+          names() {
+            nix eval --json --impure --apply builtins.attrNames --expr \
+              "import ./tools/update-pkgs/scripts.nix { flake = toString ./.; host = \"$1\"; }"
+          }
+          # Linux packages update and build on ubuntu; the ones that only
+          # exist for darwin on macOS.
+          matrix=$(jq -cn --argjson linux "$(names x86_64-linux)" \
+            --argjson all "$(names aarch64-darwin)" --arg only "$PACKAGES" '
+            ($only | split(" ") | map(select(. != ""))) as $want
+            | [ $all[]
+                | select(($want | length) == 0 or (. as $p | $want | index($p)))
+                | if (. as $p | $linux | index($p))
+                  then { pkg: ., os: "ubuntu-latest", system: "x86_64-linux" }
+                  else { pkg: ., os: "macos-latest", system: "aarch64-darwin" }
+                  end ]')
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "$matrix" | jq .
+
+  update:
+    needs: list
+    if: needs.list.outputs.matrix != '[]'
+    name: ${{ matrix.pkg }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.list.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: cachix/install-nix-action@v31
+      - env:
+          PKG: ${{ matrix.pkg }}
+          SYSTEM: ${{ matrix.system }}
+          GH_TOKEN: ${{ github.token }}
+          # nix-update and the update scripts query the GitHub API
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          version() { nix eval --raw ".#packages.$SYSTEM.$PKG.version" 2>/dev/null || echo unknown; }
+          old=$(version)
+
+          nix run .#update-pkgs -- "$PKG"
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "$PKG: no update"
+            exit 0
+          fi
+
+          nix build -L --no-link ".#packages.$SYSTEM.$PKG"
+
+          new=$(version)
+          prefix=pkgs
+          [ -d "pkgs/$PKG" ] || prefix=tools
+          if [ "$old" != "$new" ]; then
+            msg="$prefix.$PKG: $old -> $new"
+          else
+            msg="$prefix.$PKG: update"
+          fi
+
+          branch="update/$PKG"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add -A
+          git commit -m "$msg"
+
+          # Same change as the branch already carries (e.g. a PR whose farm
+          # build failed and upstream hasn't moved): keep its commit, so
+          # verify doesn't build it again.
+          if git fetch -q origin "$branch" 2>/dev/null &&
+            git diff --quiet FETCH_HEAD HEAD -- "$prefix/$PKG"; then
+            echo "$PKG: $branch already has this update"
+          else
+            git push --force origin "$branch"
+          fi
+
+          if [ -z "$(gh pr list --head "$branch" --state open --json number --jq '.[].number')" ]; then
+            gh pr create --base master --head "$branch" --title "$msg" \
+              --body "Automated update by the update-pkgs workflow (\`nix run .#update-pkgs -- $PKG\`), package built on $SYSTEM. Merged automatically once the farm has built all machines from this branch."
+          fi
+
+  lock:
+    # whole runs only, not manual runs for selected packages
+    if: inputs.packages == ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: cachix/install-nix-action@v31
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          export NIX_CONFIG="$NIX_CONFIG"$'\n'"access-tokens = github.com=$GITHUB_TOKEN"
+          nix flake update 2>&1 | tee "$RUNNER_TEMP/update.log"
+          if git diff --quiet -- flake.lock; then
+            echo "flake.lock: no update"
+            exit 0
+          fi
+
+          msg="flake.lock: update"
+          branch="update/flake-lock"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git commit -m "$msg" -- flake.lock
+
+          # Same lock as the branch already carries: keep its commit, so
+          # verify doesn't build it again.
+          if git fetch -q origin "$branch" 2>/dev/null &&
+            git diff --quiet FETCH_HEAD HEAD -- flake.lock; then
+            echo "flake.lock: $branch already has this update"
+          else
+            git push --force origin "$branch"
+          fi
+
+          {
+            echo "Automated \`nix flake update\` by the update-pkgs workflow. Merged automatically once the farm has built all machines from this branch."
+            echo
+            echo '```'
+            sed -n '/^• /,$p' "$RUNNER_TEMP/update.log"
+            echo '```'
+          } >"$RUNNER_TEMP/body.md"
+          pr=$(gh pr list --head "$branch" --state open --json number --jq '.[].number')
+          if [ -z "$pr" ]; then
+            gh pr create --base master --head "$branch" --title "$msg" --body-file "$RUNNER_TEMP/body.md"
+          else
+            gh pr edit "$pr" --body-file "$RUNNER_TEMP/body.md"
+          fi
+
+  verify:
+    needs: [update, lock]
+    if: always() && needs.update.result != 'cancelled' && needs.lock.result != 'cancelled'
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          AUTOMERGE: ${{ github.event_name == 'schedule' || inputs.automerge }}
+        run: |
+          repo=$GITHUB_REPOSITORY
+          merged=0
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # farm run for a head commit: "<id> <status> <conclusion>" or empty
+          farm_run() {
+            gh run list -R "$repo" -w farm.yml -b "$1" -e workflow_dispatch -L 20 \
+              --json databaseId,headSha,status,conclusion \
+              --jq "[.[] | select(.headSha == \"$2\")][0] // empty | \"\(.databaseId) \(.status) \(.conclusion)\""
+          }
+
+          # flake.lock first: every package PR is rebased onto the master it
+          # gets merged into right before its build, so after the lock merge
+          # the packages are built once, against the new lock, and the final
+          # farm run on master only hits the cache.
+          prs=$(gh pr list -R "$repo" --state open --base master --limit 100 \
+            --json number,headRefName \
+            --jq '[.[] | select(.headRefName | startswith("update/"))]
+              | sort_by(.headRefName != "update/flake-lock") | .[]
+              | "\(.number) \(.headRefName)"')
+
+          while read -r pr branch; do
+            [ -n "$pr" ] || continue
+            echo "::group::#$pr $branch"
+            git fetch -q origin master "$branch"
+            git switch -q -C "$branch" "origin/$branch"
+            if ! git rebase -q origin/master; then
+              git rebase --abort
+              echo "#$pr: conflicts with master, left for the next run"
+              echo "::endgroup::"
+              continue
+            fi
+            sha=$(git rev-parse HEAD)
+            if [ "$sha" != "$(git rev-parse "origin/$branch")" ]; then
+              git push -q --force-with-lease="$branch:origin/$branch" origin "$branch"
+            fi
+
+            run=$(farm_run "$branch" "$sha")
+            if [ -z "$run" ]; then
+              gh workflow run farm.yml -R "$repo" --ref "$branch"
+              for _ in $(seq 60); do
+                sleep 10
+                run=$(farm_run "$branch" "$sha")
+                [ -n "$run" ] && break
+              done
+            fi
+            id=${run%% *}
+            if [ -z "$id" ]; then
+              echo "#$pr: farm run did not start"
+              echo "::endgroup::"
+              continue
+            fi
+            gh run watch "$id" -R "$repo" --interval 60 >/dev/null || true
+            conclusion=$(gh run view "$id" -R "$repo" --json conclusion --jq .conclusion)
+            echo "#$pr: farm run $id on $sha: $conclusion"
+            if [ "$conclusion" = success ] && [ "$AUTOMERGE" = true ]; then
+              gh pr merge "$pr" -R "$repo" --squash --delete-branch --match-head-commit "$sha"
+              merged=$((merged + 1))
+            fi
+            echo "::endgroup::"
+          done <<<"$prs"
+
+          echo "merged update PRs: $merged"
+          if [ "$merged" -gt 0 ]; then
+            gh workflow run farm.yml -R "$repo" --ref master
+          fi
