@@ -3,15 +3,16 @@
   stdenvNoCC,
   fetchzip,
   unzip,
+  nix-update-script,
 }:
 
 stdenvNoCC.mkDerivation rec {
   pname = "secretive";
-  version = "2.4.1";
+  version = "4.0.0";
 
   src = fetchzip {
     url = "https://github.com/maxgoedjen/secretive/releases/download/v${version}/Secretive.zip";
-    hash = "sha256-JzG7AWpvo/ivtb5JARNCYIQiLuqFYe6Peg2T444Qv0M=";
+    hash = "sha256-AP/ubwV9h/9EYj7J6psSUAkzBjee3QB3a4/7hv7nWYk=";
     stripRoot = false;
   };
 
@@ -29,6 +30,8 @@ stdenvNoCC.mkDerivation rec {
 
     runHook postInstall
   '';
+
+  passthru.updateScript = nix-update-script { extraArgs = [ "--flake" ]; };
 
   meta = {
     description = "Store SSH keys in the Secure Enclave";
