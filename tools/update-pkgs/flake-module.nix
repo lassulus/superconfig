@@ -22,48 +22,7 @@
             root=$(git rev-parse --show-toplevel)
             cd "$root"
             host=$(nix eval --raw --impure --expr builtins.currentSystem)
-            # Only update scripts written for this flake: nix-update with --flake,
-            # or a script inside this flake. Packages wrapping nixpkgs or
-            # flake-input packages otherwise inherit an updateScript meant for
-            # that checkout; those follow flake.lock instead.
-            src=$(nix flake metadata --json . | jq -r .path)
-
-            # attr -> {cmd, pname, version, name}. Per package tryEval: one
-            # package refusing to evaluate on this system must not hide the rest.
-            scripts() {
-              nix eval --json ".#packages.$1" --apply "
-                ps: builtins.mapAttrs (n: p:
-                  let
-                    r = builtins.tryEval (
-                      let
-                        u = p.passthru.updateScript or null;
-                        isOurs = s: s == \"--flake\"
-                          || builtins.substring 0 (builtins.stringLength \"$src/\") s == \"$src/\";
-                        c =
-                          if builtins.isList u then u
-                          else if builtins.isAttrs u && u ? command then
-                            (if builtins.isList u.command then u.command else [ u.command ])
-                          else [ u ];
-                        v = {
-                          cmd = map toString c;
-                          pname = p.pname or n;
-                          version = p.version or \"\";
-                          name = p.name or n;
-                        };
-                      in
-                      if u == null || !(builtins.any isOurs v.cmd) then null else builtins.deepSeq v v
-                    );
-                  in
-                  if r.success then r.value else null) ps"
-            }
-            host_scripts=$(scripts "$host")
-            linux_scripts='{}'
-            if [ "$host" != x86_64-linux ]; then
-              linux_scripts=$(scripts x86_64-linux)
-            fi
-            # host entries win over linux ones
-            all=$(jq -s '.[1] + .[0] | with_entries(select(.value != null))' \
-              <<<"$host_scripts $linux_scripts")
+            all=$(nix eval --json --impure --expr "import ${./scripts.nix} { flake = \"$root\"; host = \"$host\"; }")
 
             if [ "''${1:-}" = --list ]; then
               jq -r 'to_entries[] | "\(.key)\t\(.value.cmd | join(" "))"' <<<"$all"
