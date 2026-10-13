@@ -9,7 +9,7 @@ stdenv.mkDerivation {
   name = "grib2json";
   src = fetchzip {
     url = "https://github.com/krebs/grib2json-bin/archive/31efe677b40fe491c988d50f96b59b1b7e2d46f7.zip";
-    sha256 = "1h3yxg270bvac7kaqsbsv4f8nln1i03rfz4cm8cp7llhjj3s6a6b";
+    hash = "sha256-yyijh5SQ0nMZqox8lweIwVKLHNl6aazmYWovcMTrfsA=";
   };
   installPhase = ''
     mkdir -p $out/bin

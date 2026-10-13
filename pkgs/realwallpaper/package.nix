@@ -4,7 +4,7 @@
 let
   nomads-cloud = callPackage ./nomads-cloud.nix { };
 in
-pkgs.writers.writeDashBin "generate-wallpaper" ''
+(pkgs.writers.writeDashBin "generate-wallpaper" ''
   set -euf
 
   export PATH=${
@@ -287,8 +287,8 @@ pkgs.writers.writeDashBin "generate-wallpaper" ''
       } ./get_constellations.py
     } ${
       pkgs.fetchurl {
-        url = "https://raw.githubusercontent.com/ofrohn/d3-celestial/d2e20e104b86429d90ac8227a5b021262b45d75a/data/constellations.lines.json";
-        sha256 = "0g71fdrnxvxd6pcqvihj2q9iaynrl7px45kzw6qm1kymynz6ckr9";
+        url = "https://raw.githubusercontent.com/ofrohn/d3-celestial/7e720a3de062059d4c5400a379146a601d9010e0/data/constellations.lines.json";
+        hash = "sha256-KU9mvvXVz1Cx4X8W0u+h2XoVExYSxo3ZNa3vbnNz4Tw=";
       }
     } > constellations.arcs || :  # seems like astropy doesn't want to convert from icrs to itrs anymore
 
@@ -366,4 +366,9 @@ pkgs.writers.writeDashBin "generate-wallpaper" ''
   }
 
   main "$@"
-''
+'').overrideAttrs
+  (old: {
+    passthru = (old.passthru or { }) // {
+      updateScript = ./update.sh;
+    };
+  })
