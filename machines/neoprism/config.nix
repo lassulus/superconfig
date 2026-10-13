@@ -85,9 +85,6 @@
     # paste + cyberlocker
     ../../configs/paste
 
-    # opencrow matrix bot
-    ../../configs/opencrow.nix
-
     # document signing
     ../../configs/docuseal.nix
 

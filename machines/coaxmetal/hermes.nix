@@ -543,7 +543,7 @@ in
     persist = true;
   };
 
-  # Assemble the .env Hermes reads (mirrors the opencrow-env pattern).
+  # Assemble the .env Hermes reads from the generators above.
   clan.core.vars.generators.hermes-env = {
     dependencies = [
       "hermes-matrix"

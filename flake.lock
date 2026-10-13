@@ -821,27 +821,6 @@
         "type": "github"
       }
     },
-    "opencrow": {
-      "inputs": {
-        "nixpkgs": [
-          "nixpkgs"
-        ],
-        "treefmt-nix": "treefmt-nix_6"
-      },
-      "locked": {
-        "lastModified": 1782727145,
-        "narHash": "sha256-buooDQiylOxQBO6nvATodIpC/jp9Vic+JvWYYrTCv7M=",
-        "owner": "pinpox",
-        "repo": "opencrow",
-        "rev": "b6a2b714bbb8d10f848b9f859283bb5745f7dccf",
-        "type": "github"
-      },
-      "original": {
-        "owner": "pinpox",
-        "repo": "opencrow",
-        "type": "github"
-      }
-    },
     "pyproject-build-systems": {
       "inputs": {
         "nixpkgs": [
@@ -897,7 +876,7 @@
         "nixpkgs": [
           "nixpkgs"
         ],
-        "treefmt-nix": "treefmt-nix_7"
+        "treefmt-nix": "treefmt-nix_6"
       },
       "locked": {
         "lastModified": 1770248736,
@@ -934,13 +913,12 @@
         "nixpkgs": "nixpkgs_2",
         "nixpkgs-triage": "nixpkgs-triage",
         "nixvim": "nixvim",
-        "opencrow": "opencrow",
         "rogue-talk": "rogue-talk",
         "sigexec": "sigexec",
         "spora": "spora",
         "stockholm": "stockholm",
         "tincr": "tincr",
-        "treefmt-nix": "treefmt-nix_8",
+        "treefmt-nix": "treefmt-nix_7",
         "wrappers": "wrappers"
       }
     },
@@ -1243,27 +1221,6 @@
     "treefmt-nix_6": {
       "inputs": {
         "nixpkgs": [
-          "opencrow",
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "lastModified": 1773297127,
-        "narHash": "sha256-6E/yhXP7Oy/NbXtf1ktzmU8SdVqJQ09HC/48ebEGBpk=",
-        "owner": "numtide",
-        "repo": "treefmt-nix",
-        "rev": "71b125cd05fbfd78cab3e070b73544abe24c5016",
-        "type": "github"
-      },
-      "original": {
-        "owner": "numtide",
-        "repo": "treefmt-nix",
-        "type": "github"
-      }
-    },
-    "treefmt-nix_7": {
-      "inputs": {
-        "nixpkgs": [
           "rogue-talk",
           "nixpkgs"
         ]
@@ -1282,7 +1239,7 @@
         "type": "github"
       }
     },
-    "treefmt-nix_8": {
+    "treefmt-nix_7": {
       "inputs": {
         "nixpkgs": [
           "nixpkgs"
