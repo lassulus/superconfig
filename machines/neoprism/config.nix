@@ -28,6 +28,7 @@
 
     ../../configs/hass/proxy.nix
     ../../configs/hermes-proxy.nix
+    ../../configs/crit-proxy.nix
 
     # sync-containers
     ../../configs/consul.nix

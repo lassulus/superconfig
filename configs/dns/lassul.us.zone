@@ -1,4 +1,5 @@
-@ 3600 IN SOA lassul.us. ns1.lassul.us. 2026100200 7200 3600 86400 3600
+; serial is ignored: knot loads this file with zonefile-load = difference-no-serial and serial-policy = dateserial (configs/dns/knot.nix) and bumps the served serial itself, so never edit it
+@ 3600 IN SOA lassul.us. ns1.lassul.us. 1 7200 3600 86400 3600
 
 ;;@ 3600 IN NS ns1
 @ 3600 IN NS ns1
@@ -60,6 +61,9 @@ id IN CNAME neoprism
 where.is IN CNAME neoprism
 parley IN CNAME neoprism
 review IN CNAME neoprism
+*.review IN CNAME neoprism
+;; DNS-01 for the *.review wildcard cert, dynamic zone in knot.nix
+_acme-challenge.review IN NS ns1
 when IN CNAME neoprism
 
 ;; Mail
