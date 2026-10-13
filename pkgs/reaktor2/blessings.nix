@@ -6,23 +6,25 @@
   fetchgit,
   hspec,
   lib,
+  mono-traversable,
   QuickCheck,
   text,
   wcwidth,
 }:
 mkDerivation {
   pname = "blessings";
-  version = "2.5.0";
+  version = "2.6.0";
   src = fetchgit {
     url = "https://cgit.krebsco.de/blessings";
-    sha256 = "1spwm4xjz72c76wkkxxxbvxpgkxam344iwq37js5lhfbb2hbjqbx";
-    rev = "8f9b20f3aa93f7fbba9d24de7732f4cca0119154";
+    sha256 = "sha256-UO1DP6MbKfypKNRUyRfnksaeawje9nUkVZU3ApzIEhI=";
+    rev = "35854c8df0c97ad99325f1bf3837d1e7efdaf21e";
     fetchSubmodules = true;
   };
   libraryHaskellDepends = [
     base
     bytestring
     extra
+    mono-traversable
     text
     wcwidth
   ];

@@ -86,4 +86,5 @@ mkDerivation {
   ];
   license = lib.licenses.mit;
   mainProgram = "reaktor";
+  passthru.updateScript = ./update.sh;
 }
