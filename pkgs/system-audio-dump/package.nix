@@ -4,11 +4,12 @@
   swift,
   swiftpm,
   swiftPackages,
+  nix-update-script,
 }:
 
 swiftPackages.stdenv.mkDerivation {
   pname = "system-audio-dump";
-  version = "0-unstable-2025-09-02";
+  version = "1-unstable-2025-09-01";
 
   src = fetchFromGitHub {
     owner = "sohzm";
@@ -46,6 +47,13 @@ swiftPackages.stdenv.mkDerivation {
     cp .build/release/SystemAudioDump $out/bin/system-audio-dump
     runHook postInstall
   '';
+
+  passthru.updateScript = nix-update-script {
+    extraArgs = [
+      "--flake"
+      "--version=branch"
+    ];
+  };
 
   meta = {
     description = "macOS CLI that captures system audio and outputs raw PCM to stdout";
