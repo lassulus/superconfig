@@ -2,6 +2,7 @@
   lib,
   appimageTools,
   fetchurl,
+  nix-update-script,
 }:
 
 let
@@ -17,6 +18,14 @@ let
 in
 appimageTools.wrapType2 {
   inherit pname version src;
+
+  passthru.updateScript = nix-update-script {
+    extraArgs = [
+      "--flake"
+      "--system"
+      "x86_64-linux"
+    ];
+  };
 
   extraInstallCommands = ''
     install -Dm444 "${appimageContents}/ZMK Studio.desktop" $out/share/applications/zmk-studio.desktop
