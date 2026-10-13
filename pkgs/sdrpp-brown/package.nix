@@ -3,6 +3,7 @@
   lib,
   fetchFromGitHub,
   fetchurl,
+  nix-update-script,
   cmake,
   pkg-config,
   unzip,
@@ -14,6 +15,7 @@
   volk,
   zstd,
   libpulseaudio,
+  orc,
 
   # Sources
   airspy_source ? true,
@@ -90,18 +92,23 @@ let
   etsiCodec = fetchurl {
     url = "http://www.etsi.org/deliver/etsi_en/300300_300399/30039502/01.03.01_60/en_30039502v010301p0.zip";
     hash = "sha256-H+GMR3PIzLUu8jyltKCwhBs41U3dXZx9huuLBg8TLzk=";
+    # etsi.org answers 403 to curl's default user agent
+    curlOptsList = [
+      "-A"
+      "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+    ];
   };
 in
 stdenv.mkDerivation (_finalAttrs: {
   pname = "sdrpp-brown";
 
-  version = "0-unstable-2025-12-29";
+  version = "0-unstable-2026-08-12";
 
   src = fetchFromGitHub {
     owner = "sannysanoff";
     repo = "SDRPlusPlusBrown";
-    rev = "f0feccfb10a9a102255c771ec3f5923c6f58ad9e";
-    hash = "sha256-2DeDWoWRTv6lcF+DQyaVx2oJsjlGsUf88MrF3+7T6Ew=";
+    rev = "5fca05446b3f985ab49c7c3c257980aaf2ec34fe";
+    hash = "sha256-CYiw61DaosK7xMpCmwjy18AEcASJgsIhI+T4NtsLUrM=";
   };
 
   nativeBuildInputs = [
@@ -117,6 +124,7 @@ stdenv.mkDerivation (_finalAttrs: {
     fftwFloat
     volk
     zstd
+    orc
   ]
   ++ lib.optional stdenv.hostPlatform.isLinux libX11
   ++ lib.optional stdenv.hostPlatform.isLinux libpulseaudio
@@ -207,6 +215,17 @@ stdenv.mkDerivation (_finalAttrs: {
   env.NIX_CFLAGS_COMPILE = "-fpermissive";
 
   hardeningDisable = lib.optional stdenv.cc.isClang "format";
+
+  passthru.updateScript = nix-update-script {
+    extraArgs = [
+      "--flake"
+      "--version=branch"
+      "--version-regex"
+      "(0-unstable-.*)"
+      "--system"
+      "x86_64-linux"
+    ];
+  };
 
   meta = {
     description = "SDR++ Brown Edition - Cross-Platform SDR Software with KiwiSDR support";
