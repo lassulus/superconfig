@@ -59,7 +59,6 @@ sudo darwin-rebuild switch --flake .#barnacle
 
 # Access machines via SSH (as root, see below)
 ssh root@<machine-name>.r  # via retiolum
-ssh root@<machine-name>.s  # via spora
 torify ssh root@$(pass show machines/<machine-name>/tor-hostname)  # via tor
 ```
 
@@ -84,7 +83,7 @@ all remotes (origin, HTTPS via gh credentials, pair) and all branches.
 ## Machine Facts and Secrets via vars
 
 - SSH public keys
-- Network identities (retiolum, mycelium, zerotier)
+- Network identities (retiolum, zerotier)
 - Syncthing IDs
 - DKIM keys (for mail servers)
 

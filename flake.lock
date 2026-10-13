@@ -687,7 +687,6 @@
         "nixpkgs-triage": "nixpkgs-triage",
         "nixvim": "nixvim",
         "sigexec": "sigexec",
-        "spora": "spora",
         "tincr": "tincr",
         "treefmt-nix": "treefmt-nix_4",
         "wrappers": "wrappers"
@@ -748,26 +747,6 @@
       "original": {
         "owner": "Mic92",
         "repo": "sops-nix",
-        "type": "github"
-      }
-    },
-    "spora": {
-      "inputs": {
-        "nixpkgs": [
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "lastModified": 1712264007,
-        "narHash": "sha256-E1G8CeBMBJe5k8caBYtJiAS65AQqgE4Lx6XvUnAi+YM=",
-        "owner": "krebs",
-        "repo": "spora",
-        "rev": "93cb4d17a6d3c224027c4f4538ce1fb3d805b76e",
-        "type": "github"
-      },
-      "original": {
-        "owner": "krebs",
-        "repo": "spora",
         "type": "github"
       }
     },

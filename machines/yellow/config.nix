@@ -18,12 +18,6 @@ in
     ../../configs/services/archiver-bot.nix
   ];
 
-  # we need to configure another port for the mycelium admin interface, because it conflicts with sonarr.
-  services.mycelium.extraArgs = [
-    "--api-addr"
-    "127.0.0.1:9898"
-  ];
-
   services.transmission.settings.peer-port = torrentport;
 
   lass.sync-containers3.inContainer = {

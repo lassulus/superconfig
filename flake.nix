@@ -49,10 +49,6 @@
 
     nixos-hardware.url = "github:nixos/nixos-hardware";
 
-    spora.url = "github:krebs/spora";
-    # spora.url = "git+file:/home/lass/src/spora";
-    spora.inputs.nixpkgs.follows = "nixpkgs";
-
     nix-rosetta-builder.url = "github:cpick/nix-rosetta-builder";
     nix-rosetta-builder.inputs.nixpkgs.follows = "nixpkgs";
 

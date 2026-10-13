@@ -69,7 +69,7 @@
         };
       }
       {
-        # styx (et0), ex-router: mycelium peer
+        # styx (et0), ex-router
         dhcpServerStaticLeaseConfig = {
           Address = "10.42.0.3";
           MACAddress = "3c:7c:3f:7e:e2:39";
