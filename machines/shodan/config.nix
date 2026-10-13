@@ -7,7 +7,6 @@
     ../../configs/desktops/qtile/nixos.nix
     ../../configs/pipewire.nix
     ../../configs/network-manager.nix
-    ../../configs/yellow-mounts/samba.nix
     ../../configs/consul.nix
     ../../configs/snapclient.nix
     ../../configs/gg23/audio/room.nix

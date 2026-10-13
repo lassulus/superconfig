@@ -14,7 +14,6 @@
     ../../configs/games.nix
     ../../configs/steam.nix
     ../../configs/wine.nix
-    ../../configs/yellow-mounts/samba.nix
     ../../configs/review.nix
     ../../configs/sigexec/executor.nix
     ../../configs/rad.nix

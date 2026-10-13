@@ -24,7 +24,6 @@
     # ../../configs/games.nix
     ../../configs/steam.nix
     # ../../configs/wine.nix
-    ../../configs/yellow-mounts/samba.nix
     ../../configs/pass.nix
     ../../configs/mail.nix
     ../../configs/printing
