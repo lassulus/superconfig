@@ -6,27 +6,9 @@
   autoPatchelfHook,
 }:
 let
-  version = "0.3.44";
-
-  # Platform-specific wheels
-  wheels = {
-    "x86_64-linux" = {
-      url = "https://files.pythonhosted.org/packages/py3/v/vosk/vosk-${version}-py3-none-manylinux_2_12_x86_64.manylinux2010_x86_64.whl";
-      hash = "sha256-JlLvITxMeAfcQK8eeqV43Mz8TcQZKCKia8RalZG8v3Y=";
-    };
-    "aarch64-linux" = {
-      url = "https://files.pythonhosted.org/packages/py3/v/vosk/vosk-${version}-py3-none-manylinux2014_aarch64.whl";
-      hash = "sha256-mZW3+lQ0sTS0vQmJfiSQ28VhFcKtKUPAMGIeEMcDezQ=";
-    };
-    "x86_64-darwin" = {
-      url = "https://files.pythonhosted.org/packages/py3/v/vosk/vosk-${version}-py3-none-macosx_10_6_universal2.whl";
-      hash = "sha256-Ap0LPWpc/4dMV1uKWBSkzM+zdgjP9S6EbAKoxnqIKAE=";
-    };
-    "aarch64-darwin" = {
-      url = "https://files.pythonhosted.org/packages/py3/v/vosk/vosk-${version}-py3-none-macosx_10_6_universal2.whl";
-      hash = "sha256-Ap0LPWpc/4dMV1uKWBSkzM+zdgjP9S6EbAKoxnqIKAE=";
-    };
-  };
+  # Per-platform wheels; versions can differ because upstream stopped shipping
+  # macOS wheels after 0.3.44. Maintained by ./update.sh.
+  wheels = lib.importJSON ./wheels.json;
 
   wheel =
     wheels.${stdenv.hostPlatform.system}
@@ -34,16 +16,18 @@ let
 in
 python3Packages.buildPythonPackage {
   pname = "vosk";
-  inherit version;
+  inherit (wheel) version;
   format = "wheel";
 
   src = fetchurl {
-    inherit (wheel) url hash;
+    url = "https://files.pythonhosted.org/packages/py3/v/vosk/vosk-${wheel.version}-py3-none-${wheel.tag}.whl";
+    inherit (wheel) hash;
   };
 
-  nativeBuildInputs = [ autoPatchelfHook ];
+  # Only the Linux wheels ship ELF libraries; the macOS one is Mach-O.
+  nativeBuildInputs = lib.optionals stdenv.hostPlatform.isLinux [ autoPatchelfHook ];
 
-  buildInputs = [ stdenv.cc.cc.lib ];
+  buildInputs = lib.optionals stdenv.hostPlatform.isLinux [ stdenv.cc.cc.lib ];
 
   dependencies = with python3Packages; [
     cffi
@@ -57,6 +41,8 @@ python3Packages.buildPythonPackage {
   doCheck = false;
 
   pythonImportsCheck = [ "vosk" ];
+
+  passthru.updateScript = ./update.sh;
 
   meta = {
     description = "Offline speech recognition API based on Kaldi and Vosk";

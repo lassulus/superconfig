@@ -1,0 +1,22 @@
+{
+  "x86_64-linux": {
+    "version": "0.3.45",
+    "tag": "manylinux_2_12_x86_64.manylinux2010_x86_64",
+    "hash": "sha256-JeAlCTxDmdcnj1Q1aO2MxUYKw6S/SMI2c6zh4l0mYZ8="
+  },
+  "aarch64-linux": {
+    "version": "0.3.45",
+    "tag": "manylinux2014_aarch64",
+    "hash": "sha256-VO+0fdiQ5UTp4g8DFkE6zsf4aA0E7AlcYUCrTnAmJwQ="
+  },
+  "x86_64-darwin": {
+    "version": "0.3.44",
+    "tag": "macosx_10_6_universal2",
+    "hash": "sha256-Ap0LPWpc/4dMV1uKWBSkzM+zdgjP9S6EbAKoxnqIKAE="
+  },
+  "aarch64-darwin": {
+    "version": "0.3.44",
+    "tag": "macosx_10_6_universal2",
+    "hash": "sha256-Ap0LPWpc/4dMV1uKWBSkzM+zdgjP9S6EbAKoxnqIKAE="
+  }
+}
