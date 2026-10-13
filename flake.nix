@@ -92,9 +92,6 @@
     nixpkgs-triage.url = "github:Lassulus/nixpkgs-triage";
     nixpkgs-triage.inputs.nixpkgs.follows = "nixpkgs";
 
-    rogue-talk.url = "github:rogue-talk/rogue-talk";
-    rogue-talk.inputs.nixpkgs.follows = "nixpkgs";
-
     wrappers.url = "github:lassulus/wrappers";
     # wrappers.url = "git+file:/home/lass/src/wrappers";
     wrappers.inputs.nixpkgs.follows = "nixpkgs";

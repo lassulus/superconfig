@@ -871,27 +871,6 @@
         "type": "github"
       }
     },
-    "rogue-talk": {
-      "inputs": {
-        "nixpkgs": [
-          "nixpkgs"
-        ],
-        "treefmt-nix": "treefmt-nix_6"
-      },
-      "locked": {
-        "lastModified": 1770248736,
-        "narHash": "sha256-IpDBWMgByQpKnIJUrBgOHJLQwqgOFSA3Ne+9QwjXiZ8=",
-        "owner": "rogue-talk",
-        "repo": "rogue-talk",
-        "rev": "54c24e15b0b30e811012aa6d0d11e8523a970888",
-        "type": "github"
-      },
-      "original": {
-        "owner": "rogue-talk",
-        "repo": "rogue-talk",
-        "type": "github"
-      }
-    },
     "root": {
       "inputs": {
         "clan-core": "clan-core",
@@ -913,12 +892,11 @@
         "nixpkgs": "nixpkgs_2",
         "nixpkgs-triage": "nixpkgs-triage",
         "nixvim": "nixvim",
-        "rogue-talk": "rogue-talk",
         "sigexec": "sigexec",
         "spora": "spora",
         "stockholm": "stockholm",
         "tincr": "tincr",
-        "treefmt-nix": "treefmt-nix_7",
+        "treefmt-nix": "treefmt-nix_6",
         "wrappers": "wrappers"
       }
     },
@@ -1219,27 +1197,6 @@
       }
     },
     "treefmt-nix_6": {
-      "inputs": {
-        "nixpkgs": [
-          "rogue-talk",
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "lastModified": 1769691507,
-        "narHash": "sha256-8aAYwyVzSSwIhP2glDhw/G0i5+wOrren3v6WmxkVonM=",
-        "owner": "numtide",
-        "repo": "treefmt-nix",
-        "rev": "28b19c5844cc6e2257801d43f2772a4b4c050a1b",
-        "type": "github"
-      },
-      "original": {
-        "owner": "numtide",
-        "repo": "treefmt-nix",
-        "type": "github"
-      }
-    },
-    "treefmt-nix_7": {
       "inputs": {
         "nixpkgs": [
           "nixpkgs"

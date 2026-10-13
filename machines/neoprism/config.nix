@@ -14,11 +14,6 @@
     ../../configs/monitoring/telegraf.nix
     ../../configs/pair-programming.nix
     ../../configs/nginx.nix
-    # Disabled: on nixpkgs 151fa4e rogue-talk's python312 closure needs
-    # python3.12-anyio-4.14.2, whose test_tls_connectable fails and which
-    # Hydra has not cached. Re-enable once that builds again.
-    # ../../configs/rogue-talk.nix
-
     ../../configs/services/matrix
     ../../configs/services/matrix/proxy.nix
     ../../configs/services/matrix/cinny.nix
