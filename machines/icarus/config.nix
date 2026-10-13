@@ -10,6 +10,7 @@
     ../../configs/pipewire.nix
     ../../configs/network-manager.nix
     ../../configs/snapclient.nix
+    ../../configs/gg23/audio/room.nix
     ../../configs/consul.nix
     ../../configs/autoupdate.nix
     ../../configs/sigexec/executor.nix

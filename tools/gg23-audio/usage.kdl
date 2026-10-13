@@ -1,0 +1,3 @@
+bin "gg23-audio"
+about "Send audio to the gg23 audio hub on acheron via ROC until Ctrl-C"
+long_about "Loads ROC sink roc-gg23 into pipewire-pulse and makes it the default sink. Ctrl-C / SIGTERM unloads it and restores the previous default sink."

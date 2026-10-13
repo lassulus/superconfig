@@ -10,6 +10,7 @@
     ../../configs/yellow-mounts/samba.nix
     ../../configs/consul.nix
     ../../configs/snapclient.nix
+    ../../configs/gg23/audio/room.nix
     ../../configs/sigexec/executor.nix
     ../../configs/rad.nix
     ../../configs/phonetpm-ssh.nix

@@ -10,6 +10,7 @@
     ../../configs/gg23.nix
     ../../configs/hass
     ../../configs/snapserver.nix
+    ../../configs/gg23/audio/hub.nix
   ];
 
   services.earlyoom.enable = true;
