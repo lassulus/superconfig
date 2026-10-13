@@ -17,6 +17,8 @@
           self.packages.${system}.age-plugin-gpg
           self.packages.${system}.pass-otp
           self.packages.${system}.age-detect
+          # age-plugin-phone: encrypts to the phonetpm recipient, decrypts via the daemon
+          self.packages.${system}.phonetpm
         ]
         ++ (pkgs.lib.optionals pkgs.stdenv.isLinux [
           self.packages.${system}.pinentry-rofi-age
