@@ -7,17 +7,18 @@
   pkg-config,
   libpulseaudio,
   alsa-lib,
+  nix-update-script,
 }:
 
-stdenv.mkDerivation {
+stdenv.mkDerivation (finalAttrs: {
   pname = "dectalk";
-  version = "0-unstable-2025-10-27";
+  version = "0-unstable-2026-10-08";
 
   src = fetchFromGitHub {
     owner = "dectalk";
     repo = "dectalk";
-    rev = "c3c1e4ae4117f951d8d7f9ef2848408ec79047fd";
-    hash = "sha256-28d8/LLxtkfjBLRz8jH6xGf16koxMZqm2h67bAey4qg=";
+    rev = "986ea12ec8dac85881394d7bd7daf1f1d5098b9a";
+    hash = "sha256-/6IaMJoTeIAXopqVdo65Tgi+Ldtw768lFK9RiBMFhY4=";
   };
 
   nativeBuildInputs = [
@@ -33,7 +34,9 @@ stdenv.mkDerivation {
 
   postPatch = ''
     # Replace git version detection with static version since .git is not available
-    sed -i 's/m4_esyscmd_s(echo $(git describe --always)$(git status --porcelain | awk .*))/c3c1e4a/' src/configure.ac
+    sed -i 's/m4_esyscmd_s(echo $(git describe --always)$(git status --porcelain | awk .*))/${
+      builtins.substring 0 7 finalAttrs.src.rev
+    }/' src/configure.ac
   '';
 
   configurePhase = ''
@@ -79,6 +82,17 @@ stdenv.mkDerivation {
     runHook postInstall
   '';
 
+  passthru.updateScript = nix-update-script {
+    extraArgs = [
+      "--flake"
+      "--version-regex"
+      "(0-unstable-.*)"
+      "--version=branch"
+      "--system"
+      "x86_64-linux"
+    ];
+  };
+
   meta = {
     description = "Modern builds of the DECtalk text-to-speech engine";
     homepage = "https://github.com/dectalk/dectalk";
@@ -87,4 +101,4 @@ stdenv.mkDerivation {
     platforms = lib.platforms.linux;
     mainProgram = "say";
   };
-}
+})
