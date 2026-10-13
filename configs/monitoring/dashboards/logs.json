@@ -1,0 +1,46 @@
+{
+  "uid": "logs",
+  "title": "Logs explorer",
+  "schemaVersion": 39,
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "host",
+        "type": "custom",
+        "query": "*",
+        "current": { "text": "*", "value": "*" }
+      },
+      {
+        "name": "unit",
+        "type": "custom",
+        "query": "*",
+        "current": { "text": "*", "value": "*" }
+      },
+      {
+        "name": "search",
+        "type": "textbox",
+        "query": "*",
+        "current": { "text": "*", "value": "*" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "logs",
+      "title": "Journal",
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 24 },
+      "datasource": { "type": "victoriametrics-logs-datasource", "uid": "victorialogs" },
+      "options": { "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "instant",
+          "expr": "host:$host unit:$unit $search",
+          "maxLines": 1000
+        }
+      ]
+    }
+  ]
+}

@@ -11,7 +11,6 @@
     ../../configs/mailserver.nix
     ../../configs/snappymail.nix
     ../../configs/gsm-wiki.nix
-    ../../configs/monitoring/telegraf.nix
     ../../configs/pair-programming.nix
     ../../configs/nginx.nix
     ../../configs/services/matrix

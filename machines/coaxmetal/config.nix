@@ -21,6 +21,7 @@
     ../../configs/orca/ide.nix
     ../../configs/orca/server.nix
     ../../configs/crit.nix
+    ../../configs/monitoring/server.nix
     ./strom.nix
     ./hermes.nix
     ./hermes-voice.nix
