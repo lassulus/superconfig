@@ -17,6 +17,10 @@ rustPlatform.buildRustPackage (finalAttrs: {
     hash = "sha256-HfCl+YAjKPNFtLAHjNyjlHhRxD85qZLWsfKzqORtj5U=";
   };
 
+  # Encrypt to keys that are only in the gpg keyring (no secret key or
+  # smartcard stub in gpg-agent), e.g. on hosts generating clan vars.
+  patches = [ ./keyring-fallback.patch ];
+
   cargoLock = {
     lockFile = "${finalAttrs.src}/Cargo.lock";
   };

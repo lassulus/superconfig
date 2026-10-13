@@ -1,0 +1,86 @@
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -238,7 +238,7 @@
+ 			})?;
+
+ 		let v = Handle::current()
+-			.block_on(fetch_key(&mut self.agent, keygrip))
++			.block_on(fetch_recipient_key(&mut self.agent, keygrip))
+ 			.map_err(|e| RecipientError::Recipient {
+ 				index,
+ 				message: format!("failed to fetch recipient key by keygrip: {e}"),
+@@ -337,6 +337,65 @@
+ 	let key = parse_public_key(key)?;
+ 	Ok(key)
+ }
++/// Encryption only needs the public key, which gpg-agent doesn't know unless
++/// the secret key (or a smartcard stub) is available. Fall back to the gpg
++/// keyring in that case.
++async fn fetch_recipient_key(
++	agent: &mut Agent,
++	keygrip: Keygrip,
++) -> Result<Key<PublicParts, UnspecifiedRole>> {
++	match fetch_key(agent, keygrip.clone()).await {
++		Ok(key) => Ok(key),
++		Err(agent_err) => fetch_key_from_keyring(&keygrip)
++			.map_err(|e| anyhow!("{agent_err}; gpg keyring: {e}")),
++	}
++}
++/// Exports the key by keygrip with gpg and builds the same S-expression
++/// READKEY would return, so the resulting key is identical to the agent path.
++fn fetch_key_from_keyring(keygrip: &Keygrip) -> Result<Key<PublicParts, UnspecifiedRole>> {
++	use sequoia_openpgp::cert::CertParser;
++	use sequoia_openpgp::parse::Parse as _;
++
++	let out = std::process::Command::new("gpg")
++		.args(["--batch", "--export"])
++		.arg(format!("&{keygrip}"))
++		.stderr(std::process::Stdio::null())
++		.output()
++		.context("failed to run gpg")?;
++	ensure!(out.status.success(), "gpg --export failed: {}", out.status);
++	ensure!(!out.stdout.is_empty(), "key not found");
++
++	let s = |v: &[u8]| Sexp::String(String_::new(v));
++	let l = |v: Vec<Sexp>| Sexp::List(v);
++	for cert in CertParser::from_bytes(&out.stdout)? {
++		for ka in cert?.keys() {
++			let mpis = ka.key().mpis();
++			if Keygrip::of(mpis).ok().as_ref() != Some(keygrip) {
++				continue;
++			}
++			let alg = match mpis {
++				PublicKey::RSA { e, n } => l(vec![
++					s(b"rsa"),
++					l(vec![s(b"n"), s(n.value())]),
++					l(vec![s(b"e"), s(e.value())]),
++				]),
++				PublicKey::ECDH {
++					curve: Curve::Cv25519,
++					q,
++					..
++				} => l(vec![
++					s(b"ecc"),
++					l(vec![s(b"curve"), s(b"Curve25519")]),
++					l(vec![s(b"flags"), s(b"djb-tweak")]),
++					l(vec![s(b"q"), s(q.value())]),
++				]),
++				_ => bail!("unsupported key algorithm: {}", ka.key().pk_algo()),
++			};
++			return parse_public_key(l(vec![s(b"public-key"), alg]));
++		}
++	}
++	bail!("key not found")
++}
+ async fn fetch_keypair(agent: &mut Agent, keygrip: Keygrip) -> Result<KeyPair> {
+ 	let key = fetch_key(agent, keygrip).await?;
+
+@@ -368,7 +427,7 @@
+ 				let keygripid: Keygrip = keygrip.parse()?;
+ 				let keygripbytes = hex::decode(keygripid.to_string()).expect("keygrip is hex");
+
+-				Handle::current().block_on(fetch_key(&mut agent, keygripid))?;
++				Handle::current().block_on(fetch_recipient_key(&mut agent, keygripid))?;
+
+ 				println!(
+ 					"{}",
