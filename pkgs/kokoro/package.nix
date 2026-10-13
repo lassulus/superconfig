@@ -20,6 +20,10 @@ let
         patches = (old.patches or [ ]) ++ [
           ./stdout-support.patch
         ];
+        passthru = (old.passthru or { }) // {
+          # Bumps kokoro (main branch) and the spacy model wheel together.
+          updateScript = ./update.sh;
+        };
       });
       # Spacy model - downloaded and packaged as a python package
       spacy-en-core-web-sm = final.buildPythonPackage rec {
