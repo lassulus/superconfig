@@ -30,7 +30,6 @@
     ../../configs/crit-proxy.nix
 
     # sync-containers
-    ../../configs/consul.nix
     ../../configs/services/flix/container-host.nix
     ../../configs/services/radio/container-host.nix
     ../../configs/orange-host.nix

@@ -13,7 +13,6 @@
     ../../configs/syncthing.nix
     ../../configs/ppp/umts-stick.nix
     ../../configs/snapclient.nix
-    ../../configs/consul.nix
     ../../configs/monitoring/server.nix
   ];
 

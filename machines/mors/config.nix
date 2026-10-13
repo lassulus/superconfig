@@ -22,7 +22,6 @@
     ../../configs/rtl-sdr.nix
     ../../configs/printing
     ../../configs/network-manager.nix
-    ../../configs/consul.nix
     ../../configs/networkd.nix
     ../../configs/autotether.nix
     ../../configs/autoupdate.nix
