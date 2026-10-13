@@ -63,9 +63,6 @@
     # le_menu.url = "git+file:/home/lass/src/le_menu";
     le_menu.inputs.nixpkgs.follows = "nixpkgs";
 
-    extra-container.url = "github:erikarvstedt/extra-container";
-    extra-container.inputs.nixpkgs.follows = "nixpkgs";
-
     llm-agents.url = "github:numtide/llm-agents.nix";
     llm-agents.inputs.nixpkgs.follows = "nixpkgs";
 
@@ -249,17 +246,6 @@
       # data-mesher or dm-dns, so an empty module stands in for it.
       flake.nixosModules.data-mesher = { };
 
-      # Container configurations for use with extra-container
-      # Auto-discovers machines with container.nix
-      flake.containerConfigurations =
-        nixpkgs.lib.mapAttrs
-          (machineName: _: import ./machines/${machineName}/container.nix { inherit self; })
-          (
-            nixpkgs.lib.filterAttrs (
-              machineName: _: builtins.pathExists ./machines/${machineName}/container.nix
-            ) (builtins.readDir ./machines)
-          );
-
       perSystem =
         {
           lib,
@@ -286,76 +272,7 @@
               };
             };
             clan-cli = clan-core.packages.${system}.clan-cli;
-          }
-          // lib.mapAttrs' (
-            name: containerConfig:
-            lib.nameValuePair "container-${name}" (
-              inputs.extra-container.lib.buildContainers {
-                inherit system;
-                nixpkgs = inputs.nixpkgs;
-                config = {
-                  # Workaround: extra-container's minimal module set doesn't
-                  # include nixos-init.nix, but systemd.nix now references
-                  # config.system.nixos-init.package for env-generator.
-                  # Provide a dummy option until extra-container is updated.
-
-                  imports = [
-                    (
-                      { pkgs, lib, ... }:
-                      {
-                        options.system.nixos-init.package = lib.mkPackageOption pkgs "nixos-init" { };
-                        options.time.timeZone = lib.mkOption {
-                          type = lib.types.nullOr lib.types.str;
-                          default = null;
-                          description = "Dummy option for extra-container compatibility";
-                        };
-                        options.services.openssh = {
-                          enable = lib.mkOption {
-                            type = lib.types.bool;
-                            default = false;
-                            description = "Dummy option for extra-container compatibility";
-                          };
-                          package = lib.mkPackageOption pkgs "openssh" { };
-                        };
-                        # systemd.nix sets environment.variables.SYSTEMD_XKB_DIRECTORY,
-                        # but the minimal module set omits config/system-environment.nix
-                        # which declares the option.
-                        options.environment.variables = lib.mkOption {
-                          type = lib.types.attrsOf lib.types.anything;
-                          default = { };
-                          description = "Dummy option for extra-container compatibility";
-                        };
-                        # systemd.nix reads config.i18n.imperativeLocale, but the
-                        # minimal module set omits config/i18n.nix which declares it.
-                        options.i18n.imperativeLocale = lib.mkOption {
-                          type = lib.types.bool;
-                          default = true;
-                          description = "Dummy option for extra-container compatibility";
-                        };
-                        # nixos-containers.nix reads config.nix.enable and
-                        # config.nix.daemon.enable for the /nix/var/nix bind
-                        # mounts, but the minimal module set omits
-                        # config/nix.nix which declares them.
-                        options.nix = {
-                          enable = lib.mkOption {
-                            type = lib.types.bool;
-                            default = true;
-                            description = "Dummy option for extra-container compatibility";
-                          };
-                          daemon.enable = lib.mkOption {
-                            type = lib.types.bool;
-                            default = true;
-                            description = "Dummy option for extra-container compatibility";
-                          };
-                        };
-                      }
-                    )
-                  ];
-                  containers.${name} = containerConfig;
-                };
-              }
-            )
-          ) self.containerConfigurations;
+          };
           devShells.default = pkgs.mkShell {
             packages = [
               self.packages.${pkgs.system}.pass
