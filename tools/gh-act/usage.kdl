@@ -1,4 +1,0 @@
-bin "gh-act"
-about "Run GitHub Actions workflow steps locally"
-
-arg "[workflow]" help="Path to workflow YAML file (default: .github/workflows/ci.yml)"

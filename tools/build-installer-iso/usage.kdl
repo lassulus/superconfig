@@ -1,8 +1,0 @@
-bin "build-installer-iso"
-about "Build a NixOS installer ISO with custom configuration"
-
-flag "-o --output <file>" help="Output ISO file (default: installer.iso)"
-flag "-a --arch <arch>" help="Architecture: x86_64-linux or aarch64-linux (default: x86_64-linux)"
-flag "-c --config <dir>" help="Configuration directory containing installer-config.json and files/"
-flag "-f --flake <url>" help="Flake URL to install automatically"
-flag "-h --help" help="Show help message"
