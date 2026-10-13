@@ -6,16 +6,17 @@
 # Runners can't reach each other, so every hop goes through an iroh tunnel
 # (dumbpipe) that ends on 127.0.0.1 on both sides:
 #
-#   farm job                                   worker job i
-#   client ─► envoy :50051                     daemon :5100 (builder)
-#               ├─► daemon :50052 ◄─ iroh ─ :5101 scheduler session
-#               └─► :511i ─────────── iroh ─► :5100 builds
-#   daemon :50052 (scheduler + builder)
+#   farm job                                   machine job i
+#   envoy :50051 ◄─────────────── iroh ─ :5103 ◄─ client (machine i)
+#     ├─► daemon :50052 ◄──────── iroh ─ :5101 scheduler session
+#     └─► :511i ───────────────── iroh ─► :5100 daemon (builder)
+#   daemon :50052 (scheduler)
 #
 # Every daemon and envoy present the same TLS identity (FARM_KEY with
 # farm.crt, SAN 127.0.0.1) and accept only it, as `trusted`. The iroh
 # endpoint keys are derived from FARM_KEY, so it is the only secret. Outputs
-# go to niks3 with the job's GitHub OIDC token.
+# go to niks3 with the job's GitHub OIDC token, before a build counts as
+# done, so a machine job can leave once its own machine is built.
 
 state=/tmp/ci-farm
 niks3_url=https://niks3.lassul.us
@@ -74,128 +75,137 @@ wait_http() {
   exit 1
 }
 
-# Workers appear in envoy's clusters once their session with the scheduler is
-# up. Their tunnels resolve the farm through iroh discovery, which takes a
-# while after the farm comes online, so give them time before handing out
-# work. Builds start anyway after the timeout, with whoever has joined.
-wait_workers() {
-  local want=$1 have=0
-  for _ in $(seq 60); do
-    have=$(curl -fs http://127.0.0.1:9901/clusters |
-      grep -cE '::127\.0\.0\.1:511[0-9]+::health_flags::healthy$' || true)
-    [ "$have" -ge "$want" ] && break
-    sleep 5
+# The jobs NAME... of this run have all finished. In a workflow called from
+# another (ci.yml) the API names them "<caller job> / NAME". Outside Actions
+# there are no jobs to watch: never.
+jobs_done() {
+  local jobs name
+  [ -n "${GITHUB_RUN_ID:-}" ] || return 1
+  jobs=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" \
+    --jq '.jobs[] | "\(.status) \(.name | sub("^.* / "; ""))"') || return 1
+  for name in "$@"; do
+    grep -qxF "completed $name" <<<"$jobs" || return 1
   done
-  echo "ci-farm: $have of $want workers joined"
 }
 
-# ci-farm farm ARG...: ARG is a NixOS machine of this flake (its toplevel is
-# built) or a /nix/store/….drv.
+# ci-farm farm MACHINE...: scheduler and balancer for the machine jobs
+# (builder i builds the i-th MACHINE), until they have all finished.
 farm() {
-  local workers=${FARM_WORKERS:?FARM_WORKERS: number of worker jobs}
-  IROH_SECRET=$(derive iroh-farm) dumbpipe listen-tcp --host 127.0.0.1:50052 &
-  for i in $(seq "$workers"); do
-    IROH_SECRET=$(derive "iroh-farm-dial-$i") \
-      dumbpipe connect-tcp --addr "127.0.0.1:$((5110 + i))" "$(ticket "worker-$i")" &
-  done
-  "${daemon[@]}" --role builder,scheduler --listen 127.0.0.1:50052 \
-    --advertise 127.0.0.1:50052 --worker-name farm &
+  local i port clusters
+  "${daemon[@]}" --role scheduler --listen 127.0.0.1:50052 2>"$state/daemon.log" &
+  local pid=$!
+  tail -f "$state/daemon.log" >&2 &
   envoy -c "$ENVOY_CONFIG" --log-level warn &
   wait_http http://127.0.0.1:9901/ready
-  wait_workers "$workers"
-
-  local store="grpc://127.0.0.1:50051?insecure=1&system=x86_64-linux"
-  declare -A builds=() evals=()
-  local failed=()
-  build() {
-    echo "ci-farm: $1: $2"
-    "$NIX_WITH_PLUGIN" build --no-link --print-out-paths --store "$store" --eval-store auto "$2^*" 2>&1 |
-      sed -u "s|^|[$1] |" &
-    builds[$1]=$!
-  }
-  # Waits for one eval, then starts its build.
-  eval_done() {
-    local pid status=0 arg
-    wait -n -p pid "${!evals[@]}" || status=$?
-    arg=${evals[$pid]}
-    unset "evals[$pid]"
-    if [ "$status" -eq 0 ]; then
-      build "$arg" "$(<"$state/$arg.drv")"
-    else
-      failed+=("$arg")
-    fi
-  }
-  for arg in "$@"; do
-    if [[ $arg == /nix/store/*.drv ]]; then
-      build "$arg" "$arg"
-      continue
-    fi
-    # One eval process per machine, at most 3 at a time: all hosts at once
-    # don't fit in 16 GB.
-    while [ ${#evals[@]} -ge 3 ]; do eval_done; done
-    nix eval --raw ".#nixosConfigurations.$arg.config.system.build.toplevel.drvPath" >"$state/$arg.drv" &
-    evals[$!]=$arg
+  # A daemon without the builder role schedules only once niks3 has made it
+  # the leader.
+  for _ in $(seq 60); do
+    grep -q event=scheduler_take_over "$state/daemon.log" && break
+    sleep 2
   done
-  while [ ${#evals[@]} -gt 0 ]; do eval_done; done
-
-  for arg in "${!builds[@]}"; do
-    wait "${builds[$arg]}" || failed+=("$arg")
-  done
-  if [ ${#failed[@]} -gt 0 ]; then
-    echo "ci-farm: failed: ${failed[*]}" >&2
+  if ! grep -q event=scheduler_take_over "$state/daemon.log"; then
+    echo "ci-farm: the scheduler did not get the lead from niks3" >&2
     exit 1
   fi
-}
+  IROH_SECRET=$(derive iroh-farm) dumbpipe listen-tcp --host 127.0.0.1:50052 &
+  IROH_SECRET=$(derive iroh-lb) dumbpipe listen-tcp --host 127.0.0.1:50051 &
+  echo "ci-farm: the farm is up"
 
-# Outside Actions there is no farm job to watch: run until killed.
-farm_done() {
-  [ -n "${GITHUB_RUN_ID:-}" ] &&
-    [ "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs" \
-      --jq '.jobs[] | select(.name == "farm") | .status')" = completed ]
+  # Builder i shows up in envoy's clusters once its scheduler session is up,
+  # i.e. its own iroh endpoint is online. Only then dial it (a dialer started
+  # before the endpoint is discoverable never reaches it), and dial again
+  # when the tunnel dies or envoy's health checks fail through it for a
+  # minute.
+  declare -A dialers=() since=()
+  until jobs_done "$@"; do
+    kill -0 "$pid" || exit 1
+    clusters=$(curl -fs http://127.0.0.1:9901/clusters) || clusters=
+    for i in $(seq $#); do
+      port=$((5110 + i))
+      grep -qF "::127.0.0.1:$port::health_flags::" <<<"$clusters" || continue
+      if [ -n "${dialers[$i]:-}" ] && kill -0 "${dialers[$i]}" 2>/dev/null; then
+        if grep -qxE ".*::127\.0\.0\.1:$port::health_flags::healthy" <<<"$clusters"; then
+          since[$i]=$SECONDS
+          continue
+        fi
+        [ $((SECONDS - since[$i])) -lt 60 ] && continue
+        kill "${dialers[$i]}" 2>/dev/null || true
+      fi
+      IROH_SECRET=$(derive "iroh-farm-dial-$i") \
+        dumbpipe connect-tcp --addr "127.0.0.1:$port" "$(ticket "worker-$i")" &
+      dialers[$i]=$!
+      since[$i]=$SECONDS
+    done
+    sleep 15
+  done
 }
 
 # A dumbpipe dialer started before the farm is discoverable never reaches it,
-# not even once the farm is online. Probe with short-lived dialers until the
-# farm daemon answers a gRPC health check, then start the long-lived one.
+# not even once the farm is online. Probe PORT with short-lived dialers to
+# TICKET until it answers an HTTP/2 request over the farm's TLS, then leave
+# the long-lived dialer to the caller. Gives up once the farm job has
+# finished (checked every 2 minutes, the API is rate limited).
 wait_farm() {
-  for _ in $(seq 180); do
+  local port=$1 ticket=$2 probe n=0
+  while true; do
     IROH_SECRET=$(od -An -tx1 -N32 /dev/urandom | tr -d ' \n') \
-      dumbpipe connect-tcp --addr 127.0.0.1:5102 "$1" 2>/dev/null &
-    local probe=$!
+      dumbpipe connect-tcp --addr "127.0.0.1:$port" "$ticket" 2>/dev/null &
+    probe=$!
     sleep 3
     # Empty grpc.health.v1.HealthCheckRequest: 0 = uncompressed, 0 bytes.
-    if printf '\0\0\0\0\0' | curl -fs -o /dev/null --max-time 10 --http2 \
+    if printf '\0\0\0\0\0' | curl -s -o /dev/null --max-time 10 --http2 \
       -H 'content-type: application/grpc' -H 'te: trailers' --data-binary @- \
       --cacert "$FARM_CRT" --cert "$FARM_CRT" --key "$state/farm.key" \
-      https://127.0.0.1:5102/grpc.health.v1.Health/Check; then
-      kill "$probe"
+      "https://127.0.0.1:$port/grpc.health.v1.Health/Check"; then
+      kill "$probe" 2>/dev/null || true
       return
     fi
-    kill "$probe"
+    kill "$probe" 2>/dev/null || true
     sleep 5
+    n=$((n + 1))
+    if [ $((n % 15)) -eq 0 ] && jobs_done coordinator; then
+      echo "ci-farm: the farm did not come up" >&2
+      exit 1
+    fi
   done
-  echo "ci-farm: the farm did not come up" >&2
-  exit 1
 }
 
-worker() {
-  local i=${1:?worker index} farm
+# ci-farm machine INDEX NAME: builder INDEX of the farm (NAME is the farm's
+# INDEX-th MACHINE) while it builds the toplevel of NAME through the farm.
+# Leaves once that is done: draining finishes its running builds, whose
+# outputs are in niks3 then, and the scheduler hands the rest to the others.
+machine() {
+  local i=${1:?machine index} name=${2:?machine name} farm lb eval pid status=0
   farm=$(ticket farm)
+  lb=$(ticket lb)
+  nix eval --raw ".#nixosConfigurations.$name.config.system.build.toplevel.drvPath" >"$state/drv" &
+  eval=$!
   IROH_SECRET=$(derive "iroh-worker-$i") dumbpipe listen-tcp --host 127.0.0.1:5100 &
-  wait_farm "$farm"
+  wait_farm 5102 "$farm"
+  wait_farm 5104 "$lb"
   echo "ci-farm: the farm is up"
   IROH_SECRET=$(derive "iroh-worker-dial-$i") \
     dumbpipe connect-tcp --addr 127.0.0.1:5101 "$farm" &
+  IROH_SECRET=$(derive "iroh-worker-lb-$i") \
+    dumbpipe connect-tcp --addr 127.0.0.1:5103 "$lb" &
   "${daemon[@]}" --role builder --listen 127.0.0.1:5100 --scheduler 127.0.0.1:5101 \
-    --advertise "127.0.0.1:$((5110 + i))" --worker-name "worker-$i" &
-  local pid=$!
-  until farm_done; do
-    kill -0 "$pid" || exit 1
-    sleep 15
-  done
+    --advertise "127.0.0.1:$((5110 + i))" --worker-name "$name" &
+  pid=$!
+
+  if wait "$eval"; then
+    echo "ci-farm: $name: $(<"$state/drv")"
+    "$NIX_WITH_PLUGIN" build --no-link --print-out-paths --eval-store auto \
+      --store "grpc://127.0.0.1:5103?system=x86_64-linux&ca-cert=$FARM_CRT&client-cert=$FARM_CRT&client-key=$state/farm.key" \
+      "$(<"$state/drv")^*" || status=$?
+  else
+    status=$?
+  fi
+  [ "$status" -eq 0 ] || echo "ci-farm: $name failed" >&2
+
   # Drains: running builds finish and publish first.
-  kill -TERM "$pid"
+  kill -TERM "$pid" 2>/dev/null || true
   wait "$pid" || true
+  return "$status"
 }
 
 # ci-farm push PATH...: pushes the closures of PATH... to niks3, e.g. the
@@ -205,11 +215,11 @@ push() {
     --ignore-upstream-key cache.nixos.org-1 "$@"
 }
 
-cmd=${1:?usage: ci-farm farm MACHINE... | ci-farm worker INDEX | ci-farm push PATH...}
+cmd=${1:?usage: ci-farm farm MACHINE... | ci-farm machine INDEX NAME | ci-farm push PATH...}
 shift
 case $cmd in
 farm) farm "$@" ;;
-worker) worker "$@" ;;
+machine) machine "$@" ;;
 push) push "$@" ;;
 *)
   echo "ci-farm: unknown command $cmd" >&2

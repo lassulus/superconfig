@@ -8,18 +8,18 @@ name: update-pkgs
 #    packages on macOS), push update/<pkg> and open or refresh its PR.
 #    lock: `nix flake update`, pushed as update/flake-lock with its own PR.
 # 2. verify: for every open update/* PR, one after another (flake.lock
-#    first), rebase it onto the current master, build all machines with the
-#    farm (farm.yml) and run ci.yml on that commit, and squash-merge the PR
-#    only if both succeeded (master's ruleset requires the ci check). A
-#    commit that already has finished runs is not checked again, so a
-#    failing PR stays open until its branch or master changes.
+#    first), rebase it onto the current master, run ci.yml on that commit
+#    (it builds all machines with the farm) and squash-merge the PR only if
+#    it succeeded (master's ruleset requires its ci check). A commit that
+#    already has a finished run is not checked again, so a failing PR stays
+#    open until its branch or master changes.
 #
-# One PR at a time because the farm has a fixed endpoint and runs in a single
-# concurrency group, where GitHub keeps only one pending run.
+# One PR at a time: the farm builds one commit at a time anyway, and each PR
+# is rebased onto the master it gets merged into.
 #
 # Needs "Allow GitHub Actions to create and approve pull requests" in the repo
 # settings. Merges made with GITHUB_TOKEN don't trigger push workflows, so the
-# farm build of master after merging is dispatched here as well.
+# ci run (farm build) of master after merging is dispatched here as well.
 
 on:
   schedule:
@@ -37,7 +37,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
-  actions: write # dispatch and watch farm runs
+  actions: write # dispatch and watch ci runs
 
 concurrency:
   group: update-pkgs
@@ -210,8 +210,8 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           # Dispatched run of a workflow for a head commit: "<id> <status>
-          # <conclusion>" or empty. Cancelled runs don't count: a push to
-          # master replaced them.
+          # <conclusion>" or empty. Cancelled runs don't count: a newer run
+          # for the branch replaced them.
           dispatched_run() {
             gh run list -R "$repo" -w "$1" -b "$2" -e workflow_dispatch -L 20 \
               --json databaseId,headSha,status,conclusion \
@@ -242,9 +242,9 @@ jobs:
             gh run view "$id" -R "$repo" --json conclusion --jq .conclusion
           }
 
-          # Rebase a PR branch onto master, farm-build that commit and run
-          # ci.yml on it. Prints "<conclusion> <sha>"; conclusion is the farm
-          # run's, then ci's as "ci-<conclusion>", or "conflict" / "nostart".
+          # Rebase a PR branch onto master and run ci.yml (with the farm
+          # build) on that commit. Prints "<conclusion> <sha>"; conclusion is
+          # the ci run's, or "conflict" / "nostart".
           verify_pr() {
             local branch=$1 sha conclusion
             git fetch -q origin master "$branch"
@@ -258,18 +258,14 @@ jobs:
             if [ "$sha" != "$(git rev-parse "origin/$branch")" ]; then
               git push -q --force-with-lease="$branch:origin/$branch" origin "$branch" >&2
             fi
-            conclusion=$(run_workflow farm.yml "$branch" "$sha")
-            if [ "$conclusion" = success ]; then
-              conclusion=$(run_workflow ci.yml "$branch" "$sha")
-              [ "$conclusion" = success ] || conclusion="ci-$conclusion"
-            fi
+            conclusion=$(run_workflow ci.yml "$branch" "$sha")
             echo "$conclusion $sha"
           }
 
           # flake.lock first: every package PR is rebased onto the master it
           # gets merged into right before its build, so after the lock merge
           # the packages are built once, against the new lock, and the final
-          # farm run on master only hits the cache.
+          # ci run on master only hits the cache.
           prs=$(gh pr list -R "$repo" --state open --base master --limit 100 \
             --json number,headRefName \
             --jq '[.[] | select(.headRefName | startswith("update/"))]
@@ -279,13 +275,7 @@ jobs:
           while read -r pr branch <&3; do
             [ -n "$pr" ] || continue
             echo "::group::#$pr $branch"
-            # A push to master cancels a running verification; master has
-            # moved then, so rebase and build again.
-            for attempt in 1 2 3; do
-              read -r conclusion sha < <(verify_pr "$branch")
-              [ "$conclusion" = cancelled ] || break
-              echo "#$pr: farm run cancelled by a push to master (attempt $attempt)"
-            done
+            read -r conclusion sha < <(verify_pr "$branch")
             echo "#$pr: $conclusion"
             if [ "$conclusion" = success ] && [ "$AUTOMERGE" = true ]; then
               gh pr merge "$pr" -R "$repo" --squash --delete-branch --match-head-commit "$sha"
@@ -296,5 +286,5 @@ jobs:
 
           echo "merged update PRs: $merged"
           if [ "$merged" -gt 0 ]; then
-            gh workflow run farm.yml -R "$repo" --ref master
+            gh workflow run ci.yml -R "$repo" --ref master
           fi
