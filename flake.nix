@@ -105,11 +105,6 @@
     nixos-mailserver.url = "gitlab:simple-nixos-mailserver/nixos-mailserver";
     nixos-mailserver.inputs.nixpkgs.follows = "nixpkgs";
 
-    covibe.url = "git+https://git.geninf.io/Lassulus/covibe";
-    covibe.inputs.nixpkgs.follows = "nixpkgs";
-    # One omp revision (and one build) for covibe's sessions and llm.omp.
-    covibe.inputs.llm-agents.follows = "llm-agents";
-
     sigexec.url = "git+https://git.geninf.io/Lassulus/sigexec";
     sigexec.inputs.nixpkgs.follows = "nixpkgs";
 
