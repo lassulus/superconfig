@@ -1,8 +1,8 @@
 diff --git a/frontend/public/index.html b/frontend/public/index.html
-index a300a8a4..48cb0e61 100644
+index 19d37d75..20d2d18c 100644
 --- a/frontend/public/index.html
 +++ b/frontend/public/index.html
-@@ -1,21 +1,6 @@
+@@ -1,20 +1,6 @@
  <!DOCTYPE html>
  <html lang="en">
    <head>
@@ -20,11 +20,10 @@ index a300a8a4..48cb0e61 100644
 -      })(window, document, "script", "dataLayer", "GTM-M677X6V")
 -    </script>
 -    <!-- End Google Tag Manager -->
--    <script async src="https://cdn.fuseplatform.net/publift/tags/2/4241/fuse.js"></script>
  
      <meta charset="utf-8" />
      <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-@@ -59,16 +44,6 @@
+@@ -58,16 +44,6 @@
      />
    </head>
    <body>
@@ -42,10 +41,10 @@ index a300a8a4..48cb0e61 100644
        <strong
          >We're sorry but <%= htmlWebpackPlugin.options.title %> doesn't work
 diff --git a/frontend/src/App.vue b/frontend/src/App.vue
-index 176178b5..01469b17 100644
+index 0e022231..860c3221 100644
 --- a/frontend/src/App.vue
 +++ b/frontend/src/App.vue
-@@ -357,7 +357,10 @@ export default {
+@@ -329,7 +329,10 @@ export default {
            this.webviewDialog = true
            return
          }
@@ -58,7 +57,7 @@ index 176178b5..01469b17 100644
        } else {
          this.$router.push({ name: "sign-in" })
 diff --git a/frontend/src/components/Footer.vue b/frontend/src/components/Footer.vue
-index 35d9a6d5..ed818994 100644
+index 0a528125..cce8bad1 100644
 --- a/frontend/src/components/Footer.vue
 +++ b/frontend/src/components/Footer.vue
 @@ -30,7 +30,7 @@
@@ -70,60 +69,19 @@ index 35d9a6d5..ed818994 100644
                aria-label="GitHub"
                target="_blank"
                ><v-icon class="tw-text-white/80 hover:tw-text-white"
-diff --git a/frontend/src/components/home/Dashboard.vue b/frontend/src/components/home/Dashboard.vue
-index c56eebff..af75f247 100644
---- a/frontend/src/components/home/Dashboard.vue
-+++ b/frontend/src/components/home/Dashboard.vue
-@@ -8,7 +8,7 @@
-           Dashboard
-         </div>
-         <div
--          v-if="!isPremiumUser"
-+          v-if="enablePaywall && !isPremiumUser"
-           class="tw-flex tw-items-baseline tw-gap-2 tw-text-sm tw-font-normal tw-text-very-dark-gray"
-         >
-           <div>
-@@ -240,7 +240,13 @@ export default {
-   },
-   computed: {
-     ...mapGetters(["isPremiumUser"]),
--    ...mapState(["authUser", "events", "groupsEnabled", "folders"]),
-+    ...mapState([
-+      "authUser",
-+      "events",
-+      "groupsEnabled",
-+      "folders",
-+      "enablePaywall",
-+    ]),
-     orderedFolders() {
-       return this.folders.sort((a, b) => {
-         return a.name.localeCompare(b.name)
 diff --git a/frontend/src/components/schedule_overlap/ScheduleOverlap.vue b/frontend/src/components/schedule_overlap/ScheduleOverlap.vue
-index 1e028082..d7377fa3 100644
+index cee7fb53..848f48a6 100644
 --- a/frontend/src/components/schedule_overlap/ScheduleOverlap.vue
 +++ b/frontend/src/components/schedule_overlap/ScheduleOverlap.vue
-@@ -1048,6 +1048,7 @@ import {
-   isPremiumUser,
+@@ -1033,6 +1033,7 @@ import {
+   timeNumToTimeString,
    prefersStartOnMonday,
  } from "@/utils"
 +import { buildIcs, downloadIcs } from "@/utils/ics_utils"
  import {
    availabilityTypes,
    calendarOptionsDefaults,
-@@ -1250,11 +1251,7 @@ export default {
-     ...mapState(["authUser", "overlayAvailabilitiesEnabled"]),
-     ...mapGetters(["isPremiumUser"]),
-     showAds() {
--      return (
--        !this.ownerIsPremium &&
--        !this.isPremiumUser &&
--        this.state !== this.states.SET_SPECIFIC_TIMES
--      )
-+      return false
-     },
-     /** Returns the width of the right side of the calendar */
-     rightSideWidth() {
-@@ -2076,7 +2073,7 @@ export default {
+@@ -2049,7 +2050,7 @@ export default {
              }
              return `Tap and drag to add your "available" ${daysOrTimes} in green.`
            case this.states.SCHEDULE_EVENT:
@@ -132,7 +90,7 @@ index 1e028082..d7377fa3 100644
            default:
              return ""
          }
-@@ -2092,7 +2089,7 @@ export default {
+@@ -2065,7 +2066,7 @@ export default {
            }
            return `Click and drag to add your "available" ${daysOrTimes} in green.`
          case this.states.SCHEDULE_EVENT:
@@ -141,7 +99,7 @@ index 1e028082..d7377fa3 100644
          default:
            return ""
        }
-@@ -3563,8 +3560,11 @@ export default {
+@@ -3536,8 +3537,11 @@ export default {
        this.state = this.defaultState
      },
  
@@ -153,9 +111,9 @@ index 1e028082..d7377fa3 100644
 +     */
 +    confirmScheduleEvent(target = "google") {
        if (!this.curScheduledEvent) return
-       // if (!isPremiumUser(this.authUser)) {
-       //   this.showUpgradeDialog({
-@@ -3615,9 +3615,27 @@ export default {
+ 
+       this.$posthog.capture("schedule_event_confirmed")
+@@ -3579,9 +3583,27 @@ export default {
        const emailsString = encodeURIComponent(emails.filter(Boolean).join(","))
  
        const eventId = this.event.shortId ?? this.event._id
@@ -184,7 +142,7 @@ index 1e028082..d7377fa3 100644
          // Format start and end date to be in the format required by gcal (remove -, :, and .000)
          const start = startDate.toISOString().replace(/([-:]|\.000)/g, "")
          const end = endDate.toISOString().replace(/([-:]|\.000)/g, "")
-@@ -3626,14 +3644,13 @@ export default {
+@@ -3590,14 +3612,13 @@ export default {
          url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(
            this.event.name
          )}&dates=${start}/${end}&details=${encodeURIComponent(
@@ -203,7 +161,7 @@ index 1e028082..d7377fa3 100644
            this.event.location || ""
          )}&path=/calendar/action/compose&timezone=${this.curTimezone.value}`
 diff --git a/frontend/src/components/schedule_overlap/ToolRow.vue b/frontend/src/components/schedule_overlap/ToolRow.vue
-index d8aaaddd..5822dd28 100644
+index c2c680e9..fa3c7353 100644
 --- a/frontend/src/components/schedule_overlap/ToolRow.vue
 +++ b/frontend/src/components/schedule_overlap/ToolRow.vue
 @@ -118,7 +118,9 @@
@@ -267,19 +225,6 @@ index 2d370f7a..9dfa971a 100644
  // Site Metadata
  Vue.use(VueMeta)
  
-diff --git a/frontend/src/store/index.js b/frontend/src/store/index.js
-index a0770841..b9460a8f 100644
---- a/frontend/src/store/index.js
-+++ b/frontend/src/store/index.js
-@@ -29,7 +29,7 @@ export default new Vuex.Store({
-     signUpFormEnabled: false,
-     daysOnlyEnabled: true,
-     overlayAvailabilitiesEnabled: true,
--    enablePaywall: true,
-+    enablePaywall: false,
- 
-     // Experiments
-     pricingPageConversion: "control",
 diff --git a/frontend/src/utils/ics_utils.js b/frontend/src/utils/ics_utils.js
 new file mode 100644
 index 00000000..c285bd1b
@@ -356,10 +301,10 @@ index 00000000..c285bd1b
 +  URL.revokeObjectURL(href)
 +}
 diff --git a/frontend/src/views/Event.vue b/frontend/src/views/Event.vue
-index 81887280..87dba8d1 100644
+index 1c43936d..1c4af8bd 100644
 --- a/frontend/src/views/Event.vue
 +++ b/frontend/src/views/Event.vue
-@@ -463,13 +463,29 @@
+@@ -406,13 +406,29 @@
                Cancel
              </v-btn>
              <v-spacer />
@@ -395,21 +340,8 @@ index 81887280..87dba8d1 100644
 +            </v-menu>
            </template>
          </div>
-         <PubliftAd
-@@ -638,11 +654,7 @@ export default {
-     ...mapState(["authUser", "events"]),
-     ...mapGetters(["isPremiumUser"]),
-     showAds() {
--      return (
--        !this.ownerIsPremium &&
--        !this.isPremiumUser &&
--        !this.isSettingSpecificTimes
--      )
-+      return false
-     },
-     allowScheduleEvent() {
-       return this.scheduleOverlapComponent?.allowScheduleEvent
-@@ -998,8 +1010,8 @@ export default {
+       </div>
+@@ -859,8 +875,8 @@ export default {
      cancelScheduleEvent() {
        this.scheduleOverlapComponent?.cancelScheduleEvent()
      },
@@ -421,10 +353,10 @@ index 81887280..87dba8d1 100644
  
      highlightAvailabilityBtn() {
 diff --git a/frontend/src/views/Landing.vue b/frontend/src/views/Landing.vue
-index b8a50d8f..2c47ac54 100644
+index 94a53c5f..6afdb561 100644
 --- a/frontend/src/views/Landing.vue
 +++ b/frontend/src/views/Landing.vue
-@@ -31,13 +31,10 @@
+@@ -43,13 +43,10 @@
              class="tw-mb-4 tw-flex tw-select-none tw-items-center tw-rounded-full tw-border tw-border-light-gray-stroke tw-bg-white/70 tw-px-2.5 tw-py-1.5 tw-text-sm tw-text-dark-gray"
            >
              We're open source!
@@ -442,7 +374,7 @@ index b8a50d8f..2c47ac54 100644
              >
            </div>
            <div
-@@ -111,20 +108,6 @@
+@@ -123,20 +120,6 @@
                  transition="fade-transition"
                  contain
                />
@@ -463,7 +395,7 @@ index b8a50d8f..2c47ac54 100644
              </div>
            </div>
          </div>
-@@ -168,25 +151,6 @@
+@@ -180,25 +163,6 @@
        />
      </div>
  
@@ -489,7 +421,7 @@ index b8a50d8f..2c47ac54 100644
      <!-- Reddit Testimonials -->
      <div class="tw-flex tw-justify-center tw-bg-light-gray tw-py-12">
        <div class="tw-mx-4 tw-max-w-3xl tw-flex-1 sm:tw-mx-16">
-@@ -299,11 +263,9 @@ import NewEvent from "@/components/NewEvent.vue"
+@@ -311,11 +275,9 @@ import NewEvent from "@/components/NewEvent.vue"
  import NewDialog from "@/components/NewDialog.vue"
  import LandingPageHeader from "@/components/landing/LandingPageHeader.vue"
  import Logo from "@/components/Logo.vue"
@@ -501,7 +433,7 @@ index b8a50d8f..2c47ac54 100644
  import Footer from "@/components/Footer.vue"
  import PronunciationMenu from "@/components/PronunciationMenu.vue"
  import { mapState, mapMutations } from "vuex"
-@@ -325,11 +287,9 @@ export default {
+@@ -336,11 +298,9 @@ export default {
      NewEvent,
      NewDialog,
      LandingPageHeader,
@@ -514,7 +446,7 @@ index b8a50d8f..2c47ac54 100644
      PronunciationMenu,
      AuthUserMenu,
 diff --git a/frontend/src/views/SignIn.vue b/frontend/src/views/SignIn.vue
-index d667be55..6be32f29 100644
+index 95e697fe..67f14bc1 100644
 --- a/frontend/src/views/SignIn.vue
 +++ b/frontend/src/views/SignIn.vue
 @@ -32,70 +32,20 @@
@@ -596,16 +528,18 @@ index d667be55..6be32f29 100644
                </div>
              </div>
              <div class="tw-text-center tw-text-xs">
-@@ -251,7 +201,7 @@
+@@ -250,8 +200,8 @@
+ </template>
  
  <script>
- import { authTypes, calendarTypes } from "@/constants"
+-import { calendarTypes } from "@/constants"
 -import { post, signInGoogle, signInOutlook } from "@/utils"
++import { authTypes, calendarTypes } from "@/constants"
 +import { getEventsCreated, post, signInGoogle, signInOutlook } from "@/utils"
  import { mapMutations } from "vuex"
  import Logo from "@/components/Logo.vue"
  
-@@ -299,6 +249,15 @@ export default {
+@@ -293,6 +243,15 @@ export default {
  
    methods: {
      ...mapMutations(["setAuthUser"]),
@@ -619,13 +553,13 @@ index d667be55..6be32f29 100644
 +      window.location.href = `/api/auth/github?${params}`
 +    },
      signIn(provider) {
-       const state = this.upgradeRedirect
-         ? { type: authTypes.UPGRADE, upgradeParams: this.$route.query.upgradeParams }
+       if (provider === calendarTypes.GOOGLE) {
+         signInGoogle({ state: null, selectAccount: true })
 diff --git a/server/main.go b/server/main.go
-index b038861e..1678b7df 100644
+index 16b59b40..85b296ae 100644
 --- a/server/main.go
 +++ b/server/main.go
-@@ -175,7 +175,9 @@ func main() {
+@@ -172,7 +172,9 @@ func main() {
  	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerfiles.Handler))
  
  	// Run server

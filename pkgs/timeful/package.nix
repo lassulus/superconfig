@@ -8,12 +8,12 @@
 }:
 
 let
-  version = "0-unstable-2026-10-01";
+  version = "0-unstable-2026-10-07";
 
   # self-host.patch (AGPL-3.0 §13: this directory is the corresponding source
   # linked from the footer and the landing page):
-  # - strips Google Tag Manager, Publift/Primis ads, the paywall and the
-  #   landing page's YouTube/Vimeo embeds and GitHub star button
+  # - strips Google Tag Manager and the landing page's YouTube/Vimeo embeds
+  #   and GitHub star button (upstream itself dropped ads and the paywall)
   # - replaces the Google/Outlook/email-OTP sign-in page with GitHub OAuth
   #   (GET /api/auth/github, GITHUB_CLIENT_ID/GITHUB_CLIENT_SECRET)
   # - "Schedule" offers a .ics download next to Google Calendar/Outlook, and
@@ -24,8 +24,8 @@ let
     src = fetchFromGitHub {
       owner = "schej-it";
       repo = "timeful.app";
-      rev = "23b7e7ead1d279ea5d8f431199a230c2dfbe0c1a";
-      hash = "sha256-Yp2dkz4+QZ9pqZXOM4srZsCiu/TGLQXGNZtsRd5Dx+U=";
+      rev = "add892487de2e1a4cf0d68aa6c07518a379b8f41";
+      hash = "sha256-LQt1kBr2pSkmIxpwV5hSUqDXNt6vRjouCbMBsYqnVeg=";
     };
     patches = [ ./self-host.patch ];
   };
@@ -35,7 +35,7 @@ let
     inherit version;
     src = "${src}/frontend";
 
-    npmDepsHash = "sha256-eHitoSJUPX2mhlOgGrECCUp0zhKFxgsfxkY7+BmeHak=";
+    npmDepsHash = "sha256-P0oM7gKDfrNP5m5TRHGgPUb6kGLqMeCgLAuQVcDxOCQ=";
 
     # No PostHog key and no Google/Microsoft OAuth client baked in; sign-in
     # goes through the server-side GitHub flow instead.
@@ -52,7 +52,7 @@ buildGoModule {
 
   modRoot = "server";
   subPackages = [ "." ];
-  vendorHash = "sha256-dl9JURh6pCB7P+jAWcjlPZwmkKPqV7EaOJZSwJYwcFQ=";
+  vendorHash = "sha256-1LtyEruDRoW8JUbxqkv+XGhRZolPIquuTQZwu5USYDg=";
 
   nativeBuildInputs = [ makeWrapper ];
 
@@ -61,7 +61,10 @@ buildGoModule {
     wrapProgram $out/bin/timeful --set-default FRONTEND_DIST ${frontend}
   '';
 
-  passthru = { inherit frontend; };
+  passthru = {
+    inherit frontend;
+    updateScript = ./update.sh;
+  };
 
   meta = {
     description = "Availability poll to find the best time for a group to meet (formerly Schej)";
