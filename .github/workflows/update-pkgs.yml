@@ -9,9 +9,10 @@ name: update-pkgs
 #    lock: `nix flake update`, pushed as update/flake-lock with its own PR.
 # 2. verify: for every open update/* PR, one after another (flake.lock
 #    first), rebase it onto the current master, build all machines with the
-#    farm (farm.yml) on that commit and squash-merge the PR only if the run
-#    succeeded. A commit that already has a finished farm run is not built
-#    again, so a failing PR stays open until its branch or master changes.
+#    farm (farm.yml) and run ci.yml on that commit, and squash-merge the PR
+#    only if both succeeded (master's ruleset requires the ci check). A
+#    commit that already has finished runs is not checked again, so a
+#    failing PR stays open until its branch or master changes.
 #
 # One PR at a time because the farm has a fixed endpoint and runs in a single
 # concurrency group, where GitHub keeps only one pending run.
@@ -208,20 +209,44 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # Farm run for a head commit: "<id> <status> <conclusion>" or empty.
-          # Cancelled runs don't count: a push to master replaced them.
-          farm_run() {
-            gh run list -R "$repo" -w farm.yml -b "$1" -e workflow_dispatch -L 20 \
+          # Dispatched run of a workflow for a head commit: "<id> <status>
+          # <conclusion>" or empty. Cancelled runs don't count: a push to
+          # master replaced them.
+          dispatched_run() {
+            gh run list -R "$repo" -w "$1" -b "$2" -e workflow_dispatch -L 20 \
               --json databaseId,headSha,status,conclusion \
-              --jq "[.[] | select(.headSha == \"$2\" and .conclusion != \"cancelled\")][0] // empty
+              --jq "[.[] | select(.headSha == \"$3\" and .conclusion != \"cancelled\")][0] // empty
                 | \"\(.databaseId) \(.status) \(.conclusion)\""
           }
 
-          # Rebase a PR onto master, farm-build that commit and wait for the
-          # result. Prints "<conclusion> <sha>"; conclusion is the farm run's,
-          # or "conflict" / "nostart".
+          # Dispatch a workflow on a branch unless its head commit already
+          # has a run, wait for it and print its conclusion, or "nostart".
+          run_workflow() {
+            local workflow=$1 branch=$2 sha=$3 run id
+            run=$(dispatched_run "$workflow" "$branch" "$sha")
+            if [ -z "$run" ]; then
+              gh workflow run "$workflow" -R "$repo" --ref "$branch" >&2
+              for _ in $(seq 60); do
+                sleep 10
+                run=$(dispatched_run "$workflow" "$branch" "$sha")
+                [ -n "$run" ] && break
+              done
+            fi
+            id=${run%% *}
+            if [ -z "$id" ]; then
+              echo nostart
+              return
+            fi
+            echo "$workflow run $id on $sha" >&2
+            gh run watch "$id" -R "$repo" --interval 60 >/dev/null 2>&1 </dev/null || true
+            gh run view "$id" -R "$repo" --json conclusion --jq .conclusion
+          }
+
+          # Rebase a PR branch onto master, farm-build that commit and run
+          # ci.yml on it. Prints "<conclusion> <sha>"; conclusion is the farm
+          # run's, then ci's as "ci-<conclusion>", or "conflict" / "nostart".
           verify_pr() {
-            local pr=$1 branch=$2 sha run id
+            local branch=$1 sha conclusion
             git fetch -q origin master "$branch"
             git switch -q -C "$branch" "origin/$branch"
             if ! git rebase -q origin/master >&2; then
@@ -233,23 +258,12 @@ jobs:
             if [ "$sha" != "$(git rev-parse "origin/$branch")" ]; then
               git push -q --force-with-lease="$branch:origin/$branch" origin "$branch" >&2
             fi
-            run=$(farm_run "$branch" "$sha")
-            if [ -z "$run" ]; then
-              gh workflow run farm.yml -R "$repo" --ref "$branch" >&2
-              for _ in $(seq 60); do
-                sleep 10
-                run=$(farm_run "$branch" "$sha")
-                [ -n "$run" ] && break
-              done
+            conclusion=$(run_workflow farm.yml "$branch" "$sha")
+            if [ "$conclusion" = success ]; then
+              conclusion=$(run_workflow ci.yml "$branch" "$sha")
+              [ "$conclusion" = success ] || conclusion="ci-$conclusion"
             fi
-            id=${run%% *}
-            if [ -z "$id" ]; then
-              echo "nostart $sha"
-              return
-            fi
-            echo "#$pr: farm run $id on $sha" >&2
-            gh run watch "$id" -R "$repo" --interval 60 >/dev/null 2>&1 </dev/null || true
-            echo "$(gh run view "$id" -R "$repo" --json conclusion --jq .conclusion) $sha"
+            echo "$conclusion $sha"
           }
 
           # flake.lock first: every package PR is rebased onto the master it
@@ -268,7 +282,7 @@ jobs:
             # A push to master cancels a running verification; master has
             # moved then, so rebase and build again.
             for attempt in 1 2 3; do
-              read -r conclusion sha < <(verify_pr "$pr" "$branch")
+              read -r conclusion sha < <(verify_pr "$branch")
               [ "$conclusion" = cancelled ] || break
               echo "#$pr: farm run cancelled by a push to master (attempt $attempt)"
             done
