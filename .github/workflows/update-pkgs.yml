@@ -9,10 +9,10 @@ name: update-pkgs
 #    lock: `nix flake update`, pushed as update/flake-lock with its own PR.
 # 2. verify: for every open update/* PR, one after another (flake.lock
 #    first), rebase it onto the current master, run ci.yml on that commit
-#    (it builds all machines with the farm) and squash-merge the PR only if
-#    it succeeded (master's ruleset requires its ci check). A commit that
-#    already has a finished run is not checked again, so a failing PR stays
-#    open until its branch or master changes.
+#    (it builds all machines with the farm) and merge the PR with a merge
+#    commit only if it succeeded (master's ruleset requires its ci check). A
+#    commit that already has a finished run is not checked again, so a
+#    failing PR stays open until its branch or master changes.
 #
 # One PR at a time: the farm builds one commit at a time anyway, and each PR
 # is rebased onto the master it gets merged into.
@@ -278,7 +278,7 @@ jobs:
             read -r conclusion sha < <(verify_pr "$branch")
             echo "#$pr: $conclusion"
             if [ "$conclusion" = success ] && [ "$AUTOMERGE" = true ]; then
-              gh pr merge "$pr" -R "$repo" --squash --delete-branch --match-head-commit "$sha"
+              gh pr merge "$pr" -R "$repo" --merge --delete-branch --match-head-commit "$sha"
               merged=$((merged + 1))
             fi
             echo "::endgroup::"
