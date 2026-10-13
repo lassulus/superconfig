@@ -9,7 +9,7 @@
       {
         "name": "host",
         "type": "query",
-        "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+        "datasource": { "type": "victoriametrics-metrics-datasource", "uid": "victoriametrics" },
         "query": { "query": "label_values(host_uptime, host)", "refId": "host" },
         "refresh": 2,
         "includeAll": true,
@@ -24,7 +24,7 @@
       "type": "timeseries",
       "title": "CPU used",
       "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
-      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "datasource": { "type": "victoriametrics-metrics-datasource", "uid": "victoriametrics" },
       "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 } },
       "targets": [
         {
@@ -39,7 +39,7 @@
       "type": "timeseries",
       "title": "Memory used",
       "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
-      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "datasource": { "type": "victoriametrics-metrics-datasource", "uid": "victoriametrics" },
       "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 } },
       "targets": [
         {
@@ -54,7 +54,7 @@
       "type": "timeseries",
       "title": "Load (1m)",
       "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
-      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "datasource": { "type": "victoriametrics-metrics-datasource", "uid": "victoriametrics" },
       "targets": [
         { "refId": "A", "expr": "host_load1{host=~\"$host\"}", "legendFormat": "{{host}}" }
       ]
@@ -64,7 +64,7 @@
       "type": "bargauge",
       "title": "Filesystems used",
       "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
-      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "datasource": { "type": "victoriametrics-metrics-datasource", "uid": "victoriametrics" },
       "fieldConfig": {
         "defaults": {
           "unit": "percentunit",
@@ -95,7 +95,7 @@
       "type": "timeseries",
       "title": "Network",
       "gridPos": { "x": 0, "y": 16, "w": 12, "h": 8 },
-      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "datasource": { "type": "victoriametrics-metrics-datasource", "uid": "victoriametrics" },
       "fieldConfig": { "defaults": { "unit": "Bps" } },
       "targets": [
         {
@@ -115,7 +115,7 @@
       "type": "timeseries",
       "title": "Disk I/O",
       "gridPos": { "x": 12, "y": 16, "w": 12, "h": 8 },
-      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "datasource": { "type": "victoriametrics-metrics-datasource", "uid": "victoriametrics" },
       "fieldConfig": { "defaults": { "unit": "Bps" } },
       "targets": [
         {

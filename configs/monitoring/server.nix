@@ -172,7 +172,10 @@ in
 
   services.grafana = {
     enable = true;
-    declarativePlugins = [ pkgs.grafanaPlugins.victoriametrics-logs-datasource ];
+    declarativePlugins = [
+      pkgs.grafanaPlugins.victoriametrics-logs-datasource
+      pkgs.grafanaPlugins.victoriametrics-metrics-datasource
+    ];
     settings = {
       server = {
         http_addr = "";
@@ -194,7 +197,7 @@ in
         {
           name = "VictoriaMetrics";
           uid = "victoriametrics";
-          type = "prometheus";
+          type = "victoriametrics-metrics-datasource";
           url = "http://127.0.0.1:${toString ports.victoriametrics}";
           isDefault = true;
         }
