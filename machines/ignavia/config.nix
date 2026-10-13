@@ -79,7 +79,6 @@
     pkgs.gh
     self.packages.${pkgs.system}.bank
     pkgs.ddcutil
-    pkgs.mycelium
     pkgs.rbw
   ];
 
