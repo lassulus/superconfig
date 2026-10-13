@@ -37,7 +37,7 @@ let
 
   src = fetchurl {
     url = "https://boosteroid.com/linux/installer/boosteroid_portable.tar";
-    hash = "sha256-xXpFD9dzHbakOqOIQ1sqzmGRo49EYbVqHZT0nGvRPcI=";
+    hash = "sha256-R4s3nA9YyaNovO04Dv9svq7Z/y9JyRLIFfL4TVFkjqo=";
     curlOptsList = [
       "--user-agent"
       "Mozilla/5.0"
