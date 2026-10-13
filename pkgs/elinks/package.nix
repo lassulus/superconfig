@@ -45,6 +45,7 @@
   enablePython ? false,
   python ? null,
   enablePerl ? (!stdenv.hostPlatform.isDarwin) && (stdenv.hostPlatform == stdenv.buildPlatform),
+  nix-update-script,
 }:
 
 let
@@ -69,13 +70,13 @@ let
 in
 stdenv.mkDerivation (finalAttrs: {
   pname = "elinks";
-  version = "0.19.1";
+  version = "0.20.0";
 
   src = fetchFromGitHub {
     owner = "rkd77";
     repo = "elinks";
     rev = "v${finalAttrs.version}";
-    hash = "sha256-aQ+q2I6uTVv5kpKBaGJ1xiE/9vv9T7JI05VX/ROkAqA=";
+    hash = "sha256-oh9nArQ8dkYL4fLSjnnCHbSnxNxJnQmAWD/6Nu7OiiQ=";
   };
 
   outputs = [
@@ -159,6 +160,8 @@ stdenv.mkDerivation (finalAttrs: {
   preConfigure = ''
     mesonFlags+=("-Dsource-date-epoch=$SOURCE_DATE_EPOCH")
   '';
+
+  passthru.updateScript = nix-update-script { extraArgs = [ "--flake" ]; };
 
   meta = {
     description = "Full-featured text-mode web browser (meson build, PR #515347)";
