@@ -1,0 +1,134 @@
+{
+  "uid": "node",
+  "title": "Node overview",
+  "schemaVersion": 39,
+  "time": { "from": "now-24h", "to": "now" },
+  "refresh": "1m",
+  "templating": {
+    "list": [
+      {
+        "name": "host",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+        "query": { "query": "label_values(host_uptime, host)", "refId": "host" },
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "current": { "text": "All", "value": "$__all" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "CPU used",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 } },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "1 - avg by (host) (rate(host_cpu_seconds_total{mode=\"idle\", host=~\"$host\"}[$__rate_interval]))",
+          "legendFormat": "{{host}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Memory used",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 } },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "1 - host_memory_available_bytes{host=~\"$host\"} / host_memory_total_bytes{host=~\"$host\"}",
+          "legendFormat": "{{host}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Load (1m)",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "targets": [
+        { "refId": "A", "expr": "host_load1{host=~\"$host\"}", "legendFormat": "{{host}}" }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "bargauge",
+      "title": "Filesystems used",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 0.8 },
+              { "color": "red", "value": 0.9 }
+            ]
+          }
+        }
+      },
+      "options": { "displayMode": "basic", "orientation": "horizontal" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (host, mountpoint) (host_filesystem_used_ratio{host=~\"$host\"})",
+          "legendFormat": "{{host}} {{mountpoint}}",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Network",
+      "gridPos": { "x": 0, "y": 16, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "fieldConfig": { "defaults": { "unit": "Bps" } },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (host) (rate(host_network_receive_bytes_total{host=~\"$host\", device!=\"lo\"}[$__rate_interval]))",
+          "legendFormat": "{{host}} rx"
+        },
+        {
+          "refId": "B",
+          "expr": "-sum by (host) (rate(host_network_transmit_bytes_total{host=~\"$host\", device!=\"lo\"}[$__rate_interval]))",
+          "legendFormat": "{{host}} tx"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Disk I/O",
+      "gridPos": { "x": 12, "y": 16, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "fieldConfig": { "defaults": { "unit": "Bps" } },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (host) (rate(host_disk_read_bytes_total{host=~\"$host\"}[$__rate_interval]))",
+          "legendFormat": "{{host}} read"
+        },
+        {
+          "refId": "B",
+          "expr": "-sum by (host) (rate(host_disk_written_bytes_total{host=~\"$host\"}[$__rate_interval]))",
+          "legendFormat": "{{host}} write"
+        }
+      ]
+    }
+  ]
+}

@@ -1,9 +1,5 @@
 { config, pkgs, ... }:
 {
-  systemd.services.borgbackup-job-hetzner.serviceConfig.ReadWritePaths = [
-    "/var/log/telegraf"
-  ];
-
   clan.core.vars.generators.borgbackup = {
     files."borgbackup.ssh.id25519" = { };
     files."borgbackup.ssh.id25519.pub".secret = false;
@@ -92,12 +88,6 @@
       # Dump timeful polls (when.lassul.us) from MongoDB
       ${pkgs.mongodb-tools}/bin/mongodump --uri=mongodb://127.0.0.1:27017 \
         --db=schej-it --gzip --archive=/var/backup/timeful.archive.gz
-    '';
-
-    postHook = ''
-      cat > /var/log/telegraf/borgbackup-job-hetzner.service <<EOF
-      task,frequency=daily last_run=$(date +%s)i,state="$([[ $exitStatus == 0 ]] && echo ok || echo fail)"
-      EOF
     '';
 
     prune.keep = {

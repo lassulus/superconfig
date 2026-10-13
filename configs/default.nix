@@ -24,6 +24,7 @@ in
     ./networkd.nix
     ./pinned-registry.nix
     ./nix.nix
+    ./monitoring/agent.nix
 
     ./kartei.nix
     {
