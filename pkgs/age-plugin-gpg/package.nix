@@ -4,6 +4,7 @@
   fetchFromGitHub,
   pkg-config,
   nettle,
+  nix-update-script,
 }:
 rustPlatform.buildRustPackage (finalAttrs: {
   pname = "age-plugin-gpg";
@@ -26,6 +27,8 @@ rustPlatform.buildRustPackage (finalAttrs: {
   ];
 
   buildInputs = [ nettle ];
+
+  passthru.updateScript = nix-update-script { extraArgs = [ "--flake" ]; };
 
   meta = {
     description = "Age plugin utilizing gpg-agent & keygrips as recipients/identities";
