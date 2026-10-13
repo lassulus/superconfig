@@ -31,7 +31,19 @@ detect_age_keys() {
         fi
     fi
 
-    # Check for gpg-agent with an encryption subkey (third priority).
+    # Check for a running phonetpm daemon (third priority - phone over iroh,
+    # every decryption asks for a fingerprint on the phone).
+    # Requires: control socket of configs/phonetpm.nix and phonetpm.identity.
+    local phone_identity="${AGE_DETECT_KEYS_DIR:-}/age/phonetpm.identity"
+    if [[ -S "${XDG_RUNTIME_DIR:-}/phonetpm/control.sock" ]] && [[ -f "$phone_identity" ]]; then
+        cp "$phone_identity" "$temp_identities"
+        echo "IDENTITY_FILE=$temp_identities"
+        echo "DETECTED_KEY=phonetpm"
+        echo "KEY_TYPE=phone"
+        return
+    fi
+
+    # Check for gpg-agent with an encryption subkey (fourth priority).
     # Frictionless after the first decrypt because gpg-agent caches the
     # passphrase / smartcard PIN, so we prefer it over yubikey/solo2.
     if command -v gpg-connect-agent >/dev/null 2>&1 \
@@ -45,7 +57,7 @@ detect_age_keys() {
         return
     fi
 
-    # Check for YubiKeys (fourth priority)
+    # Check for YubiKeys (fifth priority)
     if command -v ykman >/dev/null 2>&1; then
         local yubikey_serial
         yubikey_serial=$(ykman info 2>/dev/null | grep "Serial number:" | cut -d: -f2 | tr -d ' ' || true)
@@ -98,9 +110,9 @@ case "${1:-detect}" in
         echo "Detects the first available age-compatible security key and outputs:"
         echo "  IDENTITY_FILE=<path>  - Path to temporary identity file for age (empty for Solo2)"
         echo "  DETECTED_KEY=<name>   - Name of the detected key (e.g., yubi1, solo2, se)"
-        echo "  KEY_TYPE=<type>       - Type of key (yubikey, solo2, se)"
+        echo "  KEY_TYPE=<type>       - Type of key (yubikey, solo2, se, tpm, phone, gpg)"
         echo ""
-        echo "Priority order: se > tpm > gpg > yubikey > solo2"
+        echo "Priority order: se > tpm > phone > gpg > yubikey > solo2"
         ;;
     *)
         echo "Unknown command: $1" >&2
