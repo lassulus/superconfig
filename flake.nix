@@ -59,10 +59,6 @@
     treefmt-nix.url = "github:numtide/treefmt-nix";
     treefmt-nix.inputs.nixpkgs.follows = "nixpkgs";
 
-    le_menu.url = "github:lassulus/le_menu";
-    # le_menu.url = "git+file:/home/lass/src/le_menu";
-    le_menu.inputs.nixpkgs.follows = "nixpkgs";
-
     llm-agents.url = "github:numtide/llm-agents.nix";
     llm-agents.inputs.nixpkgs.follows = "nixpkgs";
 
@@ -254,25 +250,7 @@
           ...
         }:
         {
-          packages = {
-            default = inputs.le_menu.lib.buildMenu {
-              inherit pkgs;
-              menuConfig = {
-                vim.run = "nix run ${self}#nvim";
-                shell.run = "nix run ${self}#shell";
-                machines.submenu = lib.mapAttrs (name: _machine: {
-                  submenu.ssh.submenu = {
-                    retiolum.run = "ssh -t ${name}.r";
-                    spora.run = "ssh ${name}.s";
-                    nether.run = "ssh ${name}.n";
-                    tor.run = "torify ssh $(pass show machines/${name}/tor-hostname)";
-                  };
-                }) self.nixosConfigurations;
-                debug.run = "env";
-              };
-            };
-            clan-cli = clan-core.packages.${system}.clan-cli;
-          };
+          packages.clan-cli = clan-core.packages.${system}.clan-cli;
           devShells.default = pkgs.mkShell {
             packages = [
               self.packages.${pkgs.system}.pass
