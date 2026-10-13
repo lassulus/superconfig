@@ -1,6 +1,0 @@
-bin "stt"
-about "Real-time streaming speech-to-text using Vosk"
-
-flag "-l --language <lang>" help="Language: en, de, fr, es, ru, cn, ja (default: en)" env="VOSK_LANG"
-flag "-s --size <size>" help="Model size: small, medium, large (default: small)" env="VOSK_SIZE"
-flag "-w --words" help="Output individual words as they are recognized"
