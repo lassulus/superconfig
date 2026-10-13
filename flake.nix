@@ -260,33 +260,18 @@
           legacyPackages.llm =
             inputs.llm-agents.packages.${system}
             // lib.optionalAttrs (self.packages.${system} ? orca) { inherit (self.packages.${system}) orca; };
-          checks =
-            let
-              # Check NixOS configurations can be evaluated (without building)
-              nixosChecks = lib.mapAttrs' (
-                name: config:
-                lib.nameValuePair "nixos-${name}" (
-                  pkgs.runCommand "eval-${name}" { } ''
-                    # Force evaluation of the toplevel path without building
-                    echo "Evaluating ${name}: ${builtins.unsafeDiscardStringContext config.config.system.build.toplevel.drvPath}"
-                    touch $out
-                  ''
-                )
-              ) (lib.filterAttrs (_: config: config.pkgs.system == system) self.nixosConfigurations);
-
-              # Check Darwin configurations can be evaluated (without building)
-              darwinChecks = lib.mapAttrs' (
-                name: config:
-                lib.nameValuePair "darwin-${name}" (
-                  pkgs.runCommand "eval-darwin-${name}" { } ''
-                    # Force evaluation of the system path without building
-                    echo "Evaluating ${name}: ${builtins.unsafeDiscardStringContext config.system.drvPath}"
-                    touch $out
-                  ''
-                )
-              ) (lib.filterAttrs (_: config: config.pkgs.system == system) self.darwinConfigurations);
-            in
-            nixosChecks // darwinChecks;
+          # Check Darwin configurations can be evaluated (without building).
+          # The NixOS machines are built by the farm (.github/workflows/farm.yml).
+          checks = lib.mapAttrs' (
+            name: config:
+            lib.nameValuePair "darwin-${name}" (
+              pkgs.runCommand "eval-darwin-${name}" { } ''
+                # Force evaluation of the system path without building
+                echo "Evaluating ${name}: ${builtins.unsafeDiscardStringContext config.system.drvPath}"
+                touch $out
+              ''
+            )
+          ) (lib.filterAttrs (_: config: config.pkgs.system == system) self.darwinConfigurations);
         };
       flake.lib = import ./lib { inherit (nixpkgs) lib; };
     };

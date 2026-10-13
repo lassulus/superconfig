@@ -93,8 +93,9 @@ gh pr merge <branch> --auto --rebase --delete-branch
 ```
 
 `--rebase` keeps the individual commits on master. Only the user (repo admin)
-bypasses the ruleset. The update-pkgs bot merges its PRs through it as well,
-after dispatching farm.yml and ci.yml on them.
+bypasses the ruleset. The `ci` check includes a farm build of all machines
+(farm.yml, called from ci.yml). The update-pkgs bot merges its PRs through
+the ruleset as well, after dispatching ci.yml on them.
 
 ## Machine Facts and Secrets via vars
 

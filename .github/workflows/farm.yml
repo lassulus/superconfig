@@ -1,45 +1,104 @@
 name: farm
 
-# On-demand nix-grpc-store farm (tools/ci-farm): one farm job (scheduler,
-# balancer, client, builder) and a pool of worker jobs that build the
-# requested machines together, each derivation once. Outputs land in
-# cache.lassul.us via niks3.
+# On-demand nix-grpc-store farm (tools/ci-farm) that builds NixOS machines,
+# each derivation once. Outputs land in cache.lassul.us via niks3.
+#
+# - coordinator: scheduler and balancer, no builder; runs until all machine
+#   jobs have finished.
+# - one job per machine: joins the farm as a builder, evaluates its machine
+#   and builds the toplevel through the farm, then leaves (its outputs are in
+#   niks3 by then). Red when its machine fails to evaluate or build.
+#
+# Called by ci.yml for pushes to master and PRs (its `ci` check requires this
+# workflow), or dispatched by hand for some machines.
 #
 # Needs the FARM_KEY secret: the farm's TLS private key, matching
 # tools/ci-farm/farm.crt (`pass show ci-farm/key`).
 
 on:
+  workflow_call:
+    inputs:
+      machines:
+        description: NixOS machines to build, space separated (empty for all)
+        type: string
+        default: ""
   workflow_dispatch:
     inputs:
       machines:
         description: NixOS machines to build, space separated (empty for all)
         default: ""
-  push:
-    branches: [master]
 
 permissions:
   contents: read
   id-token: write # niks3 push
-  actions: read # workers watch the farm job
+  actions: read # the jobs watch each other
 
-# The farm's iroh endpoint id is fixed, so only one run at a time. A push to
-# master replaces a running build (an older master state or an update-pkgs
-# verification, which retries). Dispatched runs (update-pkgs verifying a PR,
-# manual runs) never cancel a running build; they wait as the group's pending
-# run.
+# The farm's iroh endpoints are fixed, so only one farm at a time, queued
+# FIFO. Called from ci.yml the calling job holds the `farm` group, and the
+# github context (github.workflow) is ci.yml's: a group of its own then, so
+# the two don't wait for each other.
 concurrency:
-  group: farm
-  cancel-in-progress: ${{ github.event_name == 'push' }}
-
-env:
-  # must match the worker matrix below
-  FARM_WORKERS: 2
-  MACHINES: ${{ inputs.machines }}
+  group: ${{ github.workflow == 'farm' && 'farm' || format('farm-call-{0}', github.run_id) }}
+  queue: max
 
 jobs:
-  farm:
-    name: farm
+  list:
     runs-on: ubuntu-latest
+    outputs:
+      machines: ${{ steps.list.outputs.machines }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - id: list
+        env:
+          MACHINES: ${{ inputs.machines }}
+        run: |
+          if [ -z "$MACHINES" ]; then
+            MACHINES=$(nix eval --raw .#nixosConfigurations --apply "c: builtins.concatStringsSep \" \" (builtins.attrNames c)")
+          fi
+          # index: the machine job's builder slot on the farm, the
+          # position in the coordinator's arguments
+          machines=$(jq -cn --arg m "$MACHINES" '$m | split(" ") | map(select(. != ""))
+            | to_entries | map({ index: (.key + 1), machine: .value })')
+          echo "machines=$machines" >> "$GITHUB_OUTPUT"
+          echo "$machines" | jq .
+
+  coordinator:
+    needs: list
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            trusted-users = root runner
+            extra-substituters = https://cache.lassul.us
+            extra-trusted-public-keys = cache.lassul.us-1:aOMEO5TU6eLvhyPi0jmgjR2sVlGjMq3rK0MeACjTcQ0=
+      - run: nix build -L .#ci-farm -o ci-farm
+      # so the next run substitutes it instead of compiling it on every runner
+      - env:
+          FARM_KEY: ${{ secrets.FARM_KEY }}
+        run: ./ci-farm/bin/ci-farm push ./ci-farm
+      - env:
+          FARM_KEY: ${{ secrets.FARM_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          MACHINES: ${{ needs.list.outputs.machines }}
+        run: |
+          mapfile -t machines < <(jq -r '.[].machine' <<<"$MACHINES")
+          ./ci-farm/bin/ci-farm farm "${machines[@]}"
+
+  machine:
+    needs: list
+    name: ${{ matrix.machine }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      # GitHub's free plan runs 20 jobs at once. The machine jobs wait for the
+      # coordinator; leave it and other workflows room, so they can't take
+      # every slot while it is still queued.
+      max-parallel: 15
+      matrix:
+        include: ${{ fromJSON(needs.list.outputs.machines) }}
     steps:
       - uses: actions/checkout@v4
       - uses: cachix/install-nix-action@v31
@@ -52,38 +111,8 @@ jobs:
             # a remembered miss (default: 1 h) fails the build instead.
             narinfo-cache-negative-ttl = 0
       - run: nix build -L .#ci-farm -o ci-farm
-      # so the next run substitutes it instead of compiling it on every runner
-      - env:
-          FARM_KEY: ${{ secrets.FARM_KEY }}
-        run: ./ci-farm/bin/ci-farm push ./ci-farm
-      - name: build ${{ env.MACHINES || 'all machines' }}
+      - name: build ${{ matrix.machine }}
         env:
           FARM_KEY: ${{ secrets.FARM_KEY }}
-        # MACHINES unquoted: one argument per machine
-        run: |
-          if [ -z "$MACHINES" ]; then
-            MACHINES=$(nix eval --raw .#nixosConfigurations --apply "c: builtins.concatStringsSep \" \" (builtins.attrNames c)")
-          fi
-          ./ci-farm/bin/ci-farm farm $MACHINES
-
-  worker:
-    name: worker ${{ matrix.index }}
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        index: [1, 2] # FARM_WORKERS
-    steps:
-      - uses: actions/checkout@v4
-      - uses: cachix/install-nix-action@v31
-        with:
-          extra_nix_config: |
-            trusted-users = root runner
-            extra-substituters = https://cache.lassul.us
-            extra-trusted-public-keys = cache.lassul.us-1:aOMEO5TU6eLvhyPi0jmgjR2sVlGjMq3rK0MeACjTcQ0=
-            # see the farm job
-            narinfo-cache-negative-ttl = 0
-      - run: nix build -L .#ci-farm -o ci-farm
-      - env:
-          FARM_KEY: ${{ secrets.FARM_KEY }}
           GH_TOKEN: ${{ github.token }}
-        run: ./ci-farm/bin/ci-farm worker ${{ matrix.index }}
+        run: ./ci-farm/bin/ci-farm machine ${{ matrix.index }} ${{ matrix.machine }}

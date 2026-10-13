@@ -2,14 +2,20 @@ name: CI
 
 on:
   push:
+    branches: [master]
   pull_request:
   # update-pkgs runs it on its PR branches: pushes and PRs made with
   # GITHUB_TOKEN don't trigger workflows, and master requires the ci check.
   workflow_dispatch:
 
-# nix flake check evaluates every host in one process (~19 GB peak), more than
-# the 16 GB RAM of ubuntu-latest. One job per check keeps the peak at the
-# largest single host and shows failing hosts in the run overview.
+# A newer run for the same ref replaces a running one, its farm included.
+# Runs for different refs queue for the farm, see the farm job.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# One job per check shows failing checks in the run overview. The NixOS
+# machines are built by the farm, one job per machine.
 jobs:
   list:
     runs-on: ubuntu-latest
@@ -64,10 +70,24 @@ jobs:
             nix eval --raw ".#$output.x86_64-linux" --apply 'xs: builtins.deepSeq (builtins.mapAttrs (_: x: x.drvPath) xs) "${toString (builtins.length (builtins.attrNames xs))} evaluated\n"'
           done
 
+  # Builds all NixOS machines (farm.yml). Its iroh endpoints are fixed, so one
+  # farm at a time across all runs; the others wait FIFO. Without `queue: max`
+  # GitHub keeps one pending run per group and cancels the one before.
+  farm:
+    uses: ./.github/workflows/farm.yml
+    secrets: inherit
+    permissions:
+      contents: read
+      id-token: write # niks3 push
+      actions: read # the jobs watch each other
+    concurrency:
+      group: farm
+      queue: max
+
   # Fixed-name summary of the jobs above, the required status check for
   # merging into master (the matrix job names change with the hosts).
   ci:
-    needs: [list, check, outputs]
+    needs: [list, check, outputs, farm]
     if: always()
     runs-on: ubuntu-latest
     steps:
