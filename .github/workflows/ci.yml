@@ -3,6 +3,9 @@ name: CI
 on:
   push:
   pull_request:
+  # update-pkgs runs it on its PR branches: pushes and PRs made with
+  # GITHUB_TOKEN don't trigger workflows, and master requires the ci check.
+  workflow_dispatch:
 
 # nix flake check evaluates every host in one process (~19 GB peak), more than
 # the 16 GB RAM of ubuntu-latest. One job per check keeps the peak at the
@@ -59,4 +62,19 @@ jobs:
             echo "$output:"
             # shellcheck disable=SC2016 # ${...} is Nix interpolation
             nix eval --raw ".#$output.x86_64-linux" --apply 'xs: builtins.deepSeq (builtins.mapAttrs (_: x: x.drvPath) xs) "${toString (builtins.length (builtins.attrNames xs))} evaluated\n"'
+          done
+
+  # Fixed-name summary of the jobs above, the required status check for
+  # merging into master (the matrix job names change with the hosts).
+  ci:
+    needs: [list, check, outputs]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "results: $RESULTS"
+          for r in $RESULTS; do
+            [ "$r" = success ] || exit 1
           done
