@@ -21,7 +21,11 @@ in
         (alert "HostDown" (lib.concatMapStringsSep " or " (
           host: ''absent_over_time(host_uptime{host="${host}"}[10m])''
         ) alwaysOn) "0m" "{{ $labels.host }} sent no metrics for 10 minutes")
-        (alert "DiskAlmostFull" "host_filesystem_used_ratio > 0.9" "15m"
+        # Network mounts (and their autofs placeholders) are reported by
+        # every machine that mounts them; the agent drops tmpfs & co.
+        (alert "DiskAlmostFull"
+          ''host_filesystem_used_ratio{filesystem!~"cifs|smb3|nfs|nfs4|autofs|fuse.sshfs"} > 0.9''
+          "15m"
           "{{ $labels.host }}: {{ $labels.mountpoint }} is {{ $value | humanizePercentage }} full"
         )
         (alert "HighMemory" "1 - host_memory_available_bytes / host_memory_total_bytes > 0.95" "15m"
