@@ -7,6 +7,7 @@
   makeDesktopItem,
   copyDesktopItems,
   electron_43,
+  nix-update-script,
 }:
 
 let
@@ -26,6 +27,13 @@ buildNpmPackage (finalAttrs: {
   };
 
   npmDepsHash = "sha256-hLZF0FvyAgJVURmU6M4UYFauZz5SLvH2+6W2qDogoXU=";
+
+  passthru.updateScript = nix-update-script {
+    extraArgs = [
+      "--flake"
+      "--version=branch"
+    ];
+  };
 
   # discord-rpc pulls the optional native `register-scheme` git dependency, which
   # is only used outside Electron (inside Electron it falls back to
