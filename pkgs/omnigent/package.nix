@@ -19,14 +19,14 @@ let
   # provides `omnigent` itself.
   omnigent-client = py.buildPythonPackage rec {
     pname = "omnigent_client";
-    version = "0.9.0";
+    version = "0.17.0";
     format = "wheel";
 
     src = fetchPypi {
       inherit pname version format;
       dist = "py3";
       python = "py3";
-      hash = "sha256-NUF16ZzZkVzohOKznfAPVTT1LI09dXP6gZxlWZzmyrM=";
+      hash = "sha256-840EK8+ZfBOPP0lp5h974rkKtIs4eLC8uLaK23y8FhY=";
     };
 
     pythonRemoveDeps = [ "omnigent" ];
@@ -49,14 +49,14 @@ let
 
   omnigent-ui-sdk = py.buildPythonPackage rec {
     pname = "omnigent_ui_sdk";
-    version = "0.9.0";
+    version = "0.17.0";
     format = "wheel";
 
     src = fetchPypi {
       inherit pname version format;
       dist = "py3";
       python = "py3";
-      hash = "sha256-xr5rtx2Ac/q8GShkeQudzbKDoLGe5d+Jp7XCiXzU7lQ=";
+      hash = "sha256-2I9JWM64pqFNawr6exvQRJ1uOvZ+6J6NZ37JBy2OLFA=";
     };
 
     dependencies = [
@@ -77,7 +77,7 @@ let
 in
 py.buildPythonApplication rec {
   pname = "omnigent";
-  version = "0.9.0";
+  version = "0.17.0";
   format = "wheel";
 
   # The published wheel ships the prebuilt web SPA under
@@ -86,7 +86,7 @@ py.buildPythonApplication rec {
     inherit pname version format;
     dist = "py3";
     python = "py3";
-    hash = "sha256-deNx9SHyaf1ZNkq5+88c1fUieFZastIo8N27Ixy0F1Q=";
+    hash = "sha256-/ygrFeQOlXXilVU5H1zqdYBqR3YVZUo/HlfIfsxR/IQ=";
   };
 
   # Upper bounds that nixpkgs has already moved past. All of these are
@@ -115,6 +115,7 @@ py.buildPythonApplication rec {
     claude-agent-sdk
     click
     fastapi
+    filelock
     ftfy
     httpx
     json5
@@ -122,6 +123,7 @@ py.buildPythonApplication rec {
     mcp
     openai
     openai-agents
+    opentelemetry-api
     opentelemetry-exporter-otlp-proto-grpc
     opentelemetry-exporter-otlp-proto-http
     opentelemetry-instrumentation-fastapi
@@ -129,6 +131,7 @@ py.buildPythonApplication rec {
     opentelemetry-instrumentation-sqlalchemy
     packaging
     pexpect
+    pillow
     prompt-toolkit
     protobuf
     psutil
@@ -168,6 +171,8 @@ py.buildPythonApplication rec {
     "omnigent_client"
     "omnigent_ui_sdk"
   ];
+
+  passthru.updateScript = ./update.sh;
 
   meta = {
     description = "Open-source meta-harness giving a common orchestration layer over AI coding agents";
