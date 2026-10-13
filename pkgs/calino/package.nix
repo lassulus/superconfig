@@ -6,6 +6,7 @@
   pnpm_10,
   fetchPnpmDeps,
   pnpmConfigHook,
+  nix-update-script,
 }:
 
 # Calino: a static, local-first CalDAV web client. Accounts, settings and the
@@ -13,20 +14,20 @@
 # to allow the origin Calino is served from via CORS.
 stdenv.mkDerivation (finalAttrs: {
   pname = "calino";
-  version = "0.38.0";
+  version = "0.39.1";
 
   src = fetchFromGitHub {
     owner = "Ivan-Malinovski";
     repo = "calino";
     tag = "v${finalAttrs.version}";
-    hash = "sha256-DaT4vJB1/zTPwWnoDvHHQT7XlhmctHVLMIoedgs/1B4=";
+    hash = "sha256-WSSLIRnoBXEBYVivy5Tjt446hhgExoxTg6vQYONe+u0=";
   };
 
   pnpmDeps = fetchPnpmDeps {
     inherit (finalAttrs) pname version src;
     pnpm = pnpm_10;
     fetcherVersion = 4;
-    hash = "sha256-7V/Ej1xiVu8b4sLiADulSZtZ0kb3nRzTqqYfIGTPxGc=";
+    hash = "sha256-mmdOfwj7rlvI2KUYO/Z4xyEtvz4c+m4sCR9BGDiIxhQ=";
   };
 
   nativeBuildInputs = [
@@ -46,6 +47,8 @@ stdenv.mkDerivation (finalAttrs: {
     cp -r dist $out
     runHook postInstall
   '';
+
+  passthru.updateScript = nix-update-script { extraArgs = [ "--flake" ]; };
 
   meta = {
     description = "Local-first CalDAV calendar web client (static files)";
