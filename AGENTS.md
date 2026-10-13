@@ -60,7 +60,6 @@ sudo darwin-rebuild switch --flake .#barnacle
 # Access machines via SSH (as root, see below)
 ssh root@<machine-name>.r  # via retiolum
 ssh root@<machine-name>.s  # via spora
-ssh root@<machine-name>.n  # via nether
 torify ssh root@$(pass show machines/<machine-name>/tor-hostname)  # via tor
 ```
 
