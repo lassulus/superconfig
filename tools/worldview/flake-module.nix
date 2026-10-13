@@ -3,16 +3,22 @@
   perSystem =
     { pkgs, ... }:
     let
+      version = "0-unstable-2026-05-03";
+      rev = "f325daad229bb15f6a1d1d3d1e9f76a744d2b2c4";
       src = pkgs.fetchFromGitHub {
         owner = "audibleblink";
         repo = "worldview";
-        rev = "8fc39cf28d2334d4902bc552ec4a18f3c746af20";
-        hash = "sha256-effKF2cxG6r5Aw4DT6ZuJzbpRCBeFTQS3wxdh57AHEI=";
+        inherit rev;
+        hash = "sha256-L18lWcK5gEEiLyYSETk3+7KacBjxpr4SwrolcWXu4sc=";
       };
     in
     {
       packages.worldview = pkgs.writeShellApplication {
         name = "worldview";
+        passthru = {
+          inherit version;
+          updateScript = ./update.sh;
+        };
         runtimeInputs = [
           pkgs.bun
           pkgs.ungoogled-chromium
@@ -41,7 +47,7 @@
 
           # Copy source if not yet present or if version changed
           MARKER="$WORKDIR/.version"
-          CURRENT_REV="8fc39cf28d2334d4902bc552ec4a18f3c746af20"
+          CURRENT_REV="${rev}"
           if [ ! -f "$MARKER" ] || [ "$(cat "$MARKER")" != "$CURRENT_REV" ]; then
             echo "Setting up worldview source..."
             rm -rf "$WORKDIR/src"
