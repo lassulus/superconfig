@@ -7,7 +7,6 @@
     ../../configs/desktops/qtile/nixos.nix
     ../../configs/pipewire.nix
     ../../configs/network-manager.nix
-    ../../configs/consul.nix
     ../../configs/snapclient.nix
     ../../configs/gg23/audio/room.nix
     ../../configs/sigexec/executor.nix
