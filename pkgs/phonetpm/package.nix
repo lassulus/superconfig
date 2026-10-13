@@ -39,6 +39,6 @@ rustPlatform.buildRustPackage rec {
     homepage = "https://github.com/Lassulus/phonetpm";
     license = lib.licenses.mit;
     mainProgram = "phonetpm";
-    platforms = lib.platforms.linux;
+    platforms = lib.platforms.linux ++ lib.platforms.darwin;
   };
 }
