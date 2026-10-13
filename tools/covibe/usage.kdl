@@ -1,9 +1,0 @@
-bin "covibe"
-about "Run omp's TUI as a shared session on the omni.lassul.us omnigent dashboard (transcript, diff view and read-only/read-write sharing live on the server)"
-
-cmd "login" help="Authenticate this machine against omni.lassul.us; prints a link to open on any device with your pocket-id passkey"
-cmd "host" help="Keep this machine registered as a host so sessions can also be started from the browser"
-
-flag "-c --continue" help="Continue the previous omp session in this directory"
-flag "-r --resume" help="Resume an omnigent session (no value opens the picker)"
-arg "[omp-args...]" help="Arguments passed through to omp"

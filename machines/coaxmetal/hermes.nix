@@ -1,7 +1,6 @@
 {
   self,
   config,
-  lib,
   pkgs,
   ...
 }:
@@ -43,34 +42,6 @@ let
     '';
   };
 
-  # herdr keeps its API socket under the session owner's
-  # $HOME/.config/herdr/herdr.sock (verified on this host: the running server
-  # has HOME=/home/lass and listens on /home/lass/.config/herdr/herdr.sock),
-  # and the herd runs as lass — so the hermes user cannot see any pane without
-  # crossing the user boundary. sudo's env_reset leaves HOME pointing at the
-  # *calling* user, which made the CLI look for a socket under
-  # /var/lib/hermes/.config and report "no herdr server is running", so set it
-  # here. Keeping the env setup inside a store script also means sudoers
-  # matches one fixed path instead of an argv template.
-  herdr-as-lass = pkgs.writeShellApplication {
-    name = "herdr-as-lass";
-    text = ''
-      export HOME=${config.users.users.mainUser.home}
-      exec ${self.inputs.llm-agents.packages.${pkgs.system}.herdr}/bin/herdr "$@"
-    '';
-  };
-
-  # What the agent actually calls: `herdr agent list`, `herdr agent read <id>`,
-  # `herdr agent prompt <id> '...'`. Named plainly because the gateway's PATH
-  # is hermes + bash + coreutils + git + extraPackages — /run/current-system/sw
-  # is absent, so there is no real `herdr` to shadow.
-  herdr = pkgs.writeShellApplication {
-    name = "herdr";
-    text = ''
-      exec /run/wrappers/bin/sudo -u ${config.users.users.mainUser.name} \
-        ${herdr-as-lass}/bin/herdr-as-lass "$@"
-    '';
-  };
 in
 {
   imports = [
@@ -114,9 +85,6 @@ in
       # to ffprobe for the duration + waveform metadata those bubbles carry.
       pkgs.ffmpeg
       hermes-tts
-      # Drive the herd from a voice note: "read me what the agent on herdr is
-      # stuck on" -> herdr agent list / read / prompt, as lass.
-      herdr
       # CalDAV (calendar skill below) is plain HTTP; curl is not otherwise on
       # the gateway PATH.
       pkgs.curl
@@ -202,12 +170,10 @@ in
       # "" = auto-detect per clip, instead of upstream's "en" hint — commands
       # here switch between English and German mid-conversation.
       language = "";
-      # Vocabulary bias (faster-whisper initial_prompt). Measured on this host:
-      # "the agent on herdr is blocked" transcribes as "the agent on Herter"
-      # without it and verbatim with it. Every name here is one the agent has
-      # to route on — a misheard host or tool name is a failed command, not a
-      # typo.
-      prompt = "Jargon: herdr, omp, nix, clan, retiolum, coaxmetal, neoprism, ignavia, lassulus.";
+      # Vocabulary bias (faster-whisper initial_prompt). Every name here is one
+      # the agent has to route on — a misheard host or tool name is a failed
+      # command, not a typo.
+      prompt = "Jargon: omp, nix, clan, retiolum, coaxmetal, neoprism, ignavia, lassulus.";
       local = {
         # small is the first size whose transcripts survive our jargon; a 4s
         # clip takes ~3s warm on this CPU (int8), ~6s from cold weights.
@@ -252,52 +218,6 @@ in
     # EMAIL_PASSWORD, EMAIL_IMAP_HOST and EMAIL_SMTP_HOST are set
     # (gateway/config_env.py); only an explicit `enabled: false` stops that.
     settings.platforms.email.enabled = false;
-
-    # Teach the agent the herd. Without this the `herdr` wrapper is just an
-    # unadvertised binary on PATH: nothing in the model's context would make it
-    # reach for the herd when a voice note says "what is the agent stuck on".
-    # Skills are loaded from $HERMES_HOME/skills/<name>/SKILL.md.
-    hermesHomeFiles."skills/herdr/SKILL.md" = ''
-      ---
-      name: herdr
-      description: Inspect and steer the coding agents running in lass's herdr session on this machine.
-      version: 1.0.0
-      license: MIT
-      platforms: [linux]
-      metadata:
-        hermes:
-          tags: [herdr, agents, terminal, coding, inspect]
-      ---
-
-      # herdr
-
-      `herdr` on this host is a wrapper that talks to lass's running herdr
-      server (the agent multiplexer holding the coding-agent panes). Every
-      invocation prints JSON.
-
-      Use it whenever the user asks about "the agents", "the herd", "the
-      session on herdr", what something is "stuck on", or wants a prompt or
-      answer delivered to a running agent.
-
-      | Command | Use |
-      | --- | --- |
-      | `herdr agent list` | Every agent with its state: working, blocked, idle, done. Start here. |
-      | `herdr agent get <agent>` | One agent's detail (workspace, tab, pane, cwd). |
-      | `herdr agent read <agent>` | Recent terminal output. This is how you answer "what is it doing/asking". |
-      | `herdr agent prompt <agent> '<text>'` | Submit a prompt to that agent, e.g. to unblock an approval. |
-      | `herdr agent wait <agent> --state idle` | Block until it reaches a state. |
-      | `herdr workspace list` / `herdr tab list` / `herdr pane list` | Structure, when agent-level views are not enough. |
-      | `herdr --skill` | herdr's own, fuller usage reference — read it before improvising flags. |
-
-      Answering by voice: the reply is spoken, so summarize what `agent read`
-      shows in a sentence or two instead of reciting scrollback, and say the
-      agent's name and state first. Read a diff or a stack trace aloud only if
-      asked.
-
-      Blocked agents are the interesting case: report what the agent is waiting
-      for, and only run `herdr agent prompt` when the user actually decides.
-      Never close panes or kill agents on your own.
-    '';
 
     # The one shared calendar (configs/radicale.nix): lass's own events, the
     # book.lassul.us requests and bookings, and anything Hermes adds. Hermes
@@ -473,42 +393,6 @@ in
     ];
   };
 
-  # The herd/hermes user boundary. herdr keeps its API socket in the session
-  # owner's runtime dir, so reaching lass's panes means running as lass.
-  #
-  # Be clear about what this grants: `herdr pane run` / `agent prompt` execute
-  # commands inside lass's panes, so this is lass-level code execution for
-  # anything that can drive the agent — it does not narrow the existing threat
-  # model (the gateway already has terminal tools as hermes), but it widens the
-  # blast radius from the hermes user to lass. The gate stays
-  # MATRIX_ALLOWED_USERS above. Restricting the command to one store path only
-  # buys auditability, not containment.
-  security.sudo.extraRules = [
-    {
-      users = [ config.services.hermes-agent.user ];
-      runAs = config.users.users.mainUser.name;
-      commands = [
-        {
-          command = "${herdr-as-lass}/bin/herdr-as-lass";
-          options = [
-            "NOPASSWD"
-            "SETENV"
-          ];
-        }
-      ];
-    }
-  ];
-
-  # sudo is setuid, and the upstream unit sets NoNewPrivileges=yes, which makes
-  # every setuid exec fail — so the wrapper above returned "sudo: The "no new
-  # privileges" flag is set, which prevents sudo from running as root" and the
-  # agent reported the herd as unreachable. Turning it off for this unit is the
-  # price of the bridge; it only re-enables what the sudoers rule already
-  # allows (one store path, runas lass), since sudo itself is the only setuid
-  # binary the agent is pointed at.
-  # The module hardens the unit with NoNewPrivileges = true, hence mkForce.
-  systemd.services.hermes-agent.serviceConfig.NoNewPrivileges = lib.mkForce false;
-
   # ssh as hermes signs with the phone key (keys/ssh/phonetpm_massulus.pub,
   # authorized on all hosts): every login asks for a fingerprint on the phone.
   # The daemon only starts once paired:
@@ -621,7 +505,6 @@ in
   # Bearer token for the API server. Generated, not prompted, and kept in a
   # separate file as well so it can be read back out for the phone:
   #   clan vars get coaxmetal hermes-api/api_key
-  # (same shape as the covibe api_key generator).
   clan.core.vars.generators.hermes-api = {
     files."api_key" = { };
     runtimeInputs = [

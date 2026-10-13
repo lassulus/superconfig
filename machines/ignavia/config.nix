@@ -33,7 +33,6 @@
     ../../configs/yggdrasil.nix
     ../../configs/container-tests.nix
     ../../configs/rad.nix
-    ../../configs/herdr.nix
     ../../configs/tablet-screen.nix
     # ../../configs/br.nix
   ];

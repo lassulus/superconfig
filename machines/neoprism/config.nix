@@ -109,16 +109,10 @@
     # pocket-id SSO IdP (id.lassul.us)
     ../../configs/pocket-id.nix
 
-    # omnigent agent meta-harness (omni.lassul.us)
-    ../../configs/omnigent.nix
-
     # radicle public seed (radicle.lassul.us)
     ../../configs/radicle.lassul.us.nix
     # radicle identity + node for this machine (/var/lib/rad)
     ../../configs/rad.nix
-
-    # herdr agent multiplexer
-    ../../configs/herdr.nix
 
     # self-hosted iroh relay (relay.lassul.us)
     ../../configs/iroh-relay

@@ -45,8 +45,8 @@ in
   # This is what the WakeHermesClaw app on massulus points at when it is not on
   # retiolum: the assistant button posts to /v1/chat/completions here.
   #
-  # SECURITY: behind this vhost sits an agent with terminal tools and, through
-  # the herdr wrapper, code execution as lass. The gateway's only check on this
+  # SECURITY: behind this vhost sits an agent with terminal tools. The
+  # gateway's only check on this
   # lane is the API_SERVER_KEY bearer token — there is no per-user allowlist like
   # MATRIX_ALLOWED_USERS on the Matrix lane, and the app cannot do mTLS (it
   # builds a bare OkHttpClient with no KeyManager), so a client certificate is

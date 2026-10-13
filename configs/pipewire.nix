@@ -35,7 +35,7 @@
   # format: Invalid argument"): the Lua hook throws, its AsyncEventHook
   # transition never completes, and the event dispatcher stalls for good --
   # after which no node ever activates again, the ALSA sinks sit in SUSPENDED,
-  # and every player (including herdr's notification pings) blocks until
+  # and every player blocks until
   # wireplumber is restarted by hand. Fail the transition instead.
   services.pipewire.wireplumber.package = pkgs.wireplumber.overrideAttrs (old: {
     postPatch = (old.postPatch or "") + ''
