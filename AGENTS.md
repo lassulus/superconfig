@@ -80,6 +80,22 @@ A push happens only when the user runs it themselves or explicitly says
 "push" for that specific change in the current conversation. This includes
 all remotes (origin, HTTPS via gh credentials, pair) and all branches.
 
+Changes reach master through pull requests, not direct pushes: a ruleset on
+master requires a PR whose `ci` check (`.github/workflows/ci.yml`) passed.
+When the user says "push", push the branch and let GitHub merge it once CI
+is green:
+
+```bash
+git fetch github && git rebase github/master
+git push github HEAD:<branch>
+gh pr create --base master --head <branch> --fill
+gh pr merge <branch> --auto --rebase --delete-branch
+```
+
+`--rebase` keeps the individual commits on master. Only the user (repo admin)
+bypasses the ruleset. The update-pkgs bot merges its PRs through it as well,
+after dispatching farm.yml and ci.yml on them.
+
 ## Machine Facts and Secrets via vars
 
 - SSH public keys
