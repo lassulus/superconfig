@@ -208,11 +208,48 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # farm run for a head commit: "<id> <status> <conclusion>" or empty
+          # Farm run for a head commit: "<id> <status> <conclusion>" or empty.
+          # Cancelled runs don't count: a push to master replaced them.
           farm_run() {
             gh run list -R "$repo" -w farm.yml -b "$1" -e workflow_dispatch -L 20 \
               --json databaseId,headSha,status,conclusion \
-              --jq "[.[] | select(.headSha == \"$2\")][0] // empty | \"\(.databaseId) \(.status) \(.conclusion)\""
+              --jq "[.[] | select(.headSha == \"$2\" and .conclusion != \"cancelled\")][0] // empty
+                | \"\(.databaseId) \(.status) \(.conclusion)\""
+          }
+
+          # Rebase a PR onto master, farm-build that commit and wait for the
+          # result. Prints "<conclusion> <sha>"; conclusion is the farm run's,
+          # or "conflict" / "nostart".
+          verify_pr() {
+            local pr=$1 branch=$2 sha run id
+            git fetch -q origin master "$branch"
+            git switch -q -C "$branch" "origin/$branch"
+            if ! git rebase -q origin/master >&2; then
+              git rebase --abort
+              echo "conflict -"
+              return
+            fi
+            sha=$(git rev-parse HEAD)
+            if [ "$sha" != "$(git rev-parse "origin/$branch")" ]; then
+              git push -q --force-with-lease="$branch:origin/$branch" origin "$branch" >&2
+            fi
+            run=$(farm_run "$branch" "$sha")
+            if [ -z "$run" ]; then
+              gh workflow run farm.yml -R "$repo" --ref "$branch" >&2
+              for _ in $(seq 60); do
+                sleep 10
+                run=$(farm_run "$branch" "$sha")
+                [ -n "$run" ] && break
+              done
+            fi
+            id=${run%% *}
+            if [ -z "$id" ]; then
+              echo "nostart $sha"
+              return
+            fi
+            echo "#$pr: farm run $id on $sha" >&2
+            gh run watch "$id" -R "$repo" --interval 60 >/dev/null 2>&1 </dev/null || true
+            echo "$(gh run view "$id" -R "$repo" --json conclusion --jq .conclusion) $sha"
           }
 
           # flake.lock first: every package PR is rebased onto the master it
@@ -225,46 +262,23 @@ jobs:
               | sort_by(.headRefName != "update/flake-lock") | .[]
               | "\(.number) \(.headRefName)"')
 
-          while read -r pr branch; do
+          while read -r pr branch <&3; do
             [ -n "$pr" ] || continue
             echo "::group::#$pr $branch"
-            git fetch -q origin master "$branch"
-            git switch -q -C "$branch" "origin/$branch"
-            if ! git rebase -q origin/master; then
-              git rebase --abort
-              echo "#$pr: conflicts with master, left for the next run"
-              echo "::endgroup::"
-              continue
-            fi
-            sha=$(git rev-parse HEAD)
-            if [ "$sha" != "$(git rev-parse "origin/$branch")" ]; then
-              git push -q --force-with-lease="$branch:origin/$branch" origin "$branch"
-            fi
-
-            run=$(farm_run "$branch" "$sha")
-            if [ -z "$run" ]; then
-              gh workflow run farm.yml -R "$repo" --ref "$branch"
-              for _ in $(seq 60); do
-                sleep 10
-                run=$(farm_run "$branch" "$sha")
-                [ -n "$run" ] && break
-              done
-            fi
-            id=${run%% *}
-            if [ -z "$id" ]; then
-              echo "#$pr: farm run did not start"
-              echo "::endgroup::"
-              continue
-            fi
-            gh run watch "$id" -R "$repo" --interval 60 >/dev/null || true
-            conclusion=$(gh run view "$id" -R "$repo" --json conclusion --jq .conclusion)
-            echo "#$pr: farm run $id on $sha: $conclusion"
+            # A push to master cancels a running verification; master has
+            # moved then, so rebase and build again.
+            for attempt in 1 2 3; do
+              read -r conclusion sha < <(verify_pr "$pr" "$branch")
+              [ "$conclusion" = cancelled ] || break
+              echo "#$pr: farm run cancelled by a push to master (attempt $attempt)"
+            done
+            echo "#$pr: $conclusion"
             if [ "$conclusion" = success ] && [ "$AUTOMERGE" = true ]; then
               gh pr merge "$pr" -R "$repo" --squash --delete-branch --match-head-commit "$sha"
               merged=$((merged + 1))
             fi
             echo "::endgroup::"
-          done <<<"$prs"
+          done 3<<<"$prs"
 
           echo "merged update PRs: $merged"
           if [ "$merged" -gt 0 ]; then

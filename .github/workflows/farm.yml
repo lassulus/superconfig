@@ -22,11 +22,14 @@ permissions:
   id-token: write # niks3 push
   actions: read # workers watch the farm job
 
-# The farm's iroh endpoint id is fixed, so only one run at a time; a newer
-# push replaces a running build.
+# The farm's iroh endpoint id is fixed, so only one run at a time. A push to
+# master replaces a running build (an older master state or an update-pkgs
+# verification, which retries). Dispatched runs (update-pkgs verifying a PR,
+# manual runs) never cancel a running build; they wait as the group's pending
+# run.
 concurrency:
   group: farm
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 
 env:
   # must match the worker matrix below
