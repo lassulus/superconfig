@@ -28,12 +28,6 @@
     # data-mesher; see the empty flake.nixosModules.data-mesher below.
     clan-core.inputs.data-mesher.follows = "";
 
-    stockholm.url = "git+https://github.com/krebs/stockholm?submodules=1";
-    # stockholm.url = "git+https://cgit.lassul.us/stockholm";
-    # stockholm.url = "path:/home/lass/sync/stockholm";
-    stockholm.inputs.nixpkgs.follows = "nixpkgs";
-    stockholm.inputs.buildbot-nix.follows = "";
-
     # Host database only (modules/retiolum/hosts.nix), on every platform.
     # The daemon is pkgs/tincr everywhere; barnacle imports tincr's own
     # darwin module below, not kartei's retiolum shim.
@@ -55,23 +49,12 @@
 
     nixos-hardware.url = "github:nixos/nixos-hardware";
 
-    nether.url = "github:krebs/nether";
-    # nether.url = "git+file:/home/lass/src/nether";
-    nether.inputs.nixpkgs.follows = "nixpkgs";
-    nether.inputs.clan-core.follows = "clan-core";
-    nether.inputs.data-mesher.follows = "";
-
     spora.url = "github:krebs/spora";
     # spora.url = "git+file:/home/lass/src/spora";
     spora.inputs.nixpkgs.follows = "nixpkgs";
 
-    nix-darwin.url = "github:LnL7/nix-darwin";
-    nix-darwin.inputs.nixpkgs.follows = "nixpkgs";
-
     nix-rosetta-builder.url = "github:cpick/nix-rosetta-builder";
     nix-rosetta-builder.inputs.nixpkgs.follows = "nixpkgs";
-
-    nixos-facter.url = "github:numtide/nixos-facter-modules";
 
     treefmt-nix.url = "github:numtide/treefmt-nix";
     treefmt-nix.inputs.nixpkgs.follows = "nixpkgs";
