@@ -35,6 +35,9 @@
       # identity.key also lives in clan vars; the SQLite databases are
       # dumped consistently to /var/backup/parley by the preHook.
       "/var/lib/parley"
+      # WBO boards (paint.lassul.us). DynamicUser + StateDirectory make
+      # /var/lib/whitebophir only a symlink, so back up the real directory.
+      "/var/lib/private/whitebophir"
     ];
     exclude = [
       "*.pyc"

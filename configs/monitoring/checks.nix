@@ -49,6 +49,7 @@ in
       (https "lassul.us" "https://lassul.us/")
       (https "matrix" "https://matrix.lassul.us/_matrix/client/versions")
       (https "pad" "https://pad.lassul.us/")
+      (https "paint" "https://paint.lassul.us/")
       (https "cache" "https://cache.lassul.us/nix-cache-info")
       (https "niks3" "https://niks3.lassul.us/health")
       (soa "ns1" "95.217.192.59")
