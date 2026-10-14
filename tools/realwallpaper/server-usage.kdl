@@ -1,0 +1,33 @@
+bin "realwallpaper-server"
+about "HTTP service rendering realwallpaper on demand: /?location=LAT,LON&variant=lens|plain|mercator&overlay=none|sky|krebs|stars&size=WxH"
+
+flag "--state-dir" help="Renders and the shared data cache (required)" {
+  arg "<dir>"
+}
+flag "--listen" help="HOST:PORT (default 127.0.0.1:8477)" {
+  arg "<addr>"
+}
+flag "--ttl" help="Seconds a render stays fresh (default 600)" {
+  arg "<seconds>"
+}
+flag "--keep" help="Drop renders not requested for this many seconds (default 7 days)" {
+  arg "<seconds>"
+}
+flag "--wait" help="How long a request waits for its render (default 900)" {
+  arg "<seconds>"
+}
+flag "--render-timeout" help="Seconds a render may take (default 1800)" {
+  arg "<seconds>"
+}
+flag "--max-queue" help="Queued renders before new locations get 503 (default 8)" {
+  arg "<n>"
+}
+flag "--marker-url" help="JSON {name: {latitude, longitude}} for krebs markers" {
+  arg "<url>"
+}
+flag "--lat" help="Default location latitude (Berlin)" {
+  arg "<deg>"
+}
+flag "--lon" help="Default location longitude (Berlin)" {
+  arg "<deg>"
+}
