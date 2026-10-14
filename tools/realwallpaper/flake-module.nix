@@ -1,6 +1,6 @@
 {
   perSystem =
-    { pkgs, ... }:
+    { pkgs, self', ... }:
     let
       python = pkgs.python3.withPackages (
         ps: with ps; [
@@ -39,5 +39,15 @@
           '';
         }).overrideAttrs
           { passthru.usage = builtins.readFile ./usage.kdl; };
+
+      packages.realwallpaper-server =
+        (pkgs.writeShellApplication {
+          name = "realwallpaper-server";
+          runtimeInputs = [ pkgs.python3 ];
+          text = ''
+            exec python3 ${./server.py} --realwallpaper ${self'.packages.realwallpaper}/bin/realwallpaper "$@"
+          '';
+        }).overrideAttrs
+          { passthru.usage = builtins.readFile ./server-usage.kdl; };
     };
 }

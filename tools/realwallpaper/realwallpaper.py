@@ -692,9 +692,31 @@ class Cache:
         return path if path.exists() else None
 
     def cleanup(self, max_age: float = 3 * 86400) -> None:
+        """Delete files no run has used for max_age.
+
+        File mtimes are the fetch times the TTLs run on, so last use is kept
+        in a separate index; that also lets several homes share one cache
+        without deleting each other's local imagery.
+        """
+        index_path = self.root / "last-used.json"
+        try:
+            last_used = json.loads(index_path.read_text())
+        except (OSError, ValueError):
+            last_used = {}
+        now = time.time()
+        for p in self.used:
+            last_used[p.name] = now
         for p in self.root.iterdir():
-            if p not in self.used and time.time() - p.stat().st_mtime > max_age:
+            if p == index_path or p.name.startswith("."):
+                continue
+            seen = last_used.get(p.name, p.stat().st_mtime)
+            if now - seen > max_age:
                 p.unlink()
+                last_used.pop(p.name, None)
+        last_used = {name: t for name, t in last_used.items() if (self.root / name).exists()}
+        tmp = index_path.with_name(f".{index_path.name}.tmp")
+        tmp.write_text(json.dumps(last_used))
+        os.replace(tmp, index_path)
 
 
 def snow_fraction(ndsi: np.ndarray) -> np.ndarray:
@@ -1288,6 +1310,9 @@ def main() -> None:
     p = argparse.ArgumentParser(prog="realwallpaper", description=__doc__.splitlines()[0])
     p.add_argument("--dir", type=Path, default=Path("."),
                    help="output and cache directory (default: .)")
+    p.add_argument("--cache-dir", type=Path, default=None,
+                   help="downloaded data, may be shared between runs for different homes "
+                        "(default: DIR/cache)")
     p.add_argument("--lat", type=float, default=52.520008,
                    help="home latitude in degrees, south negative (default Berlin)")
     p.add_argument("--lon", type=float, default=13.404954,
@@ -1322,7 +1347,7 @@ def main() -> None:
 
     out_dir = args.dir.resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
-    cache = Cache(out_dir / "cache")
+    cache = Cache(args.cache_dir.resolve() if args.cache_dir else out_dir / "cache")
     proj = LensMap(args.lat, args.lon, args.width, args.height,
                    args.magnification, args.lens, args.lens_shape, args.focus, args.falloff,
                    args.projection)
