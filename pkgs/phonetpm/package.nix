@@ -7,13 +7,13 @@
 
 rustPlatform.buildRustPackage rec {
   pname = "phonetpm";
-  version = "0.4.1";
+  version = "0.4.2";
 
   src = fetchFromGitHub {
     owner = "Lassulus";
     repo = "phonetpm";
     tag = "v${version}";
-    hash = "sha256-K8R0lEMQ9ZjoRlMKpLEAH3qriQ5VyrOXkVuYI+J7nBY=";
+    hash = "sha256-SCrCuaeAwx7bs3Y8IXmOf5Zwx3UudTX52ODCrnm2iKM=";
   };
 
   cargoHash = "sha256-pTgkA+jc+G8GxiDsVHP5q9Zt55k1nyr1ltAAqRXEpqc=";
