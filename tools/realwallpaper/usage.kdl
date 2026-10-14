@@ -1,0 +1,43 @@
+bin "realwallpaper"
+about "Render a live world map wallpaper: oblique Mercator centred on home with a fisheye lens (clouds, day/night, snow, ice, fire, sky)"
+
+flag "--dir" help="Output and cache directory (default .)" {
+  arg "<dir>"
+}
+flag "--lat" help="Home latitude (default Berlin)" {
+  arg "<deg>"
+}
+flag "--lon" help="Home longitude (default Berlin)" {
+  arg "<deg>"
+}
+flag "--width" help="Output width in px (default 3840)" {
+  arg "<px>"
+}
+flag "--height" help="Output height in px (default 2160)" {
+  arg "<px>"
+}
+flag "--magnification" help="Zoom at home relative to the plain map (default 6)" {
+  arg "<factor>"
+}
+flag "--lens" help="Lens size relative to the screen; 1 reaches the edges (default 1)" {
+  arg "<fraction>"
+}
+flag "--lens-shape" help="circle; ellipse or rect follow the screen's aspect (default ellipse)" {
+  arg "<shape>"
+}
+flag "--focus" help="Share of the lens zoomed undistorted before the transition (default 0)" {
+  arg "<fraction>"
+}
+flag "--falloff" help="Where across the lens (0..1) the distortion peaks; higher keeps the middle closer to a plain zoom (default 0.65)" {
+  arg "<position>"
+}
+flag "--projection" help="lens: centred on home with the zoom lens; plain: centred on home without distortion; mercator: classic north-up map (default lens)" {
+  arg "<mode>"
+}
+flag "--marker-url" help="JSON {name: {latitude, longitude}} for krebs markers" {
+  arg "<url>"
+}
+flag "--time" help="Render for this UTC time instead of now (ISO 8601)" {
+  arg "<time>"
+}
+flag "--no-archive" help="Do not keep a jpg copy in archive/"
