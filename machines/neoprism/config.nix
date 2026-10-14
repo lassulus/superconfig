@@ -73,9 +73,6 @@
     # where.is.lassul.us (location from home-assistant on a map)
     ../../configs/websites/where.is.lassul.us
 
-    # realwallpaper generator
-    ../../configs/realwallpaper.nix
-
     # paste + cyberlocker
     ../../configs/paste
 
@@ -128,17 +125,6 @@
   # lassul.us shouldn't be the default vhost here (nginx.nix already sets one)
   services.nginx.virtualHosts."lassul.us" = {
     default = lib.mkForce false;
-    locations = {
-      "= /wallpaper-marker.png".extraConfig = ''
-        alias /var/realwallpaper/realwallpaper-marker.png;
-      '';
-      "= /wallpaper.png".extraConfig = ''
-        alias /var/realwallpaper/realwallpaper.png;
-      '';
-      "= /wallpaper-stars-berlin.png".extraConfig = ''
-        alias /var/realwallpaper/realwallpaper-krebs-stars-berlin.png;
-      '';
-    };
   };
 
   # riot VM (HFOS): fresh libvirt guest on a dedicated bridged public IP.

@@ -15,7 +15,6 @@
     ../../configs/browsers.nix
     ../../configs/pass.nix
     ../../configs/steam.nix
-    ../../configs/fetchWallpaper.nix
     ../../configs/mail.nix
     ../../configs/syncthing.nix
     ../../configs/ableton.nix

@@ -4,8 +4,7 @@ _: {
     ./fetchWallpaper.nix
     ./sync-containers3.nix
     ./parley.nix
-    # copied from stockholm, see the header of each
+    # copied from stockholm, see the header
     ./reaktor2.nix
-    ./realwallpaper.nix
   ];
 }
