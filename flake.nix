@@ -75,7 +75,9 @@
     sigexec.inputs.nixpkgs.follows = "nixpkgs";
 
     # build farm (configs/nix-farm): remote builds over grpc:// ...
-    nix-grpc-store.url = "github:Mic92/nix-grpc-store";
+    # Fork with the drain/upload race fix (Mic92/nix-grpc-store#204);
+    # back to upstream once that is merged.
+    nix-grpc-store.url = "github:lassulus/nix-grpc-store/fix-drain-upload";
     nix-grpc-store.inputs.nixpkgs.follows = "nixpkgs";
     nix-grpc-store.inputs.niks3.follows = "niks3";
 

@@ -419,15 +419,16 @@
         ]
       },
       "locked": {
-        "lastModified": 1791799695,
-        "narHash": "sha256-nOBXtYq1l3Vl4JeUSNHOkTI+vYuR4vT6KH2wcgCVxB4=",
-        "owner": "Mic92",
+        "lastModified": 1791962676,
+        "narHash": "sha256-6MG1vSAjpl86STt6h4ga8IIUrmfX9PXmgNEp/7XVqbQ=",
+        "owner": "lassulus",
         "repo": "nix-grpc-store",
-        "rev": "8d0368860b4c3865bd15b22f86605b2e2472f7b5",
+        "rev": "07c970f4d7896f2308f5a186560551562dc23c0c",
         "type": "github"
       },
       "original": {
-        "owner": "Mic92",
+        "owner": "lassulus",
+        "ref": "fix-drain-upload",
         "repo": "nix-grpc-store",
         "type": "github"
       }
