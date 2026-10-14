@@ -129,6 +129,25 @@
           "legendFormat": "{{host}} write"
         }
       ]
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "superconfig revision",
+      "gridPos": { "x": 0, "y": 24, "w": 12, "h": 8 },
+      "datasource": { "type": "victoriametrics-metrics-datasource", "uid": "victoriametrics" },
+      "options": { "sortBy": [{ "displayName": "host", "desc": false }] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (host, revision_short) (nixos_system_info{host=~\"$host\"})",
+          "format": "table",
+          "instant": true
+        }
+      ],
+      "transformations": [
+        { "id": "organize", "options": { "excludeByName": { "Time": true, "Value": true } } }
+      ]
     }
   ]
 }
