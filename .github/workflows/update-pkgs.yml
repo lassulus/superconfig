@@ -1,25 +1,23 @@
 name: update-pkgs
 
-# Daily package and flake.lock updates. Nothing reaches master without a full
-# farm build:
+# Daily package and flake.lock updates, one PR per package:
 #
-# 1. update (one job per package): run its passthru.updateScript through
-#    tools/update-pkgs, build the package on its platform (darwin-only
-#    packages on macOS), push update/<pkg> and open or refresh its PR.
-#    lock: `nix flake update`, pushed as update/flake-lock with its own PR.
-# 2. verify: for every open update/* PR, one after another (flake.lock
-#    first), rebase it onto the current master, run ci.yml on that commit
-#    (it builds all machines with the farm) and merge the PR with a merge
-#    commit only if it succeeded (master's ruleset requires its ci check). A
-#    commit that already has a finished run is not checked again, so a
-#    failing PR stays open until its branch or master changes.
+# - update (one job per package): run its passthru.updateScript through
+#   tools/update-pkgs, build the package on its platform (darwin-only
+#   packages on macOS), push update/<pkg> on top of the current master and
+#   open its PR.
+# - lock: `nix flake update`, pushed as update/flake-lock with its own PR.
 #
-# One PR at a time: the farm builds one commit at a time anyway, and each PR
-# is rebased onto the master it gets merged into.
+# A branch whose tree already equals the new commit is left alone, so a
+# failing PR isn't built again until upstream or master changes. Otherwise
+# it is replaced by the new commit, which keeps open PRs rebased onto master.
 #
-# Needs "Allow GitHub Actions to create and approve pull requests" in the repo
-# settings. Merges made with GITHUB_TOKEN don't trigger push workflows, so the
-# ci run (farm build) of master after merging is dispatched here as well.
+# Pushes, PRs and auto-merge use the UPDATE_PKGS_TOKEN secret (fine-grained
+# PAT or GitHub App token with contents, pull requests and workflows
+# read/write). Unlike GITHUB_TOKEN, its pushes run ci.yml on the PR, and
+# GitHub merges the PR with a merge commit once master's ruleset (the ci
+# check) is met. That merge counts as the token's, so ci.yml runs on master
+# as well. Needs "Allow auto-merge" in the repo settings.
 
 on:
   schedule:
@@ -30,14 +28,12 @@ on:
         description: Packages to update, space separated (empty for all)
         default: ""
       automerge:
-        description: Merge PRs whose farm build succeeded
+        description: Enable auto-merge on the PRs
         type: boolean
         default: true
 
 permissions:
-  contents: write
-  pull-requests: write
-  actions: write # dispatch and watch ci runs
+  contents: read
 
 concurrency:
   group: update-pkgs
@@ -54,6 +50,13 @@ jobs:
     outputs:
       matrix: ${{ steps.list.outputs.matrix }}
     steps:
+      - env:
+          TOKEN: ${{ secrets.UPDATE_PKGS_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::secret UPDATE_PKGS_TOKEN is not set (fine-grained PAT or GitHub App token with contents, pull requests and workflows read/write)"
+            exit 1
+          fi
       - uses: actions/checkout@v4
       - uses: cachix/install-nix-action@v31
       - id: list
@@ -91,13 +94,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ secrets.UPDATE_PKGS_TOKEN }}
       - uses: cachix/install-nix-action@v31
       - env:
           PKG: ${{ matrix.pkg }}
           SYSTEM: ${{ matrix.system }}
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.UPDATE_PKGS_TOKEN }}
           # nix-update and the update scripts query the GitHub API
           GITHUB_TOKEN: ${{ github.token }}
+          AUTOMERGE: ${{ github.event_name == 'schedule' || inputs.automerge }}
         run: |
           version() { nix eval --raw ".#packages.$SYSTEM.$PKG.version" 2>/dev/null || echo unknown; }
           old=$(version)
@@ -126,22 +131,22 @@ jobs:
           git add -A
           git commit -m "$msg"
 
-          # Same change as the branch already carries (e.g. a PR whose farm
-          # build failed and upstream hasn't moved): keep its commit, so
-          # verify doesn't build it again.
-          if git fetch -q origin "$branch" 2>/dev/null &&
-            git diff --quiet FETCH_HEAD HEAD -- "$prefix/$PKG"; then
-            echo "$PKG: $branch already has this update"
+          if git fetch -q origin "$branch" 2>/dev/null && git diff --quiet FETCH_HEAD HEAD; then
+            echo "$PKG: $branch already has this update on this master"
           else
             git push --force origin "$branch"
           fi
 
           if [ -z "$(gh pr list --head "$branch" --state open --json number --jq '.[].number')" ]; then
             gh pr create --base master --head "$branch" --title "$msg" \
-              --body "Automated update by the update-pkgs workflow (\`nix run .#update-pkgs -- $PKG\`), package built on $SYSTEM. Merged automatically once the farm has built all machines from this branch."
+              --body "Automated update by the update-pkgs workflow (\`nix run .#update-pkgs -- $PKG\`), package built on $SYSTEM. Merged automatically once ci (including the farm build of all machines) passed."
+          fi
+          if [ "$AUTOMERGE" = true ]; then
+            gh pr merge "$branch" --auto --merge --delete-branch
           fi
 
   lock:
+    needs: list
     # whole runs only, not manual runs for selected packages
     if: inputs.packages == ''
     runs-on: ubuntu-latest
@@ -149,10 +154,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ secrets.UPDATE_PKGS_TOKEN }}
       - uses: cachix/install-nix-action@v31
       - env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.UPDATE_PKGS_TOKEN }}
           GITHUB_TOKEN: ${{ github.token }}
+          AUTOMERGE: ${{ github.event_name == 'schedule' || inputs.automerge }}
         run: |
           export NIX_CONFIG="$NIX_CONFIG"$'\n'"access-tokens = github.com=$GITHUB_TOKEN"
           nix flake update 2>&1 | tee "$RUNNER_TEMP/update.log"
@@ -168,17 +175,14 @@ jobs:
           git switch -c "$branch"
           git commit -m "$msg" -- flake.lock
 
-          # Same lock as the branch already carries: keep its commit, so
-          # verify doesn't build it again.
-          if git fetch -q origin "$branch" 2>/dev/null &&
-            git diff --quiet FETCH_HEAD HEAD -- flake.lock; then
-            echo "flake.lock: $branch already has this update"
+          if git fetch -q origin "$branch" 2>/dev/null && git diff --quiet FETCH_HEAD HEAD; then
+            echo "flake.lock: $branch already has this update on this master"
           else
             git push --force origin "$branch"
           fi
 
           {
-            echo "Automated \`nix flake update\` by the update-pkgs workflow. Merged automatically once the farm has built all machines from this branch."
+            echo "Automated \`nix flake update\` by the update-pkgs workflow. Merged automatically once ci (including the farm build of all machines) passed."
             echo
             echo '```'
             sed -n '/^• /,$p' "$RUNNER_TEMP/update.log"
@@ -190,101 +194,6 @@ jobs:
           else
             gh pr edit "$pr" --body-file "$RUNNER_TEMP/body.md"
           fi
-
-  verify:
-    needs: [update, lock]
-    if: always() && needs.update.result != 'cancelled' && needs.lock.result != 'cancelled'
-    runs-on: ubuntu-latest
-    timeout-minutes: 350
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - env:
-          GH_TOKEN: ${{ github.token }}
-          AUTOMERGE: ${{ github.event_name == 'schedule' || inputs.automerge }}
-        run: |
-          repo=$GITHUB_REPOSITORY
-          merged=0
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          # Dispatched run of a workflow for a head commit: "<id> <status>
-          # <conclusion>" or empty. Cancelled runs don't count: a newer run
-          # for the branch replaced them.
-          dispatched_run() {
-            gh run list -R "$repo" -w "$1" -b "$2" -e workflow_dispatch -L 20 \
-              --json databaseId,headSha,status,conclusion \
-              --jq "[.[] | select(.headSha == \"$3\" and .conclusion != \"cancelled\")][0] // empty
-                | \"\(.databaseId) \(.status) \(.conclusion)\""
-          }
-
-          # Dispatch a workflow on a branch unless its head commit already
-          # has a run, wait for it and print its conclusion, or "nostart".
-          run_workflow() {
-            local workflow=$1 branch=$2 sha=$3 run id
-            run=$(dispatched_run "$workflow" "$branch" "$sha")
-            if [ -z "$run" ]; then
-              gh workflow run "$workflow" -R "$repo" --ref "$branch" >&2
-              for _ in $(seq 60); do
-                sleep 10
-                run=$(dispatched_run "$workflow" "$branch" "$sha")
-                [ -n "$run" ] && break
-              done
-            fi
-            id=${run%% *}
-            if [ -z "$id" ]; then
-              echo nostart
-              return
-            fi
-            echo "$workflow run $id on $sha" >&2
-            gh run watch "$id" -R "$repo" --interval 60 >/dev/null 2>&1 </dev/null || true
-            gh run view "$id" -R "$repo" --json conclusion --jq .conclusion
-          }
-
-          # Rebase a PR branch onto master and run ci.yml (with the farm
-          # build) on that commit. Prints "<conclusion> <sha>"; conclusion is
-          # the ci run's, or "conflict" / "nostart".
-          verify_pr() {
-            local branch=$1 sha conclusion
-            git fetch -q origin master "$branch"
-            git switch -q -C "$branch" "origin/$branch"
-            if ! git rebase -q origin/master >&2; then
-              git rebase --abort
-              echo "conflict -"
-              return
-            fi
-            sha=$(git rev-parse HEAD)
-            if [ "$sha" != "$(git rev-parse "origin/$branch")" ]; then
-              git push -q --force-with-lease="$branch:origin/$branch" origin "$branch" >&2
-            fi
-            conclusion=$(run_workflow ci.yml "$branch" "$sha")
-            echo "$conclusion $sha"
-          }
-
-          # flake.lock first: every package PR is rebased onto the master it
-          # gets merged into right before its build, so after the lock merge
-          # the packages are built once, against the new lock, and the final
-          # ci run on master only hits the cache.
-          prs=$(gh pr list -R "$repo" --state open --base master --limit 100 \
-            --json number,headRefName \
-            --jq '[.[] | select(.headRefName | startswith("update/"))]
-              | sort_by(.headRefName != "update/flake-lock") | .[]
-              | "\(.number) \(.headRefName)"')
-
-          while read -r pr branch <&3; do
-            [ -n "$pr" ] || continue
-            echo "::group::#$pr $branch"
-            read -r conclusion sha < <(verify_pr "$branch")
-            echo "#$pr: $conclusion"
-            if [ "$conclusion" = success ] && [ "$AUTOMERGE" = true ]; then
-              gh pr merge "$pr" -R "$repo" --merge --delete-branch --match-head-commit "$sha"
-              merged=$((merged + 1))
-            fi
-            echo "::endgroup::"
-          done 3<<<"$prs"
-
-          echo "merged update PRs: $merged"
-          if [ "$merged" -gt 0 ]; then
-            gh workflow run ci.yml -R "$repo" --ref master
+          if [ "$AUTOMERGE" = true ]; then
+            gh pr merge "$branch" --auto --merge --delete-branch
           fi
