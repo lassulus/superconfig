@@ -73,6 +73,9 @@
     # where.is.lassul.us (location from home-assistant on a map)
     ../../configs/websites/where.is.lassul.us
 
+    # wallpaper.lassul.us (realwallpaper rendered on demand)
+    ../../configs/websites/wallpaper.lassul.us.nix
+
     # paste + cyberlocker
     ../../configs/paste
 
