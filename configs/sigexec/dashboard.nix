@@ -26,9 +26,9 @@ in
       coaxmetal = "http://coaxmetal.r:${toString executorPort}";
       icarus = "http://icarus.r:${toString executorPort}";
       shodan = "http://shodan.r:${toString executorPort}";
-      # starkstrom is not in the shared kartei registry yet, so the fleet has
-      # no retiolum route to it; its own nginx terminates TLS and strips the
-      # /sigexec prefix (machines/starkstrom/config.nix).
+      # over public TLS (set up before starkstrom had a kartei card); its own
+      # nginx terminates TLS and strips the /sigexec prefix
+      # (machines/starkstrom/config.nix).
       starkstrom = "https://starkstrom.lassul.us/sigexec";
     };
   };

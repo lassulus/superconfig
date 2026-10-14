@@ -210,7 +210,6 @@
         ./formatter.nix
         ./pkgs/flake-module.nix
         ./keys/flake-module.nix
-        ./retiolum/flake-module.nix
         ./skills/flake-module.nix
 
         ./wrapperModules/pi/flake-module.nix

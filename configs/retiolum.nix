@@ -25,12 +25,7 @@ let
   kartei = import (self.inputs.kartei + "/modules/retiolum/hosts.nix") { inherit lib; };
 
   name = config.networking.hostName;
-
-  # Nodes with no kartei card, known only inside superconfig. Exposes the same
-  # interface as kartei's hosts.nix, so both sources merge the same way.
-  local = self.retiolum;
-
-  own = kartei.own.${name} or local.own.${name};
+  own = kartei.own.${name};
 in
 
 {
@@ -44,7 +39,7 @@ in
     # (tens of thousands of suppressed messages per minute) and rotates
     # all other units' logs out of the journal within hours
     debugLevel = 0;
-    hosts = kartei.tincHosts // local.tincHosts;
+    hosts = kartei.tincHosts;
     extraConfig = ''
       AutoConnect = yes
       LocalDiscovery = yes
