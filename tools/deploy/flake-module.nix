@@ -14,8 +14,10 @@
       # (progress via nom), shows the source diff against the running system
       # (/var/lib/deploy/src) and the closure diff, asks (--yes: does not
       # ask and prints the diffs without a pager), then uploads
-      # secrets and switches in the unit deploy-switch. Both units survive
-      # the ssh connection dying; rerunning deploy attaches to a running one.
+      # secrets and switches in the unit deploy-switch, which records the
+      # deployed git revision in /var/lib/superconfig-revision. Both units
+      # survive the ssh connection dying; rerunning deploy attaches to a
+      # running one.
       packages.deploy =
         (pkgs.writeShellApplication {
           name = "deploy";
@@ -190,11 +192,16 @@
 
               step "copying source to $target:$state/incoming"
               # The flake source exactly as nix sees it: tracked files only.
-              src=$(nix flake metadata --json "$flake" | jq -r .path)
+              meta=$(nix flake metadata --json "$flake")
+              src=$(jq -r .path <<<"$meta")
+              # Its git revision (-dirty with uncommitted changes), written to
+              # /var/lib/superconfig-revision once the switch succeeded.
+              revision=$(jq -r '.revision // .dirtyRevision // "unknown"' <<<"$meta")
               tar -C "$src" --owner=0 --group=0 --numeric-owner -czf - . |
                 remote "rm -rf $state/incoming.new && mkdir -p $state/incoming.new &&" \
                   "tar -C $state/incoming.new -xzf - &&" \
-                  "rm -rf $state/incoming && mv $state/incoming.new $state/incoming"
+                  "rm -rf $state/incoming && mv $state/incoming.new $state/incoming &&" \
+                  "echo $revision >$state/incoming.revision"
 
               step "source changes"
               source_diff | page
@@ -249,6 +256,7 @@
             start deploy-switch \
               -p "ExecStartPre=/run/current-system/sw/bin/nix-env -p /nix/var/nix/profiles/system --set $system" \
               -p "ExecStartPre=/bin/sh -c 'rm -rf $state/src && cp -a $state/incoming $state/src'" \
+              -p "ExecStartPost=/bin/sh -c '(cat $state/incoming.revision || echo unknown) >/var/lib/superconfig-revision.tmp && mv /var/lib/superconfig-revision.tmp /var/lib/superconfig-revision'" \
               "$system/bin/switch-to-configuration" switch
             follow deploy-switch
           '';
