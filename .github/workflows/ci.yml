@@ -4,8 +4,6 @@ on:
   push:
     branches: [master]
   pull_request:
-  # update-pkgs runs it on its PR branches: pushes and PRs made with
-  # GITHUB_TOKEN don't trigger workflows, and master requires the ci check.
   workflow_dispatch:
 
 # A newer run for the same ref replaces a running one, its farm included.
