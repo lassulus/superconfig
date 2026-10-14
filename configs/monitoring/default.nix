@@ -8,8 +8,7 @@
   ];
 
   # Machines expected to be up all the time. Only these get HostDown alerts
-  # and ICMP checks, so laptops can come and go silently. starkstrom has no
-  # retiolum route to the servers, so its data never arrives.
+  # and ICMP checks, so laptops can come and go silently.
   alwaysOn = [
     "neoprism"
     "styx"
@@ -19,6 +18,7 @@
     "radio"
     "icarus"
     "shodan"
+    "starkstrom"
   ];
 
   ports = {
