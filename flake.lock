@@ -419,11 +419,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1792002102,
-        "narHash": "sha256-M8IkSczvGN0Z2pnFV5YEpvg62k+0xUxEI6EaZ4Ognrw=",
+        "lastModified": 1792007434,
+        "narHash": "sha256-hGPHVPSJTT29dmUT7RsQC4Omijvr4NLfgGxP+lTlNms=",
         "owner": "lassulus",
         "repo": "nix-grpc-store",
-        "rev": "1b12ba5de436e19b02f425f28ca1d8a6c779008b",
+        "rev": "f8261b8132e8966ada80206a39d8b49d7f96be2c",
         "type": "github"
       },
       "original": {
