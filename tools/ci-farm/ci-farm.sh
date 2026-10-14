@@ -140,6 +140,16 @@ farm() {
   done
 }
 
+# grpc.health.v1 Check on 127.0.0.1:PORT over the farm's TLS, prints the
+# response headers and trailers. An empty HealthCheckRequest: 0 = uncompressed,
+# 0 bytes.
+health() {
+  printf '\0\0\0\0\0' | curl -s -o /dev/null -D - --max-time 10 --http2 \
+    -H 'content-type: application/grpc' -H 'te: trailers' --data-binary @- \
+    --cacert "$FARM_CRT" --cert "$FARM_CRT" --key "$state/farm.key" \
+    "https://127.0.0.1:$1/grpc.health.v1.Health/Check"
+}
+
 # A dumbpipe dialer started before the farm is discoverable never reaches it,
 # not even once the farm is online. Probe PORT with short-lived dialers to
 # TICKET until it answers an HTTP/2 request over the farm's TLS, then leave
@@ -152,11 +162,7 @@ wait_farm() {
       dumbpipe connect-tcp --addr "127.0.0.1:$port" "$ticket" 2>/dev/null &
     probe=$!
     sleep 3
-    # Empty grpc.health.v1.HealthCheckRequest: 0 = uncompressed, 0 bytes.
-    if printf '\0\0\0\0\0' | curl -s -o /dev/null --max-time 10 --http2 \
-      -H 'content-type: application/grpc' -H 'te: trailers' --data-binary @- \
-      --cacert "$FARM_CRT" --cert "$FARM_CRT" --key "$state/farm.key" \
-      "https://127.0.0.1:$port/grpc.health.v1.Health/Check"; then
+    if health "$port" >/dev/null; then
       kill "$probe" 2>/dev/null || true
       return
     fi
@@ -165,6 +171,26 @@ wait_farm() {
     n=$((n + 1))
     if [ $((n % 15)) -eq 0 ] && jobs_done coordinator; then
       echo "ci-farm: the farm did not come up" >&2
+      exit 1
+    fi
+  done
+}
+
+# Envoy (via PORT) has a builder to send requests to only once one has joined
+# the scheduler and the farm has dialed it and health checked it through the
+# tunnel; until then it answers itself, with grpc-status 14 ("no healthy
+# upstream", or "remote connection failure" for a builder not dialed yet).
+# A client gives up on a store it has never reached, so wait until a health
+# check through envoy reaches a builder (grpc-status 0). Gives up when the
+# builder PID dies or the farm job has finished, like wait_farm.
+wait_builder() {
+  local port=$1 pid=$2 n=0
+  until health "$port" | grep -qE '^grpc-status: 0\s*$'; do
+    kill -0 "$pid" 2>/dev/null || exit 1
+    sleep 5
+    n=$((n + 1))
+    if [ $((n % 24)) -eq 0 ] && jobs_done coordinator; then
+      echo "ci-farm: the farm has no builder" >&2
       exit 1
     fi
   done
@@ -194,6 +220,7 @@ machine() {
 
   if wait "$eval"; then
     echo "ci-farm: $name: $(<"$state/drv")"
+    wait_builder 5103 "$pid"
     "$NIX_WITH_PLUGIN" build --no-link --print-out-paths --eval-store auto \
       --store "grpc://127.0.0.1:5103?system=x86_64-linux&ca-cert=$FARM_CRT&client-cert=$FARM_CRT&client-key=$state/farm.key" \
       "$(<"$state/drv")^*" || status=$?
