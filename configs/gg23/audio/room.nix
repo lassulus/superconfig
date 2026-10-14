@@ -3,7 +3,7 @@
 { self, lib, ... }:
 let
   kartei = import (self.inputs.kartei + "/modules/retiolum/hosts.nix") { inherit lib; };
-  acheron = (kartei.own.acheron or self.retiolum.own.acheron).ip4;
+  acheron = kartei.own.acheron.ip4;
 in
 {
   services.pipewire.extraConfig.pipewire."10-audio-room"."context.modules" = [

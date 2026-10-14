@@ -1,6 +1,6 @@
 # Host data from the kartei flake input, rendered straight into NixOS
 # options; stockholm's krebs.hosts (and its hosts/ssh/build modules) is not
-# used. Hosts are kartei's plus the superconfig-only cards in ../retiolum.
+# used.
 {
   config,
   lib,
@@ -10,7 +10,7 @@
 let
   inherit (self.inputs) kartei;
 
-  hosts = kartei.hosts // self.retiolum.hosts;
+  inherit (kartei) hosts;
 
   # Name suffixes that go into /etc/hosts; ".r" names also get a bare short
   # form (barnacle.r -> barnacle), as stockholm's krebs.dns did.
@@ -23,13 +23,7 @@ let
   hostDomain = alias: lib.any (d: lib.hasSuffix ".${d}" alias) domains;
   shortsOf = aliases: map (lib.removeSuffix ".r") (lib.filter (lib.hasSuffix ".r") aliases);
 
-  # superconfig's own cards (../retiolum) only carry ip4/ip6/aliases
-  netAddrs =
-    net:
-    net.addrs or (
-      lib.optional (net.ip4 or null != null) net.ip4.addr
-      ++ lib.optional (net.ip6 or null != null) net.ip6.addr
-    );
+  netAddrs = net: net.addrs;
   netAliases = net: net.aliases or [ ];
   sshPort = net: net.ssh.port or 22;
 

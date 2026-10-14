@@ -18,8 +18,7 @@ let
   peers = lib.remove name servers;
   # Alertmanager gossips the address it advertises, so it must be the
   # retiolum one, not whatever private address it would pick on its own.
-  hosts = self.inputs.kartei.hosts // self.retiolum.hosts;
-  retiolumIp = hosts.${name}.nets.retiolum.ip4.addr;
+  retiolumIp = self.inputs.kartei.hosts.${name}.nets.retiolum.ip4.addr;
 
   receiverConfig = pkgs.writeText "matrix-alertmanager-receiver.json" (
     builtins.toJSON {

@@ -15,7 +15,7 @@ let
   # send to their static retiolum IPs; tinc's LocalDiscovery keeps that on the
   # LAN.
   kartei = import (self.inputs.kartei + "/modules/retiolum/hosts.nix") { inherit lib; };
-  ip4 = n: (kartei.own.${n} or self.retiolum.own.${n}).ip4;
+  ip4 = n: kartei.own.${n}.ip4;
 
   rooms = [
     "shodan"

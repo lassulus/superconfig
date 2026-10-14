@@ -17,9 +17,7 @@ let
   vars = config.clan.core.vars.generators.${net};
 
   kartei = import (self.inputs.kartei + "/modules/retiolum/hosts.nix") { inherit lib; };
-  # Nodes with no kartei card, known only inside superconfig.
-  local = self.retiolum;
-  own = kartei.own.${name} or local.own.${name};
+  own = kartei.own.${name};
 in
 {
   imports = [ self.inputs.tincr.darwinModules.tincr ];
@@ -30,7 +28,7 @@ in
     nodeName = name;
     listenPort = 655;
     ed25519PrivateKeyFile = vars.files."${net}.ed25519_key.priv".path;
-    hosts = kartei.tincHosts // local.tincHosts;
+    hosts = kartei.tincHosts;
     # eve/eva/ni/prism: the krebs hubs kartei's shim dialled. A laptop
     # behind NAT also needs relays we control; same list as the NixOS
     # nodes in configs/retiolum.nix, plus starkstrom.
@@ -54,11 +52,7 @@ in
   # darwin-rebuild via BEGIN/END markers.
   system.activationScripts.postActivation.text =
     let
-      hostsFile =
-        if own.ip4 == null then
-          kartei.extraHosts.v6only + local.extraHosts.v6only
-        else
-          kartei.extraHosts.v4v6 + local.extraHosts.v4v6;
+      hostsFile = if own.ip4 == null then kartei.extraHosts.v6only else kartei.extraHosts.v4v6;
     in
     lib.mkAfter ''
       tmp=$(mktemp /private/etc/hosts.XXXXXX)
