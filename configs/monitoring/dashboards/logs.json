@@ -7,15 +7,39 @@
     "list": [
       {
         "name": "host",
-        "type": "custom",
-        "query": "*",
-        "current": { "text": "*", "value": "*" }
+        "type": "query",
+        "datasource": { "type": "victoriametrics-logs-datasource", "uid": "victorialogs" },
+        "query": {
+          "refId": "VictoriaLogsVariableQueryEditor-VariableQuery",
+          "type": "fieldValue",
+          "field": "host",
+          "query": "*",
+          "limit": 1000
+        },
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": "*",
+        "current": { "text": "All", "value": "$__all" }
       },
       {
         "name": "unit",
-        "type": "custom",
-        "query": "*",
-        "current": { "text": "*", "value": "*" }
+        "type": "query",
+        "datasource": { "type": "victoriametrics-logs-datasource", "uid": "victorialogs" },
+        "query": {
+          "refId": "VictoriaLogsVariableQueryEditor-VariableQuery",
+          "type": "fieldValue",
+          "field": "unit",
+          "query": "host:in($host)",
+          "limit": 1000
+        },
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": "*",
+        "current": { "text": "All", "value": "$__all" }
       },
       {
         "name": "search",
@@ -37,7 +61,7 @@
         {
           "refId": "A",
           "queryType": "instant",
-          "expr": "host:$host unit:$unit $search",
+          "expr": "host:in($host) unit:in($unit) $search",
           "maxLines": 1000
         }
       ]
