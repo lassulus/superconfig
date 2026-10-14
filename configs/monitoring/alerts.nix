@@ -23,10 +23,25 @@ in
         ) alwaysOn) "0m" "{{ $labels.host }} sent no metrics for 10 minutes")
         # Network mounts (and their autofs placeholders) are reported by
         # every machine that mounts them; the agent drops tmpfs & co.
+        # neoprism's /var/download is always above 90%, see DownloadSpace*.
         (alert "DiskAlmostFull"
-          ''host_filesystem_used_ratio{filesystem!~"cifs|smb3|nfs|nfs4|autofs|fuse.sshfs"} > 0.9''
+          ''host_filesystem_used_ratio{filesystem!~"cifs|smb3|nfs|nfs4|autofs|fuse.sshfs"} > 0.9 unless on (host, mountpoint) host_filesystem_used_ratio{host="neoprism",mountpoint="/var/download"}''
           "15m"
           "{{ $labels.host }}: {{ $labels.mountpoint }} is {{ $value | humanizePercentage }} full"
+        )
+        (alert "DownloadSpaceLow"
+          ''host_filesystem_free_bytes{host="neoprism",mountpoint="/var/download"} < 200e9''
+          "15m"
+          "{{ $labels.host }}: {{ $labels.mountpoint }} has only {{ $value | humanize }}B free"
+        )
+        (
+          alert "DownloadSpaceCritical"
+            ''host_filesystem_free_bytes{host="neoprism",mountpoint="/var/download"} < 100e9''
+            "15m"
+            "{{ $labels.host }}: {{ $labels.mountpoint }} has only {{ $value | humanize }}B free"
+          // {
+            labels.severity = "critical";
+          }
         )
         (alert "HighMemory" "1 - host_memory_available_bytes / host_memory_total_bytes > 0.95" "15m"
           "{{ $labels.host }} uses {{ $value | humanizePercentage }} of its memory"

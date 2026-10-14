@@ -36,7 +36,7 @@ let
         room-mapping.alerts = "\${MATRIX_ROOM_ID}";
       };
       templating.firing-template = ''
-        <strong>{{ .Alert.Status | ToUpper }}</strong> {{ .Alert.Labels.alertname }}:
+        {{ if eq .Alert.Labels.severity "critical" }}🚨 {{ end }}<strong>{{ .Alert.Status | ToUpper }}</strong> {{ .Alert.Labels.alertname }}:
         {{ .Alert.Annotations.summary }}
       '';
     }
