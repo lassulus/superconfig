@@ -49,7 +49,6 @@ in
       Name = name;
       ConnectTo = [
         "neoprism"
-        "ni"
         "eve"
       ];
     };
