@@ -34,6 +34,7 @@ ns1 IN AAAA 2a01:4f9:4a:4f1a::2
 www IN CNAME neoprism
 cgit IN CNAME neoprism
 pad IN CNAME neoprism
+paint IN CNAME neoprism
 go IN CNAME neoprism
 cast IN CNAME neoprism
 matrix IN CNAME neoprism
