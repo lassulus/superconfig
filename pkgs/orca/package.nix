@@ -3,13 +3,18 @@
 # for its helper apps relative to the symlink and dies with "Unable to find
 # helper app". Executing the binary by its real path inside the bundle works.
 {
+  lib,
   stdenvNoCC,
   runtimeShell,
   fetchurl,
   llm-agents,
 }:
+# stablyai deleted the v1.4.225 and v1.4.226 releases, so llm-agents' src 404s.
+# Fails the evaluation once llm-agents moves past them, so the pin gets dropped.
+assert lib.assertMsg (
+  llm-agents.orca.version == "1.4.226"
+) "llm-agents now ships orca ${llm-agents.orca.version}; remove the 1.4.224 pin in pkgs/orca";
 let
-  # stablyai deleted the v1.4.225 and v1.4.226 releases, so llm-agents' src 404s.
   version = "1.4.224";
   platforms = {
     x86_64-linux = {
