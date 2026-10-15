@@ -2,7 +2,7 @@
 # virtual "hub" sink, whose monitor is linked to the ROC sinks of the rooms
 # selected with `audio-room` or from Home Assistant (MQTT). Senders: any LAN
 # machine via ROC (while `gg23-audio` from tools/gg23-audio runs), barnacle
-# via AirPlay (shairport-sync). Rooms run ./room.nix.
+# via AirPlay 2 (shairport-sync + nqptp). Rooms run ./room.nix.
 {
   self,
   config,
@@ -114,9 +114,12 @@ in
     };
   };
 
+  # AirPlay 2: macOS drives classic AirPlay 1 receivers through a legacy path
+  # that can wedge (endpoint stays half-active after switching outputs, and
+  # re-picking it fails with -16727 until AirPlayXPCHelper restarts).
   services.shairport-sync = {
     enable = true;
-    # AirPlay 1: the default package has no AirPlay 2 (no nqptp needed)
+    package = pkgs.shairport-sync-airplay2;
     settings = {
       general = {
         name = "gg23";
@@ -129,6 +132,15 @@ in
     };
   };
   users.users.shairport.extraGroups = [ "pipewire" ];
+
+  # PTP timing companion AirPlay 2 needs (UDP 319/320; int0 is trusted, et0
+  # stays closed). The unit comes from the package.
+  systemd.packages = [ pkgs.nqptp ];
+  systemd.services.nqptp.wantedBy = [ "multi-user.target" ];
+  systemd.services.shairport-sync = {
+    wants = [ "nqptp.service" ];
+    after = [ "nqptp.service" ];
+  };
 
   # mDNS for AirPlay on the LAN only; int0 is trusted, et0 must stay closed
   services.avahi = {
