@@ -93,11 +93,17 @@ in
   # `keepalive` + HTTP/1.1 below: reuse TLS connections to B2. Without them
   # nginx spoke HTTP/1.0 with a new handshake per request; at a farm run's
   # ~400 req/s B2 started closing connections mid-response.
+  # `max_fails=0`: B2 closes idle keepalive connections now and then. With the
+  # default max_fails=1 one such close marked that B2 address down for 10s;
+  # once all of them were, every request got "no live upstreams" and a 502
+  # (failed a farm run). A GET/HEAD on a closed reused connection is retried
+  # (default `proxy_next_upstream error timeout`) without using up a try, on
+  # the next address, or on the same one if it resolves to only one.
   services.nginx.appendHttpConfig = ''
     upstream cache_lassul_us_b2 {
       zone cache_lassul_us_b2 64k;
       resolver 127.0.0.53 ipv6=off;
-      server ${endpoint}:443 resolve;
+      server ${endpoint}:443 resolve max_fails=0;
       keepalive 64;
       keepalive_requests 10000;
       keepalive_timeout 60s;
