@@ -5,10 +5,37 @@
 {
   stdenvNoCC,
   runtimeShell,
+  fetchurl,
   llm-agents,
 }:
+let
+  # stablyai deleted the v1.4.225 and v1.4.226 releases, so llm-agents' src 404s.
+  version = "1.4.224";
+  platforms = {
+    x86_64-linux = {
+      file = "orca-ide_${version}_amd64.deb";
+      hash = "sha256-8Dolyl9dHc5Nl5uCOGXevEC0ikGYsbqAbR9KtXYHbAo=";
+    };
+    aarch64-linux = {
+      file = "orca-ide_${version}_arm64.deb";
+      hash = "sha256-89BqCDSQaJzTymaIHtJwfHj2MTTSptk5KEruAFov/NE=";
+    };
+    aarch64-darwin = {
+      file = "Orca-${version}-arm64-mac.zip";
+      hash = "sha256-3tqvPVAipAYnHA0JpL6l2jsXwu32DpGcfkqxKDrXqBQ=";
+    };
+  };
+  platform = platforms.${stdenvNoCC.hostPlatform.system};
+  pinned = llm-agents.orca.overrideAttrs {
+    inherit version;
+    src = fetchurl {
+      url = "https://github.com/stablyai/orca/releases/download/v${version}/${platform.file}";
+      inherit (platform) hash;
+    };
+  };
+in
 if stdenvNoCC.hostPlatform.isDarwin then
-  llm-agents.orca.overrideAttrs (old: {
+  pinned.overrideAttrs (old: {
     postInstall = (old.postInstall or "") + ''
       rm $out/bin/orca-ide
       cat >$out/bin/orca-ide <<EOF
@@ -19,4 +46,4 @@ if stdenvNoCC.hostPlatform.isDarwin then
     '';
   })
 else
-  llm-agents.orca
+  pinned
