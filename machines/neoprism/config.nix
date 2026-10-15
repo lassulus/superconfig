@@ -33,8 +33,10 @@
     # sync-containers
     ../../configs/services/flix/container-host.nix
     ../../configs/services/radio/container-host.nix
-    ../../configs/orange-host.nix
     ../../configs/hotdog-host.nix
+
+    # irc bots
+    ../../configs/mumble-reminder.nix
 
     # other containers
     ../../configs/riot.nix

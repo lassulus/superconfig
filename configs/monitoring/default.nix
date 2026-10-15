@@ -14,7 +14,6 @@
     "styx"
     "coaxmetal"
     "acheron"
-    "orange"
     "radio"
     "icarus"
     "shodan"
