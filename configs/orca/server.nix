@@ -10,7 +10,7 @@
   ...
 }:
 let
-  llm = self.inputs.llm-agents.packages.${pkgs.system};
+  inherit (self.packages.${pkgs.system}) orca;
   port = 6768;
 in
 {
@@ -32,7 +32,7 @@ in
       self.keys.ssh.massulus.public
     ];
     packages = [
-      llm.orca
+      orca
       pkgs.omp
       # GitHub issues/PRs in the work item lists.
       pkgs.gh
@@ -52,7 +52,7 @@ in
       "/run/current-system/sw"
     ];
     serviceConfig = {
-      ExecStart = "${llm.orca}/bin/orca serve --port ${toString port} --pairing-address ${config.networking.hostName}.r";
+      ExecStart = "${orca}/bin/orca serve --port ${toString port} --pairing-address ${config.networking.hostName}.r";
       Restart = "on-failure";
       RestartSec = 10;
       User = "orca";
