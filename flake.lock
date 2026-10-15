@@ -687,7 +687,6 @@
         "nixpkgs": "nixpkgs_2",
         "nixpkgs-triage": "nixpkgs-triage",
         "nixvim": "nixvim",
-        "sigexec": "sigexec",
         "tincr": "tincr",
         "treefmt-nix": "treefmt-nix_4",
         "wrappers": "wrappers"
@@ -708,26 +707,6 @@
         "ref": "nightly",
         "repo": "rust-analyzer",
         "type": "github"
-      }
-    },
-    "sigexec": {
-      "inputs": {
-        "nixpkgs": [
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "lastModified": 1788191050,
-        "narHash": "sha256-FtnWlJGst6P8w7EfeHF8gwn52oK0sbavMOy/2SeJKNU=",
-        "ref": "refs/heads/main",
-        "rev": "44504b02ca230c865d474275b16f8a831081dd4b",
-        "revCount": 6,
-        "type": "git",
-        "url": "https://git.geninf.io/Lassulus/sigexec"
-      },
-      "original": {
-        "type": "git",
-        "url": "https://git.geninf.io/Lassulus/sigexec"
       }
     },
     "sops-nix": {

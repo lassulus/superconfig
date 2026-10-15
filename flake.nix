@@ -71,9 +71,6 @@
     nixos-mailserver.url = "gitlab:simple-nixos-mailserver/nixos-mailserver";
     nixos-mailserver.inputs.nixpkgs.follows = "nixpkgs";
 
-    sigexec.url = "git+https://git.geninf.io/Lassulus/sigexec";
-    sigexec.inputs.nixpkgs.follows = "nixpkgs";
-
     # build farm (configs/nix-farm): remote builds over grpc:// ...
     # Fork with the drain/upload race fix (Mic92/nix-grpc-store#204);
     # back to upstream once that is merged.

@@ -12,7 +12,6 @@
     ../../configs/snapclient.nix
     ../../configs/gg23/audio/room.nix
     ../../configs/autoupdate.nix
-    ../../configs/sigexec/executor.nix
     ../../configs/rad.nix
     ../../configs/phonetpm-ssh.nix
   ];
