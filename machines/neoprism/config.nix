@@ -111,11 +111,6 @@
     # self-hosted iroh relay (relay.lassul.us)
     ../../configs/iroh-relay
 
-    # signed remote command execution (root executor + fleet dashboard,
-    # sigexec.lassul.us)
-    ../../configs/sigexec/executor.nix
-    ../../configs/sigexec/dashboard.nix
-
     # parley federated IRC-speaking chat (parley.lassul.us)
     ../../configs/parley.nix
 

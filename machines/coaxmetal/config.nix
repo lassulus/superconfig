@@ -15,7 +15,6 @@
     ../../configs/steam.nix
     ../../configs/wine.nix
     ../../configs/review.nix
-    ../../configs/sigexec/executor.nix
     ../../configs/rad.nix
     ../../configs/orca/ide.nix
     ../../configs/orca/server.nix
