@@ -38,18 +38,43 @@ trap 'kill $(jobs -p) 2>/dev/null || true' EXIT
 
 # The GitHub OIDC token of the job, refreshed in the background (niks3 re-reads
 # the file, the daemon notices the new inode). Outside Actions, point
-# NIKS3_TOKEN_FILE at a niks3 API token instead.
+# NIKS3_TOKEN_FILE at a niks3 API token instead. A failed fetch keeps the
+# current token: `set -e` doesn't apply in `niks3_token || ...`, so every step
+# returns explicitly.
 niks3_token() {
-  curl -fsS -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN:?needs id-token: write, or NIKS3_TOKEN_FILE}" \
-    "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$niks3_url" |
-    jq -er .value >"$state/niks3-token.new"
-  mv "$state/niks3-token.new" "$state/niks3-token"
+  local token
+  token=$(curl -fsS --retry 4 --retry-all-errors \
+    -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN:?needs id-token: write, or NIKS3_TOKEN_FILE}" \
+    "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$niks3_url" | jq -er .value) || return 1
+  [ -n "$token" ] || return 1
+  printf '%s\n' "$token" >"$state/niks3-token.new" &&
+    mv "$state/niks3-token.new" "$state/niks3-token"
+}
+# Refreshes every 2 minutes, every 20 seconds after a failure. The token is
+# valid for 5 minutes: once it is 4 minutes old a builder (machine writes
+# builder.pid) could not publish its outputs anymore, so drain it, and the
+# scheduler hands its builds to the others.
+refresh_niks3_token() {
+  local fetched=$SECONDS wait=120
+  while sleep "$wait"; do
+    if niks3_token; then
+      fetched=$SECONDS wait=120
+      continue
+    fi
+    wait=20
+    echo "ci-farm: refreshing the niks3 token failed, it is $((SECONDS - fetched))s old" >&2
+    if [ $((SECONDS - fetched)) -ge 240 ] && [ -s "$state/builder.pid" ]; then
+      echo "ci-farm: no fresh niks3 token, draining the builder" >&2
+      kill -TERM "$(<"$state/builder.pid")" 2>/dev/null || true
+      rm -f "$state/builder.pid"
+    fi
+  done
 }
 if [ -n "${NIKS3_TOKEN_FILE:-}" ]; then
   ln -sf "$NIKS3_TOKEN_FILE" "$state/niks3-token"
 else
   niks3_token
-  (while sleep 120; do niks3_token || echo "ci-farm: refreshing the niks3 token failed" >&2; done) &
+  refresh_niks3_token &
 fi
 
 daemon=(
@@ -217,6 +242,7 @@ machine() {
   "${daemon[@]}" --role builder --listen 127.0.0.1:5100 --scheduler 127.0.0.1:5101 \
     --advertise "127.0.0.1:$((5110 + i))" --worker-name "$name" &
   pid=$!
+  echo "$pid" >"$state/builder.pid"
 
   if wait "$eval"; then
     echo "ci-farm: $name: $(<"$state/drv")"
