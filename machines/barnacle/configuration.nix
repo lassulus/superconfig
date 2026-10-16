@@ -31,7 +31,7 @@
 
     # zsh dependencies
     pkgs.fzf
-    pkgs.atuin
+    self.packages.${pkgs.system}.atuin
 
     pkgs.gnupg
     pkgs.pinentry_mac

@@ -46,7 +46,7 @@
             style = "compact"
           ''};
           export ATUIN_NOBIND="true" # disable all keybdinings of atuin
-          eval "$(${pkgs.atuin}/bin/atuin init zsh)" # TODO make this optional?
+          eval "$(${self.packages.${pkgs.system}.atuin}/bin/atuin init zsh)" # TODO make this optional?
           bindkey '^r' _atuin_search_widget # bind ctrl+r to atuin
           # use zsh only session history
           fc -p
@@ -360,7 +360,7 @@
             tmux
             fzf
             direnv
-            atuin
+            self.packages.${pkgs.system}.atuin
             nix-index
             self.packages.${pkgs.system}.name-generator
           ];
