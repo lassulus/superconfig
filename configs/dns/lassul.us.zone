@@ -35,6 +35,7 @@ www IN CNAME neoprism
 cgit IN CNAME neoprism
 pad IN CNAME neoprism
 paint IN CNAME neoprism
+ntfy IN CNAME neoprism
 go IN CNAME neoprism
 cast IN CNAME neoprism
 matrix IN CNAME neoprism
