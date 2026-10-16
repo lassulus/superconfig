@@ -55,10 +55,16 @@ def nix32(b):
     return "".join(out)
 
 
+MAGIC = {b"\x28\xb5\x2f\xfd": "zstd", b"\xfd7zXZ\x00": "xz", b"\x1f\x8b": "gzip"}
+
+
 def decode(body, encoding):
-    """Both caches store narinfo/.ls zstd-compressed (Content-Encoding)."""
+    """Both caches store narinfo/.ls zstd-compressed (Content-Encoding), but
+    the CDN sometimes serves them without that header: sniff the magic too."""
     if encoding in (None, "", "identity"):
-        return body
+        encoding = next((t for m, t in MAGIC.items() if body.startswith(m)), None)
+        if encoding is None:
+            return body
     tool = {"zstd": "zstd", "xz": "xz", "br": "brotli", "gzip": "gzip"}[encoding]
     return subprocess.run([tool, "-dc"], input=body, capture_output=True, check=True).stdout
 
