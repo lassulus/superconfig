@@ -95,6 +95,37 @@ impl log::Log for Logger {
     fn flush(&self) {}
 }
 
+/// PassthroughFs keeps an O_PATH fd per inode the kernel looked up and
+/// hasn't forgotten, so the default soft limit of 1024 runs out within the
+/// first build. Raise the limit as far as the kernel allows (we run as
+/// root, so the hard limit too, up to fs.nr_open).
+fn raise_nofile() {
+    let nr_open = std::fs::read_to_string("/proc/sys/fs/nr_open")
+        .ok()
+        .and_then(|s| s.trim().parse::<libc::rlim_t>().ok())
+        .unwrap_or(1 << 20);
+    let mut rl = libc::rlimit {
+        rlim_cur: 0,
+        rlim_max: 0,
+    };
+    unsafe {
+        libc::getrlimit(libc::RLIMIT_NOFILE, &mut rl);
+        let want = libc::rlimit {
+            rlim_cur: nr_open,
+            rlim_max: nr_open.max(rl.rlim_max),
+        };
+        if libc::setrlimit(libc::RLIMIT_NOFILE, &want) != 0 {
+            let soft = libc::rlimit {
+                rlim_cur: rl.rlim_max,
+                rlim_max: rl.rlim_max,
+            };
+            libc::setrlimit(libc::RLIMIT_NOFILE, &soft);
+        }
+        libc::getrlimit(libc::RLIMIT_NOFILE, &mut rl);
+    }
+    eprintln!("RLIMIT_NOFILE: {} (hard {})", rl.rlim_cur, rl.rlim_max);
+}
+
 fn mount(
     outdir: &Path,
     upper: &Path,
@@ -102,6 +133,7 @@ fn mount(
     workers: usize,
     use_passthrough: bool,
 ) -> io::Result<()> {
+    raise_nofile();
     let backing = use_passthrough.then(|| Arc::new(Backing::default()));
     let lower = lazy::LazyFs::new(outdir, backing.clone())?;
 
