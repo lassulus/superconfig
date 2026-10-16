@@ -32,7 +32,7 @@ jobs:
             trusted-users = root runner
             extra-substituters = https://cache.lassul.us
             extra-trusted-public-keys = cache.lassul.us-1:aOMEO5TU6eLvhyPi0jmgjR2sVlGjMq3rK0MeACjTcQ0=
-            extra-experimental-features = local-overlay-store read-only-local-store
+            extra-experimental-features = nix-command flakes local-overlay-store read-only-local-store
       # from apt: nothing in the nix store besides nix itself before measuring
       - run: sudo apt-get install -y python3-fusepy zstd
       - name: lazy rebuild
