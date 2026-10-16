@@ -88,8 +88,11 @@ in
       type = "vlogs";
       interval = "1m";
       rules = [
+        # systemd logs "<unit>: Failed with result '<result>'."; the anchored
+        # regexp skips lines merely quoting the phrase, such as VictoriaLogs
+        # warnings that echo a rejected query.
         (alert "SystemdUnitFailed"
-          ''_time:15m "Failed with result" | stats by (host, unit) count() as failures''
+          ''_time:15m "Failed with result" _msg:~"^[^ ]+: Failed with result '" | stats by (host, unit) count() as failures''
           "0m"
           "{{ $labels.unit }} failed on {{ $labels.host }}"
         )
