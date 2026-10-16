@@ -93,8 +93,10 @@ gh pr merge <branch> --auto --rebase --delete-branch
 ```
 
 `--rebase` keeps the individual commits on master. Only the user (repo admin)
-bypasses the ruleset. The `ci` check includes a farm build of all machines
-(farm.yml, called from ci.yml). The update-pkgs bot's PRs go through
+bypasses the ruleset. The `ci` check includes the build of all NixOS
+machines on GitHub runners, with hestia (GitHub Actions cache) as binary
+cache; every CI build is pushed to cache.lassul.us (niks3), so deploys
+substitute the toplevels from there. The update-pkgs bot's PRs go through
 the ruleset as well: they run ci.yml like any PR and merge via auto-merge.
 
 ## Machine Facts and Secrets via vars

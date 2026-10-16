@@ -139,7 +139,7 @@ jobs:
 
           if [ -z "$(gh pr list --head "$branch" --state open --json number --jq '.[].number')" ]; then
             gh pr create --base master --head "$branch" --title "$msg" \
-              --body "Automated update by the update-pkgs workflow (\`nix run .#update-pkgs -- $PKG\`), package built on $SYSTEM. Merged automatically once ci (including the farm build of all machines) passed."
+              --body "Automated update by the update-pkgs workflow (\`nix run .#update-pkgs -- $PKG\`), package built on $SYSTEM. Merged automatically once ci (including the build of all machines) passed."
           fi
           if [ "$AUTOMERGE" = true ]; then
             gh pr merge "$branch" --auto --merge --delete-branch
@@ -182,7 +182,7 @@ jobs:
           fi
 
           {
-            echo "Automated \`nix flake update\` by the update-pkgs workflow. Merged automatically once ci (including the farm build of all machines) passed."
+            echo "Automated \`nix flake update\` by the update-pkgs workflow. Merged automatically once ci (including the build of all machines) passed."
             echo
             echo '```'
             sed -n '/^• /,$p' "$RUNNER_TEMP/update.log"

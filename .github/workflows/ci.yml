@@ -6,14 +6,13 @@ on:
   pull_request:
   workflow_dispatch:
 
-# A newer run for the same ref replaces a running one, its farm included.
-# Runs for different refs queue for the farm, see the farm job.
+# A newer run for the same ref replaces a running one.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-# One job per check shows failing checks in the run overview. The NixOS
-# machines are built by the farm, one job per machine.
+# One job per check shows failing checks in the run overview, the same for
+# the NixOS machines, see the eval job.
 jobs:
   list:
     runs-on: ubuntu-latest
@@ -68,24 +67,158 @@ jobs:
             nix eval --raw ".#$output.x86_64-linux" --apply 'xs: builtins.deepSeq (builtins.mapAttrs (_: x: x.drvPath) xs) "${toString (builtins.length (builtins.attrNames xs))} evaluated\n"'
           done
 
-  # Builds all NixOS machines (farm.yml). Its iroh endpoints are fixed, so one
-  # farm at a time across all runs; the others wait FIFO. Without `queue: max`
-  # GitHub keeps one pending run per group and cancels the one before.
-  farm:
-    uses: ./.github/workflows/farm.yml
-    secrets: inherit
+  # The NixOS machines, built on plain runners with hestia (the GitHub Actions
+  # cache) as binary cache next to cache.lassul.us:
+  #
+  # - eval: evaluates ciToplevels once, uploads the drv closures to hestia
+  #   and lists the machines whose toplevel is in neither cache.
+  # - shared: builds the derivations needed by more than one of them once,
+  #   so the machine jobs substitute them instead of each building them.
+  # - one job per listed machine, builds its toplevel by drv path.
+  #
+  # Every job pushes what it added to the store to cache.lassul.us
+  # (.github/ci-build.sh), for deploys.
+  eval:
+    runs-on: ubuntu-latest
     permissions:
       contents: read
+      actions: read # hestia: detect evicted cache entries upfront
       id-token: write # niks3 push
-      actions: read # the jobs watch each other
-    concurrency:
-      group: farm
-      queue: max
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+      any-jobs: ${{ steps.matrix.outputs.any-jobs }}
+      manifest-version: ${{ steps.matrix.outputs.manifest-version }}
+      niks3: ${{ steps.niks3.outputs.path }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            trusted-users = root runner
+            extra-substituters = https://cache.lassul.us
+            extra-trusted-public-keys = cache.lassul.us-1:aOMEO5TU6eLvhyPi0jmgjR2sVlGjMq3rK0MeACjTcQ0=
+      - uses: Mic92/hestia@v3
+        with:
+          upstream-cache-filter: true
+          filter-drv-closures: true
+      # the niks3 client of all jobs, the others substitute it
+      - id: niks3
+        run: |
+          niks3=$(nix build --no-link --print-out-paths .#niks3)
+          echo "path=$niks3" >> "$GITHUB_OUTPUT"
+          PATH=$niks3/bin:$PATH .github/niks3-push.sh "$niks3"
+      - id: matrix
+        uses: Mic92/hestia/matrix@v3
+        with:
+          flake: ".#ciToplevels"
+          nix-eval-jobs: "nix run nixpkgs#nix-eval-jobs -- --workers 4 --max-memory-size 3072"
+      - env:
+          MATRIX: ${{ steps.matrix.outputs.matrix }}
+        run: |
+          echo "not cached: $(jq -r '[.include[].name] | join(" ")' <<<"$MATRIX")" |
+            tee -a "$GITHUB_STEP_SUMMARY"
+
+  shared:
+    needs: eval
+    if: needs.eval.outputs.any-jobs == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read # hestia: detect evicted cache entries upfront
+      id-token: write # niks3 push
+    outputs:
+      manifest-version: ${{ steps.build.outputs.manifest-version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            trusted-users = root runner
+            extra-substituters = https://cache.lassul.us
+            extra-trusted-public-keys = cache.lassul.us-1:aOMEO5TU6eLvhyPi0jmgjR2sVlGjMq3rK0MeACjTcQ0=
+      - uses: Mic92/hestia@v3
+        with:
+          upstream-cache-filter: true
+          wait-manifest-version: ${{ needs.eval.outputs.manifest-version }}
+      - env:
+          NIKS3: ${{ needs.eval.outputs.niks3 }}
+        run: |
+          nix-store --realise "$NIKS3"
+          echo "$NIKS3/bin" >> "$GITHUB_PATH"
+      - id: build
+        env:
+          MATRIX: ${{ needs.eval.outputs.matrix }}
+          EVAL_MANIFEST_VERSION: ${{ needs.eval.outputs.manifest-version }}
+        run: |
+          matrix=$RUNNER_TEMP/matrix.json
+          plans=$RUNNER_TEMP/plans
+          printf '%s' "$MATRIX" > "$matrix"
+          read -ra installables <<<"$(jq -r '[.include[].installables] | join(" ")' "$matrix")"
+          "$HESTIA_BIN" prefetch "${installables[@]}"
+          .github/ci-shared.sh "$matrix" "$plans"
+          mapfile -t shared < "$plans/shared.drvs"
+          version=$EVAL_MANIFEST_VERSION
+          if [ "${#shared[@]}" -gt 0 ]; then
+            # a failed one fails the jobs of the machines that need it
+            .github/ci-build.sh "${shared[@]/%/^*}" ||
+              echo "::warning::some shared derivations failed to build"
+            # upload now instead of in the post step, so the machine jobs can
+            # wait for the manifest version that contains the shared outputs
+            "$HESTIA_BIN" drain --socket "$HESTIA_SOCKET" 2>&1 | tee "$RUNNER_TEMP/drain.txt"
+            drained=$(sed -nE 's/.*; manifest m[0-9]+#([0-9]+)$/\1/p' "$RUNNER_TEMP/drain.txt")
+            version=${drained:-$version}
+          fi
+          echo "manifest-version=$version" >> "$GITHUB_OUTPUT"
+          {
+            for name in $(jq -r '.include[].name' "$matrix"); do
+              echo "- $name: $(wc -l < "$plans/$name.drvs") derivations to build"
+            done
+            echo "- shared (needed by >= 2 machines): ${#shared[@]}"
+            printf '%s\n' "${shared[@]}" | sed -E 's|^/nix/store/[^-]+-(.*)\.drv$|    \1|'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+  build:
+    needs: [eval, shared]
+    if: needs.eval.outputs.any-jobs == 'true'
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      actions: read # hestia: detect evicted cache entries upfront
+      id-token: write # niks3 push
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.eval.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            trusted-users = root runner
+            extra-substituters = https://cache.lassul.us
+            extra-trusted-public-keys = cache.lassul.us-1:aOMEO5TU6eLvhyPi0jmgjR2sVlGjMq3rK0MeACjTcQ0=
+      - uses: Mic92/hestia@v3
+        with:
+          upstream-cache-filter: true
+          wait-manifest-version: ${{ needs.shared.outputs.manifest-version }}
+      - env:
+          NIKS3: ${{ needs.eval.outputs.niks3 }}
+        run: |
+          nix-store --realise "$NIKS3"
+          echo "$NIKS3/bin" >> "$GITHUB_PATH"
+      - name: build ${{ matrix.name }}
+        env:
+          INSTALLABLES: ${{ matrix.installables }}
+        run: |
+          read -ra installables <<<"$INSTALLABLES"
+          "$HESTIA_BIN" prefetch "${installables[@]}"
+          .github/ci-build.sh "${installables[@]}"
 
   # Fixed-name summary of the jobs above, the required status check for
   # merging into master (the matrix job names change with the hosts).
+  # Skipped: no machine to build, or a job it needs failed.
   ci:
-    needs: [list, check, outputs, farm]
+    needs: [list, check, outputs, eval, shared, build]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -94,5 +227,5 @@ jobs:
         run: |
           echo "results: $RESULTS"
           for r in $RESULTS; do
-            [ "$r" = success ] || exit 1
+            [ "$r" = success ] || [ "$r" = skipped ] || exit 1
           done

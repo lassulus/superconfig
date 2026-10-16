@@ -228,6 +228,11 @@
         map (dir: ./tools + "/${dir}/flake-module.nix") toolDirs
       );
       flake.nixosConfigurations = clan.config.nixosConfigurations;
+      # The machine toplevels as plain derivations, for CI's build matrix
+      # (nix-eval-jobs, .github/workflows/ci.yml).
+      flake.ciToplevels = nixpkgs.lib.mapAttrs (
+        _: c: c.config.system.build.toplevel
+      ) clan.config.nixosConfigurations;
       flake.clanInternals = clan.config.clanInternals;
       flake.darwinConfigurations = clan.config.darwinConfigurations;
       flake.clan = clan.config;
@@ -244,6 +249,8 @@
         }:
         {
           packages.clan-cli = clan-core.packages.${system}.clan-cli;
+          # CI pushes its builds to cache.lassul.us with it (.github/niks3-push.sh)
+          packages.niks3 = inputs.niks3.packages.${system}.niks3;
           devShells.default = pkgs.mkShell {
             packages = [
               self.packages.${pkgs.system}.pass
@@ -258,7 +265,7 @@
             inputs.llm-agents.packages.${system}
             // lib.optionalAttrs (self.packages.${system} ? orca) { inherit (self.packages.${system}) orca; };
           # Check Darwin configurations can be evaluated (without building).
-          # The NixOS machines are built by the farm (.github/workflows/farm.yml).
+          # The NixOS machines are built by .github/workflows/ci.yml (ciToplevels).
           checks = lib.mapAttrs' (
             name: config:
             lib.nameValuePair "darwin-${name}" (
