@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import concurrent.futures
+import csv
 import datetime as dt
 import hashlib
 import io
@@ -217,6 +218,13 @@ class LensMap:
 
     def dh(self, s):
         return np.interp(s, self._s, self._dh)
+
+    def zoom(self, xs, ys):
+        """Lens magnification (tangential) at screen px, 1 outside the lens."""
+        s = self.norm(xs - self.px, ys - self.py)
+        si = np.minimum(s, 1.0)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return np.where(s < 1, np.where(si > 1e-9, si / self.h(si), self.m), 1.0)
 
     def distance_for_demand(self, q: float) -> float:
         """Radius (km) around home inside which some pixel needs finer than q."""
@@ -692,12 +700,14 @@ class Cache:
         if path.exists() and time.time() - path.stat().st_mtime < ttl:
             return path
         try:
+            t0 = time.monotonic()
             body, _ = http_get(url, timeout=30)
             if not body:
                 raise FetchError(f"{url}: empty response")
             tmp = path.with_name(f".{path.name}.tmp")
             tmp.write_bytes(body)
             os.replace(tmp, path)
+            log(f"fetched {name} ({len(body) / 1e6:.1f} MB) in {time.monotonic() - t0:.1f}s")
         except Exception as e:  # noqa: BLE001
             log(f"warning: {name}: {e}")
         return path if path.exists() else None
@@ -785,13 +795,6 @@ def layers() -> list[Layer]:
             transform=lambda c: smoothstep(0.15, 0.9, c),
         ),
         Layer(
-            "fire",
-            None,
-            Wms("fire", GIBS, "VIIRS_NOAA20_Thermal_Anomalies_375m_All", 0.375, 3600,
-                days_back=(0, 1)),
-            prep_scalar,
-        ),
-        Layer(
             "chlorophyll",
             None,
             Wms("chlorophyll", GIBS, "VIIRS_NOAA20_Chlorophyll_a", 1.0, 6 * 3600,
@@ -843,6 +846,68 @@ def load_layers(proj: LensMap, cache: Cache, when: dt.datetime) -> dict[str, Lay
         # can end up coarser than the next one
         layer.log_res = np.maximum.accumulate(np.log([lvl.res for lvl in layer.levels]))
         out[layer.name] = layer
+    return out
+
+
+# --------------------------------------------------------------------------
+# fires: VIIRS 375 m active fire detections of the last 24 h from FIRMS,
+# drawn as screen-space dots
+
+FIRMS = "https://firms.modaps.eosdis.nasa.gov/data/active_fire"
+FIRMS_CSVS = [
+    "noaa-20-viirs-c2/csv/J1_VIIRS_C2_Global_24h.csv",
+    "noaa-21-viirs-c2/csv/J2_VIIRS_C2_Global_24h.csv",
+    "suomi-npp-viirs-c2/csv/SUOMI_VIIRS_C2_Global_24h.csv",
+]
+FIRE_DOT = 1.6  # dot diameter in px at scale 1 (1800 px tall)
+FIRE_LENS_GROWTH = 0.25  # dots grow with the lens zoom to this power
+FIRE_FRP = (1.0, 500.0)  # fire radiative power (MW) of the faintest and full dots
+
+
+@dataclass
+class Fires:
+    lat: np.ndarray
+    lon: np.ndarray
+    frp: np.ndarray
+
+
+def load_fires(cache: Cache) -> Fires:
+    lat, lon, frp = [], [], []
+    for rel in FIRMS_CSVS:
+        path = cache.get_url(f"firms-{Path(rel).name}", f"{FIRMS}/{rel}", 3600)
+        if path is None:
+            continue
+        try:
+            with path.open(newline="") as f:
+                for row in csv.DictReader(f):
+                    if row["confidence"] == "l":
+                        continue
+                    lat.append(float(row["latitude"]))
+                    lon.append(float(row["longitude"]))
+                    frp.append(float(row["frp"]))
+        except Exception as e:  # noqa: BLE001 - a broken file drops its satellite
+            log(f"warning: {path.name}: {e}")
+    return Fires(np.array(lat), np.array(lon), np.array(frp))
+
+
+def fire_mask(proj: LensMap, fires: Fires, scale: float) -> np.ndarray:
+    """Fire opacity per screen px: antialiased dots, the max where they overlap."""
+    W, H = proj.width, proj.height
+    out = np.zeros((H, W), np.float32)
+    if len(fires.lat) == 0:
+        return out
+    x, y = proj.forward(fires.lat, fires.lon)
+    radius = FIRE_DOT * scale / 2 * proj.zoom(x, y) ** FIRE_LENS_GROWTH
+    lo, hi = FIRE_FRP
+    alpha = 0.2 + 0.8 * np.clip(np.log(np.maximum(fires.frp, lo) / lo) / math.log(hi / lo), 0, 1)
+    k = math.ceil(radius.max() + 0.5)
+    for oy in range(-k, k + 1):
+        for ox in range(-k, k + 1):
+            cx = np.floor(x).astype(np.int64) + ox
+            cy = np.floor(y).astype(np.int64) + oy
+            cover = np.clip(radius + 0.5 - np.hypot(cx + 0.5 - x, cy + 0.5 - y), 0, 1)
+            ok = (cover > 0) & (cx >= 0) & (cx < W) & (cy >= 0) & (cy < H)
+            np.maximum.at(out, (cy[ok], cx[ok]), (cover * alpha)[ok].astype(np.float32))
     return out
 
 
@@ -998,7 +1063,8 @@ def gather(a: np.ndarray, x: np.ndarray, y: np.ndarray) -> np.ndarray:
     return top * (1 - fy) + bottom * fy
 
 
-def render_base(proj: LensMap, lay: dict[str, Layer], sun: tuple[float, float]) -> np.ndarray:
+def render_base(proj: LensMap, lay: dict[str, Layer], fires: Fires,
+                sun: tuple[float, float]) -> np.ndarray:
     W, H = proj.width, proj.height
     ground = np.zeros((H, W, 3), np.float32)
     cloud = np.zeros((H, W), np.float32)
@@ -1048,8 +1114,6 @@ def render_base(proj: LensMap, lay: dict[str, Layer], sun: tuple[float, float]) 
         light = smoothstep(-0.10, 0.08, cosz)
         day_lit = day * (0.55 + 0.45 * np.sqrt(np.clip(cosz, 0, 1)))[:, None]
         color = lerp(day * moonlight, day_lit, light)
-        if (s := get("fire")) is not None:
-            color = np.maximum(color, fire_rgb * 0.8 * s[0][:, 0][:, None])
         if (s := get("clouds")) is not None:
             cloud[rows] = np.clip(s[0][:, 0], 0, 1).reshape(len(ys), W)
         if (s := get("lights")) is not None:
@@ -1062,6 +1126,7 @@ def render_base(proj: LensMap, lay: dict[str, Layer], sun: tuple[float, float]) 
         q_f[rows] = q.reshape(len(ys), W)
 
     scale = H / 1800
+    ground = np.maximum(ground, fire_rgb * 0.8 * fire_mask(proj, fires, scale)[..., None])
     light = smoothstep(-0.10, 0.08, cosz_f)
     if "clouds" in lay:
         cloud = cloud_detail(cloud, lat_f, lon_f, q_f)
@@ -1375,6 +1440,8 @@ def main() -> None:
     sun_image = cache.get_url("sun.jpg", "https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_0171.jpg", 3600)
     marker_file = cache.get_url("markers.json", args.marker_url, 0) if args.marker_url else None
     lay = load_layers(proj, cache, when)
+    fires = load_fires(cache)
+    log(f"{len(fires.lat)} fire detections")
     log(f"data ready in {time.monotonic() - t0:.1f}s")
 
     try:
@@ -1385,7 +1452,7 @@ def main() -> None:
     sun = sky.bodies["sun"] if sky else (0.0, 0.0)
 
     t0 = time.monotonic()
-    base = Image.fromarray(render_base(proj, lay, sun)).convert("RGBA")
+    base = Image.fromarray(render_base(proj, lay, fires, sun)).convert("RGBA")
     log(f"rendered in {time.monotonic() - t0:.1f}s")
 
     scale = args.height / 1800
