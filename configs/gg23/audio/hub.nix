@@ -2,7 +2,9 @@
 # virtual "hub" sink, whose monitor is linked to the ROC sinks of the rooms
 # selected with `audio-room` or from Home Assistant (MQTT). Senders: any LAN
 # machine via ROC (while `gg23-audio` from tools/gg23-audio runs), barnacle
-# via AirPlay 2 (shairport-sync + nqptp). Rooms run ./room.nix.
+# via AirPlay 2 (shairport-sync + nqptp), phones via Bluetooth A2DP (paired
+# during the window opened by the "Bluetooth pairing" button). Rooms run
+# ./room.nix.
 {
   self,
   config,
@@ -56,6 +58,30 @@ let
       icon = "mdi:speaker-multiple";
     };
   }) choices;
+
+  # seconds acheron stays discoverable and pairable after the button press
+  pairingTimeout = 120;
+
+  bluetoothDiscovery = [
+    {
+      topic = "homeassistant/button/bluetooth_pairing/config";
+      config = {
+        name = "Bluetooth pairing";
+        unique_id = "acheron_bluetooth_pairing";
+        command_topic = "gg23/bluetooth-pairing/set";
+        icon = "mdi:bluetooth-connect";
+      };
+    }
+    {
+      topic = "homeassistant/binary_sensor/bluetooth_pairing/config";
+      config = {
+        name = "Bluetooth pairing";
+        unique_id = "acheron_bluetooth_pairing_state";
+        state_topic = "gg23/bluetooth-pairing/state";
+        icon = "mdi:bluetooth-connect";
+      };
+    }
+  ];
 in
 {
   services.pipewire = {
@@ -111,6 +137,46 @@ in
           "sink.props"."node.description" = "${r} (ROC)";
         };
       }) rooms;
+    };
+    # phones play into the hub: acheron is only an A2DP sink (no headset or
+    # LE audio roles), and the received stream targets "hub"
+    wireplumber.extraConfig."10-bluetooth-hub" = {
+      "monitor.bluez.properties"."bluez5.roles" = [ "a2dp_sink" ];
+      "monitor.bluez.rules" = [
+        {
+          matches = [ { "node.name" = "~bluez_input.*"; } ];
+          actions.update-props."target.object" = "hub";
+        }
+      ];
+    };
+  };
+
+  # The UB500 dongle (RTL8761BU) firmware comes from linux-firmware.
+  # Discoverable and pairable only after the "Bluetooth pairing" button.
+  hardware.bluetooth = {
+    enable = true;
+    settings.General = {
+      Name = "gg23";
+      # audio/video major class, loudspeaker, so phones show a speaker
+      Class = "0x200414";
+      DiscoverableTimeout = pairingTimeout;
+      PairableTimeout = pairingTimeout;
+      # a phone that forgot acheron can pair again during the window
+      JustWorksRepairing = "always";
+    };
+  };
+
+  # Accepts pairing without PIN (NoInputNoOutput is just works) and service
+  # connections of paired devices.
+  systemd.services.bluetooth-agent = {
+    wantedBy = [ "bluetooth.service" ];
+    bindsTo = [ "bluetooth.service" ];
+    after = [ "bluetooth.service" ];
+    serviceConfig = {
+      ExecStart = "${pkgs.bluez-tools}/bin/bt-agent -c NoInputNoOutput";
+      DynamicUser = true;
+      Restart = "always";
+      RestartSec = 2;
     };
   };
 
@@ -193,6 +259,59 @@ in
     serviceConfig = {
       DynamicUser = true;
       SupplementaryGroups = [ "pipewire" ];
+      Restart = "always";
+      RestartSec = 2;
+    };
+  };
+
+  # MQTT button -> pairing window. BlueZ itself turns discoverable/pairable
+  # off after pairingTimeout; then devices bonded in the window get trusted,
+  # so they reconnect without the agent, and the state goes back to OFF.
+  systemd.services.bluetooth-pairing = {
+    wantedBy = [ "bluetooth.service" ];
+    bindsTo = [ "bluetooth.service" ];
+    after = [
+      "bluetooth.service"
+      "mosquitto.service"
+    ];
+    path = [
+      pkgs.mosquitto
+      config.systemd.package
+    ];
+    script = ''
+      ${lib.concatMapStrings (d: ''
+        mosquitto_pub ${mqtt} -r -t ${d.topic} -m ${lib.escapeShellArg (builtins.toJSON d.config)}
+      '') bluetoothDiscovery}
+      adapter() {
+        busctl set-property org.bluez /org/bluez/hci0 org.bluez.Adapter1 "$1" b "$2"
+      }
+      state() {
+        mosquitto_pub ${mqtt} -r -t gg23/bluetooth-pairing/state -m "$1"
+      }
+      trust() {
+        for d in $(busctl tree --list org.bluez | grep '/dev_[0-9A-F_]*$'); do
+          if [ "$(busctl get-property org.bluez "$d" org.bluez.Device1 Bonded)" = "b true" ]; then
+            busctl set-property org.bluez "$d" org.bluez.Device1 Trusted b true
+          fi
+        done
+      }
+      adapter Discoverable false
+      adapter Pairable false
+      trust
+      state OFF
+      mosquitto_sub ${mqtt} -t gg23/bluetooth-pairing/set | while read -r _; do
+        if [ -n "''${window-}" ] && kill -0 "$window" 2>/dev/null; then
+          continue
+        fi
+        adapter Pairable true
+        adapter Discoverable true
+        state ON
+        (sleep ${toString pairingTimeout}; trust; state OFF) &
+        window=$!
+      done
+    '';
+    serviceConfig = {
+      DynamicUser = true;
       Restart = "always";
       RestartSec = 2;
     };
