@@ -6,7 +6,7 @@
       export PATH=$PATH:${pkgs.git}/bin
       ln -sfrT /var/lib/var_src /var/src
       until ${pkgs.dig.host}/bin/host github.com; do sleep 1; done
-      ${pkgs.nixos-rebuild}/bin/nixos-rebuild --refresh --flake 'github:krebs/stockholm#hotdog' switch --no-write-lock-file
+      ${pkgs.nixos-rebuild}/bin/nixos-rebuild --refresh --flake 'git+https://github.com/krebs/stockholm?submodules=1#hotdog' switch --no-write-lock-file
     '';
   };
   containers.hotdog.bindMounts."/var/lib" = {
