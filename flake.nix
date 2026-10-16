@@ -71,15 +71,9 @@
     nixos-mailserver.url = "gitlab:simple-nixos-mailserver/nixos-mailserver";
     nixos-mailserver.inputs.nixpkgs.follows = "nixpkgs";
 
-    # build farm (configs/nix-farm): remote builds over grpc:// ...
-    # Fork with the drain/upload race fix (Mic92/nix-grpc-store#204);
-    # back to upstream once that is merged.
-    nix-grpc-store.url = "github:lassulus/nix-grpc-store/fix-drain-upload";
-    nix-grpc-store.inputs.nixpkgs.follows = "nixpkgs";
-    nix-grpc-store.inputs.niks3.follows = "niks3";
-
-    # ... and the S3-backed binary cache the outputs land in. Fork for
-    # `push --ignore-upstream-key` (not upstream yet). It rebases onto
+    # S3-backed binary cache cache.lassul.us (configs/nix-cache.nix), CI
+    # pushes its builds there. Fork for `push --ignore-upstream-key` (not
+    # upstream yet). It rebases onto
     # Mic92/niks3 daily (its .github/workflows/rebase-upstream.yml), so
     # `nix flake update niks3` follows upstream.
     niks3.url = "github:lassulus/niks3";

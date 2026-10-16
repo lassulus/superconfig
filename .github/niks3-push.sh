@@ -2,8 +2,8 @@
 # Pushes the closures of PATH... to niks3.lassul.us, served as
 # cache.lassul.us, with the job's GitHub OIDC token (needs id-token: write;
 # niks3 on neoprism trusts tokens of lassulus/superconfig, see
-# configs/nix-farm/cache.nix). cache.nixos.org keeps serving what it signed, those
-# paths are left out. Needs niks3 in PATH.
+# configs/nix-cache.nix). cache.nixos.org keeps serving what it signed,
+# those paths are left out. Needs niks3 in PATH.
 # Usage: niks3-push.sh PATH...
 #        niks3-push.sh --stdin   the paths from stdin
 #        niks3-push.sh --token   the token, as niks3's --auth-token-script
