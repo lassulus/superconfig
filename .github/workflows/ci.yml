@@ -103,6 +103,7 @@ jobs:
       - uses: Mic92/hestia@v3
         with:
           upstream-cache-filter: true
+          upstream-cache-key-names: cache.nixos.org-1 cache.lassul.us-1
           filter-drv-closures: true
       # the niks3 client of all jobs and the lazy store of the machine jobs,
       # the others substitute them
@@ -145,6 +146,7 @@ jobs:
       - uses: Mic92/hestia@v3
         with:
           upstream-cache-filter: true
+          upstream-cache-key-names: cache.nixos.org-1 cache.lassul.us-1
           wait-manifest-version: ${{ needs.eval.outputs.manifest-version }}
       - env:
           NIKS3: ${{ needs.eval.outputs.niks3 }}
@@ -206,6 +208,7 @@ jobs:
       - uses: Mic92/hestia@v3
         with:
           upstream-cache-filter: true
+          upstream-cache-key-names: cache.nixos.org-1 cache.lassul.us-1
           wait-manifest-version: ${{ needs.shared.outputs.manifest-version }}
       - env:
           NIKS3: ${{ needs.eval.outputs.niks3 }}
