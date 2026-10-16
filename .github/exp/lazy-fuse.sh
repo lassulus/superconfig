@@ -7,13 +7,15 @@
 # runner with a lazy /nix/store (see measure-lazy-store.yml on
 # ci-lazy-measure for why).
 #
-# /nix/store becomes an overlayfs: upper = the runner's real store, lower = a
-# FUSE mount (lazy-store.py) of everything the builds need from the caches.
-# nix uses it as a local-overlay store whose lower store is a plain `local`
-# store with a database loaded from narinfos only, so nix sees all inputs as
-# valid without downloading them. The FUSE serves stat/readdir/readlink from
-# the caches' .ls listings and fetches (and checks) a path's NAR on the first
-# open() of a file in it.
+# /nix/store becomes one FUSE file system (lazy-store/, Rust on
+# fuse-backend-rs): the runner's real store dir, through which all writes go,
+# merged with every store path the builds need from the caches. Those are
+# served from their .ls listings (all fetched up front, metadata is answered
+# from memory) and a path's NAR is fetched, checked and unpacked on the first
+# open() of a file in it; reads then go through kernel FUSE passthrough. nix
+# stays a plain local store: the input paths are registered in its database
+# from their narinfos (nix-store --load-db), so it sees them as valid without
+# downloading them.
 #
 # Everything worth looking at ends up in $RUNNER_TEMP/lazy-out, which the
 # workflow uploads as an artifact even if this fails.
@@ -21,7 +23,7 @@ set -euo pipefail
 
 MACHINE=${MACHINE:-neoprism}
 here=$(cd "$(dirname "$0")" && pwd)
-L=$RUNNER_TEMP/lazy     # paths.json, db.dump, unpacked NARs (root-owned)
+L=$RUNNER_TEMP/lazy     # paths.json, db.dump, lazy-store, unpacked NARs (root-owned)
 O=$RUNNER_TEMP/lazy-out # uploaded
 mkdir -p "$L" "$O"
 fuse_pid=
@@ -51,7 +53,7 @@ collect() {
   findmnt -l >"$O/findmnt.txt"
   ps -ef >"$O/ps.txt"
   cp "$L"/*.json "$O"/ 2>/dev/null
-  # build logs of the local-overlay store (state dir defaults to /nix/var/nix)
+  # build logs (state dir /nix/var/nix, not in the store)
   sudo tar -C /nix/var/log/nix -cf "$O/nix-log.tar" . 2>/dev/null
   # the installer put the job's GitHub token into access-tokens
   sed 's/^\(access-tokens *=\).*/\1 <redacted>/' /etc/nix/nix.conf >"$O/nix.conf"
@@ -65,32 +67,9 @@ collect() {
 }
 trap collect EXIT
 
-# from apt: nothing in the nix store besides nix itself before measuring.
-# fusepy uses libfuse2 (libfuse2t64); as root it mounts without fusermount.
-sudo apt-get install -y -q python3-fusepy zstd
+uname -r
 sudo modprobe fuse || true
 ls -l /dev/fuse
-grep -qx user_allow_other /etc/fuse.conf 2>/dev/null ||
-  echo user_allow_other | sudo tee -a /etc/fuse.conf >/dev/null
-# The run that installed python3-fusepy still failed `import fuse` with
-# /usr/bin/python3, so don't rely on where the package put it: put the dir of
-# its fuse.py on PYTHONPATH, and failing that take fusepy (one pure-python
-# file over ctypes) from PyPI.
-/usr/bin/python3 -c 'import sys; print(sys.version); print(sys.path)'
-dpkg -L python3-fusepy | grep -E '\.py$' || true
-py=$L/py
-mkdir -p "$py"
-fusepy=$(dpkg -L python3-fusepy | grep -E '/fuse\.py$' | head -n 1 || true)
-[ -n "$fusepy" ] && ln -sf "$fusepy" "$py/fuse.py"
-fuse_ok() {
-  PYTHONPATH=$py /usr/bin/python3 -c 'import fuse; print("fusepy", fuse.__file__, getattr(fuse, "_libfuse_path", "?"))'
-}
-if ! fuse_ok; then
-  echo "fusepy from apt not importable, installing it from PyPI into $py"
-  rm -f "$py/fuse.py"
-  /usr/bin/python3 -m pip install -q --no-deps --break-system-packages --target "$py" fusepy==3.0.1
-  fuse_ok
-fi
 
 nixbin=$(dirname "$(readlink -f "$(command -v nix-store)")")
 rx() { awk -F'[: ]+' 'NR > 2 && $2 != "lo" { s += $3 } END { print s }' /proc/net/dev; }
@@ -103,6 +82,22 @@ phase() {
     'BEGIN { printf "| %s | %.1f s | %.1f MiB | %s |", n, t - t0, (r - r0) / 2^20, x }')")
   t0=$t1 r0=$r1
 }
+
+# The lazy store is built in a separate store (chroot store under /lazy/build)
+# so that the real one holds nothing besides nix (and eval's .drv files)
+# before measuring: its toolchain's closure (glibc, gcc-lib, ...) overlaps
+# with the paths the builds below need. The binary is static and runs from
+# there. Only the .drv closure is instantiated in the real store.
+drv=$(nix-instantiate "$here")
+bs=/lazy/build
+sudo mkdir -p "$bs"
+# shellcheck disable=SC2046 # one path per word
+nix-store --export $(nix-store -qR "$drv") |
+  sudo "$nixbin/nix-store" --store "local?root=$bs" --import >/dev/null
+out=$(sudo "$nixbin/nix-store" --store "local?root=$bs" --realise "$drv")
+lazy=$L/lazy-store
+sudo install -m 755 "$bs$out/bin/lazy-store" "$lazy"
+phase "build lazy-store" "not part of the comparison"
 
 top=$(nix eval --raw ".#nixosConfigurations.$MACHINE.config.system.build.toplevel.drvPath")
 pick() {
@@ -120,43 +115,34 @@ path=$(pick "$top" system-path)
 targets=("$units" "$etc" "$path" "$top")
 phase eval
 
-python3 "$here/lazy-store.py" closure "$L" "${targets[@]}"
+"$lazy" closure "$L" "${targets[@]}"
 phase "narinfo closure" "$(jq -r '"\(.paths) paths"' "$L/closure.json")"
 
-# The database is loaded through a store whose real dir is a scratch dir:
-# opening a writable `local` store creates <real>/.links, and with
-# real=/lazy/store that left the FUSE mount point non-empty, which libfuse2
-# refuses (the first run died right here). Only the db in state= matters.
-lower="local?real=/lazy/store&state=/lazy/state"
-sudo mkdir -p /lazy/store /lazy/state /lazy/load-real /lazy/nix /nix/.lazy-work
-# shellcheck disable=SC2024 # $L is ours, only nix-store needs root
-sudo "$nixbin/nix-store" --option store "local?real=/lazy/load-real&state=/lazy/state" \
-  --load-db <"$L/db.dump"
-sudo ls -la /lazy/store
-
-# shellcheck disable=SC2024 # the log is ours, only the mount needs root
-sudo env PYTHONPATH="$py" /usr/bin/python3 -u "$here/lazy-store.py" mount "$L" /lazy/store >"$O/fuse.log" 2>&1 &
-fuse_pid=$!
-for _ in $(seq 300); do
-  mountpoint -q /lazy/store && break
-  fuse_alive || fuse_died "exited before /lazy/store was mounted"
-  sleep 0.1
-done
-mountpoint -q /lazy/store || fuse_died "/lazy/store not mounted after 30 s"
-# ls -f: no stat(), which would fetch every path's .ls listing
-# shellcheck disable=SC2012
-echo "/lazy/store: $(ls -f /lazy/store | wc -l) entries"
-fuse_alive || fuse_died "exited right after mounting"
-
-# private, so the overlay mounted on /nix/store doesn't show up here
+# The upper layer is the real store dir, reached through a private bind
+# mount of /nix, so that the mount on /nix/store doesn't show up there.
+sudo mkdir -p /lazy/nix
 sudo mount --bind /nix /lazy/nix
 sudo mount --make-private /lazy/nix
-sudo mount -t overlay overlay \
-  -o lowerdir=/lazy/store,upperdir=/lazy/nix/store,workdir=/lazy/nix/.lazy-work /nix/store
-enc() { python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$1"; }
-store="local-overlay://?upper-layer=/lazy/nix/store&check-mount=false&lower-store=$(enc "$lower&read-only=true")"
-lnix() { sudo "$nixbin/nix-store" --option store "$store" "$@"; }
-phase "mount lazy store"
+# shellcheck disable=SC2024 # the log is ours, only the mount needs root
+sudo "$lazy" mount "$L" /lazy/nix/store /nix/store >"$O/fuse.log" 2>&1 &
+fuse_pid=$!
+# before mounting it fetches all .ls listings
+for _ in $(seq 1200); do
+  mountpoint -q /nix/store && break
+  fuse_alive || fuse_died "exited before /nix/store was mounted"
+  sleep 0.5
+done
+mountpoint -q /nix/store || fuse_died "/nix/store not mounted after 600 s"
+# ls -f: no stat() of every entry
+# shellcheck disable=SC2012
+echo "/nix/store: $(ls -f /nix/store | wc -l) entries"
+"$nixbin/nix-store" --version
+fuse_alive || fuse_died "exited right after mounting"
+
+# shellcheck disable=SC2024 # $L is ours, only nix-store needs root
+sudo "$nixbin/nix-store" --load-db <"$L/db.dump"
+lnix() { sudo "$nixbin/nix-store" "$@"; }
+phase "mount lazy store" "$(sudo jq -r '"\(.ls_count // 0) listings"' "$L/stats.json")"
 
 checks=()
 for t in "${targets[@]}"; do
@@ -194,6 +180,8 @@ sudo chown -R "$(id -u):$(id -g)" "$O"
   jq -r '"lower store: \(.paths) paths from \(.roots) roots, \(.by_cache | to_entries | map("\(.value) from \(.key)") | join(", ")); missing from the caches: \(.missing | length)",
     "an eager substitution would download \(.file_size / 1048576 | floor) MiB (\(.nar_size / 1048576 | floor) MiB unpacked)",
     "narinfo: \(.narinfo_count) requests, \(.narinfo_bytes / 1024 | floor) KiB"' "$L/closure.json"
+  echo
+  grep -m1 '^init: ' "$O/fuse.log" || true
   echo
   jq -r '"lazy layer: \(.ls_count // 0) .ls listings (\((.ls_bytes // 0) / 1024 | floor) KiB), \(.nar_count // 0) NARs (\((.nar_bytes // 0) / 1048576 * 10 | floor / 10) MiB, \((.nar_unpacked_bytes // 0) / 1048576 * 10 | floor / 10) MiB unpacked)",
     "",
