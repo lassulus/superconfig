@@ -27,6 +27,7 @@ import stat
 import subprocess
 import sys
 import threading
+import time
 import urllib.error
 import urllib.request
 
@@ -88,13 +89,29 @@ class Stats:
             os.replace(tmp, self.path)
 
 
+def fetch_url(url, tries=6):
+    """GET url -> (body, headers), retrying 429/5xx and network errors with
+    backoff (cache.nixos.org/cache.lassul.us answer 503 under load)."""
+    for n in range(tries):
+        try:
+            with urllib.request.urlopen(url, timeout=60) as r:
+                return r.read(), r.headers
+        except urllib.error.HTTPError as e:
+            if e.code != 429 and e.code < 500 or n == tries - 1:
+                raise
+            err = f"HTTP {e.code}"
+        except (urllib.error.URLError, OSError) as e:
+            if url.startswith("file:") or n == tries - 1:
+                raise
+            err = repr(e)
+        print(f"retry {n + 1}/{tries - 1} {url}: {err}", file=sys.stderr, flush=True)
+        time.sleep(min(2**n, 30))
+
+
 def get(url, stats, kind):
     """GET url -> decoded body, or None on 404/403."""
     try:
-        with urllib.request.urlopen(url) as r:
-            body = r.read()
-            stats.add(kind, len(body))
-            return decode(body, r.headers.get("Content-Encoding"))
+        body, headers = fetch_url(url)
     except urllib.error.HTTPError as e:
         if e.code in (403, 404):
             return None
@@ -103,6 +120,8 @@ def get(url, stats, kind):
         if isinstance(e.reason, FileNotFoundError):
             return None
         raise
+    stats.add(kind, len(body))
+    return decode(body, headers.get("Content-Encoding"))
 
 
 # --- closure ---------------------------------------------------------------
@@ -119,7 +138,12 @@ def parse_narinfo(text):
 def narinfo(name, stats):
     h = name.split("-", 1)[0]
     for c in CACHES:
-        body = get(f"{c}/{h}.narinfo", stats, "narinfo")
+        try:
+            body = get(f"{c}/{h}.narinfo", stats, "narinfo")
+        except (urllib.error.URLError, OSError) as e:  # still failing: try the next cache
+            print(f"giving up on {c}/{h}.narinfo: {e!r}", file=sys.stderr, flush=True)
+            stats.add("narinfo_error", 0)
+            continue
         if body is not None:
             i = parse_narinfo(body)
             i["cache"] = c
@@ -349,8 +373,7 @@ class LazyStore:
             shutil.rmtree(tmp, ignore_errors=True)
             if os.path.lexists(tmp):
                 os.unlink(tmp)
-            with urllib.request.urlopen(f"{p['cache']}/{p['url']}") as r:
-                body = r.read()
+            body, _ = fetch_url(f"{p['cache']}/{p['url']}")
             tool = {"zstd": ["zstd", "-dc"], "xz": ["xz", "-dc"], "bzip2": ["bzip2", "-dc"]}
             if p["compression"] in ("none", ""):
                 f = io.BytesIO(body)
