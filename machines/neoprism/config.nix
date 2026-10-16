@@ -4,6 +4,9 @@
 }:
 
 {
+  # benchmark marker: changes neoprism's toplevel, never merge
+  environment.etc."ci-bench".text = "1";
+
   imports = [
     ../../configs
     ../../configs/ssh-redirect.nix
