@@ -1,5 +1,5 @@
 bin "realwallpaper-server"
-about "HTTP service rendering realwallpaper on demand: /?location=LAT,LON&variant=lens|plain|mercator&overlay=none|sky|krebs|stars&size=WxH"
+about "HTTP service rendering realwallpaper on demand: /?location=LAT,LON&variant=lens|plain|world&overlay=none|sky|krebs|stars&size=WxH"
 
 flag "--state-dir" help="Renders and the shared data cache (required)" {
   arg "<dir>"

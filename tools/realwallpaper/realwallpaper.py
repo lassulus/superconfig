@@ -120,9 +120,9 @@ class LensMap:
     Projections (--projection):
     - lens: the above plus the magnifying lens around home (default)
     - plain: the above without the lens, no distortion beyond the cylinder
-    - mercator: the classic map, north up, true Mercator centred on the
-      equator and the home longitude; the poles are cut off (about +-71
-      degrees fit 16:9) and there is no lens
+    - world: the classic map, north up, plate carrée centred on the equator
+      and the home longitude, the whole globe stretched to fill the screen
+      (longitude scaled to the width, latitude to the height); no lens
 
     The lens is focus + glue + context (Yamamoto et al. 2009; the same idea
     as Snyder's 1987 "magnifying-glass" azimuthal projections): a lens
@@ -171,9 +171,10 @@ class LensMap:
         self.height = height
         self.m = magnification if projection == "lens" else 1.0
         self.k = 2 * math.pi / width  # radians of longitude per px
-        if projection == "mercator":
+        self.world = projection == "world"
+        if self.world:
             self.rot_lat = 0.0  # no rotation: the real equator is the axis
-            self.a = 1.0  # true Mercator
+            self.ky = math.pi / height  # radians of latitude per px
         else:
             self.rot_lat = self.lat0  # home on the projection's equator
             self.a = solve_cylinder(math.pi * height / width)
@@ -235,8 +236,11 @@ class LensMap:
         wx = self.px + dx * scale
         wy = self.py + dy * scale
         lon_r = (wx - self.px) * self.k
-        u = (self.py - wy) * self.k
-        lat_r = (2 / self.a) * (np.arctan(np.exp(self.a * u)) - math.pi / 4)
+        if self.world:
+            lat_r = (self.py - wy) * self.ky
+        else:
+            u = (self.py - wy) * self.k
+            lat_r = (2 / self.a) * (np.arctan(np.exp(self.a * u)) - math.pi / 4)
         lat_r = np.clip(lat_r, -math.pi / 2, math.pi / 2)
         lat, dlon = rotate_from_home(self.rot_lat, lat_r, lon_r)
         lon = (self.lon0 + dlon + math.pi) % (2 * math.pi) - math.pi
@@ -246,17 +250,24 @@ class LensMap:
         coarse = np.maximum(tangential, radial)
         lens_f = np.where(inside, np.maximum(fine, coarse / 4), 1.0)
         # cylinder: east-west px size R k cos(lat), north-south R k cos(a lat)
-        base_f = np.maximum(np.cos(lat_r), np.cos(self.a * lat_r) / 4)
-        q = R_EARTH * self.k * base_f * lens_f
+        # (world: R ky)
+        if self.world:
+            base_q = np.maximum(self.k * np.cos(lat_r), self.ky / 4)
+        else:
+            base_q = self.k * np.maximum(np.cos(lat_r), np.cos(self.a * lat_r) / 4)
+        q = R_EARTH * base_q * lens_f
         return np.degrees(lat), np.degrees(lon), np.maximum(q, 1e-3)
 
     def forward(self, lat_deg, lon_deg):
         lat = np.radians(np.asarray(lat_deg, dtype=np.float64))
         dlon = np.radians(np.asarray(lon_deg, dtype=np.float64)) - self.lon0
         lat_r, lon_r = rotate_to_home(self.rot_lat, lat, dlon)
-        lat_r = np.clip(lat_r, -math.radians(89.5), math.radians(89.5))
         wx = self.px + lon_r / self.k
-        wy = self.py - np.log(np.tan(math.pi / 4 + self.a * lat_r / 2)) / (self.a * self.k)
+        if self.world:
+            wy = self.py - lat_r / self.ky
+        else:
+            lat_r = np.clip(lat_r, -math.radians(89.5), math.radians(89.5))
+            wy = self.py - np.log(np.tan(math.pi / 4 + self.a * lat_r / 2)) / (self.a * self.k)
         dx, dy = wx - self.px, wy - self.py
         r = self.norm(dx, dy)
         s = np.interp(np.minimum(r, 1.0), self._h, self._s)
@@ -1330,9 +1341,9 @@ def main() -> None:
     p.add_argument("--falloff", type=float, default=0.65,
                    help="where across the lens (0..1) the distortion peaks; higher keeps "
                         "the middle closer to a plain zoom (default 0.65)")
-    p.add_argument("--projection", choices=["lens", "plain", "mercator"], default="lens",
+    p.add_argument("--projection", choices=["lens", "plain", "world"], default="lens",
                    help="lens: centred on home with the zoom lens; plain: centred on home "
-                        "without distortion; mercator: classic north-up map (default lens)")
+                        "without distortion; world: classic north-up map (default lens)")
     p.add_argument("--marker-url", default=None,
                    help="JSON with {name: {latitude, longitude}} for krebs markers")
     p.add_argument("--time", type=dt.datetime.fromisoformat, default=None,

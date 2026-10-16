@@ -26,7 +26,7 @@ import urllib.parse
 from dataclasses import dataclass, field
 from pathlib import Path
 
-VARIANTS = ("lens", "plain", "mercator")
+VARIANTS = ("lens", "plain", "world")
 OVERLAYS = {
     "none": "realwallpaper.png",
     "sky": "realwallpaper-marker.png",  # sun, moon, planets
@@ -43,7 +43,7 @@ HELP = """realwallpaper, a live world map centred on a location
 
   location  degrees, south/west negative, rounded to 0.01 (default Berlin)
   variant   lens (zoomed in on location), plain (no distortion),
-            mercator (classic north-up map)        (default lens)
+            world (classic north-up map)           (default lens)
   overlay   none, sky (sun, moon, planets), krebs (sky and krebs nodes),
             stars (all of that plus constellations) (default sky)
   size      up to 3840x2160                          (default 3840x2160)

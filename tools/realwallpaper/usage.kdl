@@ -31,7 +31,7 @@ flag "--focus" help="Share of the lens zoomed undistorted before the transition 
 flag "--falloff" help="Where across the lens (0..1) the distortion peaks; higher keeps the middle closer to a plain zoom (default 0.65)" {
   arg "<position>"
 }
-flag "--projection" help="lens: centred on home with the zoom lens; plain: centred on home without distortion; mercator: classic north-up map (default lens)" {
+flag "--projection" help="lens: centred on home with the zoom lens; plain: centred on home without distortion; world: classic north-up map (default lens)" {
   arg "<mode>"
 }
 flag "--marker-url" help="JSON {name: {latitude, longitude}} for krebs markers" {
