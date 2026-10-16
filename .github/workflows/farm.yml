@@ -99,20 +99,64 @@ jobs:
       max-parallel: 15
       matrix:
         include: ${{ fromJSON(needs.list.outputs.machines) }}
+    # The builder makes the .drv files of the builds it gets valid through the
+    # runner's nix-daemon, which would fetch them one by one from
+    # cache.lassul.us. This binary cache keeps the ones of the previous run of
+    # this machine job in the Actions cache instead. Every path in it is
+    # content-addressed (.drv files and their sources), so the daemon accepts
+    # them unsigned: it checks a path against its content address, and a
+    # wrong one can't get in.
+    env:
+      DRV_CACHE: /tmp/drv-cache
     steps:
       - uses: actions/checkout@v4
+      # One lineage per machine (its job runs once per run, farm runs one at a
+      # time), so no two jobs save on top of the same entry. A machine without
+      # one yet starts from any other's.
+      - uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.DRV_CACHE }}
+          key: drv-cache/${{ matrix.machine }}/${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            drv-cache/${{ matrix.machine }}/
+            drv-cache/
       - uses: cachix/install-nix-action@v31
         with:
           extra_nix_config: |
             trusted-users = root runner
-            extra-substituters = https://cache.lassul.us
+            extra-substituters = file://${{ env.DRV_CACHE }}?priority=10&want-mass-query=true https://cache.lassul.us
             extra-trusted-public-keys = cache.lassul.us-1:aOMEO5TU6eLvhyPi0jmgjR2sVlGjMq3rK0MeACjTcQ0=
             # Builders need each other's outputs as soon as they are pushed;
             # a remembered miss (default: 1 h) fails the build instead.
             narinfo-cache-negative-ttl = 0
+      # Created by the runner user, who writes to it at the end, before the
+      # daemon (root) opens it and would create it as its own.
+      - run: nix store info --store "file://$DRV_CACHE"
       - run: nix build -L .#ci-farm -o ci-farm
       - name: build ${{ matrix.machine }}
         env:
           FARM_KEY: ${{ secrets.FARM_KEY }}
           GH_TOKEN: ${{ github.token }}
         run: ./ci-farm/bin/ci-farm machine ${{ matrix.index }} ${{ matrix.machine }}
+      # The next run gets the .drv files this job's store has now, i.e. the
+      # ones it evaluated or substituted, with their sources (a binary cache
+      # takes only paths whose references it has); those it didn't use drop
+      # out. Uncompressed: actions/cache compresses the whole directory.
+      - id: drv-cache
+        if: ${{ !cancelled() }}
+        shell: bash # with pipefail: an empty list must not replace the cache
+        run: |
+          nix path-info --all | grep '\.drv$' |
+            nix copy --stdin --to "file://$DRV_CACHE.new?compression=none"
+          if diff -q <(cd "$DRV_CACHE" && ls) <(cd "$DRV_CACHE.new" && ls) >/dev/null; then
+            echo "changed=false" >>"$GITHUB_OUTPUT"
+          else
+            rm -rf "$DRV_CACHE"
+            mv "$DRV_CACHE.new" "$DRV_CACHE"
+            echo "changed=true" >>"$GITHUB_OUTPUT"
+          fi
+      - if: ${{ !cancelled() && steps.drv-cache.outputs.changed == 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.DRV_CACHE }}
+          key: drv-cache/${{ matrix.machine }}/${{ github.run_id }}-${{ github.run_attempt }}
