@@ -15,8 +15,7 @@ in
 {
   imports = [ self.inputs.niks3.nixosModules.niks3 ];
 
-  # B2 credentials (prompted), the niks3 API token (generated; one copy per
-  # service user that reads it).
+  # B2 credentials (prompted), the niks3 API token (generated).
   clan.core.vars.generators.niks3 = {
     prompts.b2_key_id = {
       description = "Backblaze B2 keyID with access to the ${bucket} bucket";
@@ -29,7 +28,6 @@ in
     files."s3-access-key".owner = "niks3";
     files."s3-secret-key".owner = "niks3";
     files."api-token".owner = "niks3";
-    files."api-token-grpc".owner = "nix-grpc-daemon";
     runtimeInputs = [
       pkgs.coreutils
       pkgs.openssl
@@ -38,7 +36,6 @@ in
       tr -d '\n' < "$prompts/b2_key_id" > "$out/s3-access-key"
       tr -d '\n' < "$prompts/b2_application_key" > "$out/s3-secret-key"
       openssl rand -hex 32 | tr -d '\n' > "$out/api-token"
-      cp "$out/api-token" "$out/api-token-grpc"
     '';
   };
 
@@ -66,11 +63,12 @@ in
     signKeyFiles = [ vars.nix-cache-signing.files."key.sec".path ];
     cacheUrl = "https://cache.lassul.us";
     # Behind cache.nixos.org (40): nix asks upstream first, so B2 only sees
-    # lookups for our own paths. At niks3's default 30 every closure path hit
-    # B2 first, and a farm run's ~1M misses got throttled with 503s.
+    # lookups for our own paths. At niks3's default 30 every closure path of
+    # a CI build would hit B2 first, and B2 throttles that many misses with
+    # 503s.
     priority = 50;
-    # The CI build farm (tools/ci-farm) pushes with the job's GitHub OIDC
-    # token. Fork PRs don't get one.
+    # CI (.github/workflows/ci.yml) pushes with the job's GitHub OIDC token.
+    # Fork PRs don't get one.
     oidc.providers.github = {
       issuer = "https://token.actions.githubusercontent.com";
       audience = "https://niks3.lassul.us";
@@ -91,12 +89,12 @@ in
   # `resolve`: looked up at runtime via resolved's stub, so an unresolvable
   # B2 at startup doesn't keep nginx (and every other vhost) from starting.
   # `keepalive` + HTTP/1.1 below: reuse TLS connections to B2. Without them
-  # nginx spoke HTTP/1.0 with a new handshake per request; at a farm run's
-  # ~400 req/s B2 started closing connections mid-response.
+  # nginx speaks HTTP/1.0 with a new handshake per request, and at hundreds
+  # of requests per second B2 closes connections mid-response.
   # `max_fails=0`: B2 closes idle keepalive connections now and then. With the
-  # default max_fails=1 one such close marked that B2 address down for 10s;
-  # once all of them were, every request got "no live upstreams" and a 502
-  # (failed a farm run). A GET/HEAD on a closed reused connection is retried
+  # default max_fails=1 one such close marks that B2 address down for 10s;
+  # once all of them are, every request gets "no live upstreams" and a 502.
+  # A GET/HEAD on a closed reused connection is retried
   # (default `proxy_next_upstream error timeout`) without using up a try, on
   # the next address, or on the same one if it resolves to only one.
   services.nginx.appendHttpConfig = ''

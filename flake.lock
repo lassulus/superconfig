@@ -409,30 +409,6 @@
         "type": "github"
       }
     },
-    "nix-grpc-store": {
-      "inputs": {
-        "niks3": [
-          "niks3"
-        ],
-        "nixpkgs": [
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "lastModified": 1792066552,
-        "narHash": "sha256-Ovar8bsbICSlUzlZA9KpHmon6ZqSsjZv2Wbbjiep5Qk=",
-        "owner": "lassulus",
-        "repo": "nix-grpc-store",
-        "rev": "d91962e6c61ec4d7fbb52b77e7b698a443b6fbf1",
-        "type": "github"
-      },
-      "original": {
-        "owner": "lassulus",
-        "ref": "fix-drain-upload",
-        "repo": "nix-grpc-store",
-        "type": "github"
-      }
-    },
     "nix-index-database": {
       "inputs": {
         "nixpkgs": [
@@ -679,7 +655,6 @@
         "kartei": "kartei",
         "llm-agents": "llm-agents",
         "niks3": "niks3",
-        "nix-grpc-store": "nix-grpc-store",
         "nix-index-database": "nix-index-database",
         "nix-rosetta-builder": "nix-rosetta-builder",
         "nixos-hardware": "nixos-hardware",

@@ -136,7 +136,7 @@ in
       }
     )
     (
-      # binary cache of the neoprism build farm (configs/nix-farm). The key
+      # binary cache on neoprism, CI pushes there (configs/nix-cache.nix). The key
       # only exists once `clan vars generate neoprism` has run; until then
       # the cache is left out.
       let

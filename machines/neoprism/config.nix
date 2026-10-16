@@ -118,10 +118,8 @@
     # nixpkgs PR triage dashboard (review.lassul.us)
     ../../configs/nixpkgs-triage.nix
 
-    # build farm (grpc://neoprism.r:50051) + binary cache (cache.lassul.us,
-    # niks3.lassul.us)
-    ../../configs/nix-farm/cache.nix
-    ../../configs/nix-farm/builder.nix
+    # binary cache (cache.lassul.us, niks3.lassul.us)
+    ../../configs/nix-cache.nix
   ];
 
   # lassul.us shouldn't be the default vhost here (nginx.nix already sets one)
