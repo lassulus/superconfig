@@ -10,6 +10,10 @@
 let
   inherit (import ./default.nix) servers ports;
 
+  # Containers have no disks of their own and lack the capabilities the
+  # SMART exporter needs.
+  smart = !config.boot.isContainer;
+
   buffer = {
     type = "disk";
     max_size = 512 * 1024 * 1024;
@@ -22,6 +26,7 @@ let
       inputs = [
         "host_metrics"
         "revision_metric"
+        "memory_pressure_metric"
       ];
       endpoint = "http://${server}.r:${toString ports.victoriametrics}/api/v1/write";
       healthcheck.enabled = false;
@@ -44,6 +49,11 @@ let
   };
 in
 {
+  services.prometheus.exporters.smartctl = lib.mkIf smart {
+    enable = true;
+    listenAddress = "127.0.0.1";
+  };
+
   services.vector = {
     enable = true;
     journaldAccess = true;
@@ -75,6 +85,50 @@ in
         scrape_interval_secs = 30;
       };
       sources.journald_raw.type = "journald";
+      sources.smartctl_raw = lib.mkIf smart {
+        type = "prometheus_scrape";
+        endpoints = [
+          "http://127.0.0.1:${toString config.services.prometheus.exporters.smartctl.port}/metrics"
+        ];
+        scrape_interval_secs = 60;
+      };
+
+      # Memory PSI: the time some task stalled on memory, as a counter in
+      # seconds, so rate() over it is the stalled fraction of a window.
+      sources.memory_pressure_raw = {
+        type = "exec";
+        mode = "scheduled";
+        scheduled.exec_interval_secs = 30;
+        command = [
+          "${pkgs.coreutils}/bin/cat"
+          "/proc/pressure/memory"
+        ];
+        include_stderr = false;
+      };
+      transforms.memory_pressure = {
+        type = "remap";
+        inputs = [ "memory_pressure_raw" ];
+        source = ''
+          fields = parse_key_value!(.message)
+          if !exists(fields.some) { abort }
+          . = { "seconds": to_int!(fields.total) / 1000000 }
+        '';
+        drop_on_abort = true;
+      };
+      transforms.memory_pressure_metric = {
+        type = "log_to_metric";
+        inputs = [ "memory_pressure" ];
+        metrics = [
+          {
+            type = "counter";
+            kind = "absolute";
+            increment_by_value = true;
+            field = "seconds";
+            name = "host_pressure_memory_some_seconds_total";
+            tags.host = config.networking.hostName;
+          }
+        ];
+      };
 
       # The superconfig revision the machine runs, written by deploy and
       # autoUpgrade after a switch. Read at runtime: it is in no derivation,
@@ -127,7 +181,8 @@ in
         inputs = [
           "host_metrics_raw"
           "internal_metrics_raw"
-        ];
+        ]
+        ++ lib.optional smart "smartctl_raw";
         source = ''
           .tags.host = "${config.networking.hostName}"
         '';

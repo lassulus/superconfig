@@ -46,6 +46,25 @@ in
         (alert "HighMemory" "1 - host_memory_available_bytes / host_memory_total_bytes > 0.95" "15m"
           "{{ $labels.host }} uses {{ $value | humanizePercentage }} of its memory"
         )
+        (alert "MemoryPressure" "rate(host_pressure_memory_some_seconds_total[10m]) > 0.1" "5m"
+          "{{ $labels.host }}: tasks stalled on memory {{ $value | humanizePercentage }} of the time"
+        )
+        (alert "OOMKill" "increase(host_memory_oom_kill_events_total[10m]) > 0" "0m"
+          "{{ $labels.host }}: {{ $value }} processes OOM-killed in the last 10 minutes"
+        )
+        (alert "SmartFailed" "smartctl_device_smart_status == 0" "5m"
+          "{{ $labels.host }}: {{ $labels.device }} fails its SMART health check"
+        )
+        (alert "NvmeCriticalWarning" "smartctl_device_critical_warning != 0" "5m"
+          "{{ $labels.host }}: {{ $labels.device }} reports critical warning {{ $value }}"
+        )
+        (alert "NvmeMediaErrors" "increase(smartctl_device_media_errors[1h]) > 0" "0m"
+          "{{ $labels.host }}: {{ $labels.device }} had {{ $value }} new media errors in the last hour"
+        )
+        (alert "NvmeSpareLow" "smartctl_device_available_spare < smartctl_device_available_spare_threshold"
+          "5m"
+          "{{ $labels.host }}: {{ $labels.device }} has only {{ $value }}% spare left"
+        )
       ];
     }
     {
