@@ -1,16 +1,7 @@
 name: exp lazy fuse store
 
-# Experiment: rebuild a machine's system-units, etc, system-path and toplevel
-# on a fresh runner with a lazy /nix/store (see measure-lazy-store.yml on
-# ci-lazy-measure for why).
-#
-# /nix/store becomes an overlayfs: upper = the runner's real store, lower = a
-# FUSE mount (.github/lazy-store.py) of everything the builds need from the
-# caches. nix uses it as a local-overlay store whose lower store is a plain
-# `local` store with a database loaded from narinfos only, so nix sees all
-# inputs as valid without downloading them. The FUSE serves stat/readdir/
-# readlink from the caches' .ls listings and fetches (and checks) a path's
-# NAR on the first open() of a file in it.
+# Experiment, see .github/exp/lazy-fuse.sh. All logic lives there so that
+# changing it doesn't need a push touching .github/workflows/.
 
 on:
   push:
@@ -33,102 +24,9 @@ jobs:
             extra-substituters = https://cache.lassul.us
             extra-trusted-public-keys = cache.lassul.us-1:aOMEO5TU6eLvhyPi0jmgjR2sVlGjMq3rK0MeACjTcQ0=
             extra-experimental-features = nix-command flakes local-overlay-store read-only-local-store
-      # from apt: nothing in the nix store besides nix itself before measuring
-      - run: sudo apt-get install -y python3-fusepy zstd
-      - name: lazy rebuild
-        run: |
-          L=$RUNNER_TEMP/lazy
-          mkdir -p "$L"
-          nixbin=$(dirname "$(readlink -f "$(command -v nix-store)")")
-          rx() { awk -F'[: ]+' 'NR > 2 && $2 != "lo" { s += $3 } END { print s }' /proc/net/dev; }
-          rows=()
-          t0=$(date +%s.%N) r0=$(rx)
-          phase() {
-            local t1 r1
-            t1=$(date +%s.%N) r1=$(rx)
-            rows+=("$(awk -v n="$1" -v t="$t1" -v t0="$t0" -v r="$r1" -v r0="$r0" -v x="${2:-}" \
-              'BEGIN { printf "| %s | %.1f s | %.1f MiB | %s |", n, t - t0, (r - r0) / 2^20, x }')")
-            t0=$t1 r0=$r1
-          }
-
-          top=$(nix eval --raw ".#nixosConfigurations.$MACHINE.config.system.build.toplevel.drvPath")
-          pick() {
-            local r
-            r=$(nix-store -q --references "$1" | grep -E -- "-$2\.drv\$")
-            [ -n "$r" ] && [ "$(wc -l <<<"$r")" = 1 ] || { echo "no unique $2 in $1: $r" >&2; return 1; }
-            echo "$r"
-          }
-          etc=$(pick "$top" etc)
-          units=$(pick "$etc" system-units)
-          path=$(pick "$top" system-path)
-          targets=("$units" "$etc" "$path" "$top")
-          phase eval
-
-          python3 .github/lazy-store.py closure "$L" "${targets[@]}"
-          phase "narinfo closure" "$(jq -r '"\(.paths) paths"' "$L/closure.json")"
-
-          lower="local?real=/lazy/store&state=/lazy/state"
-          sudo mkdir -p /lazy/store /lazy/state /lazy/nix /nix/.lazy-work
-          # shellcheck disable=SC2024 # $L is ours, only nix-store needs root
-          sudo "$nixbin/nix-store" --option store "$lower" --load-db < "$L/db.dump"
-          sudo /usr/bin/python3 .github/lazy-store.py mount "$L" /lazy/store 2> "$L/fuse.log" &
-          until mountpoint -q /lazy/store; do kill -0 $!; sleep 0.1; done
-          # private, so the overlay mounted on /nix/store doesn't show up here
-          sudo mount --bind /nix /lazy/nix
-          sudo mount --make-private /lazy/nix
-          sudo mount -t overlay overlay \
-            -o lowerdir=/lazy/store,upperdir=/lazy/nix/store,workdir=/lazy/nix/.lazy-work /nix/store
-          enc() { python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$1"; }
-          store="local-overlay://?upper-layer=/lazy/nix/store&check-mount=false&lower-store=$(enc "$lower&read-only=true")"
-          lnix() { sudo "$nixbin/nix-store" --option store "$store" "$@"; }
-          phase "mount lazy store"
-
-          checks=()
-          for t in "${targets[@]}"; do
-            name=${t#/nix/store/*-}
-            name=${name%.drv}
-            # --check needs the existing output; build it fresh if no cache has it
-            mapfile -t outs < <(nix-store -q --outputs "$t")
-            mode=(--check)
-            lnix --check-validity "${outs[@]}" 2>/dev/null || mode=()
-            rc=0
-            lnix --realise "${mode[@]}" "$t" > /dev/null 2> "$L/build-$name.log" || rc=$?
-            subst=$(grep -c "^copying path" "$L/build-$name.log" || true)
-            phase "$name ${mode[0]:-build}" "exit $rc, $subst paths substituted eagerly"
-            checks+=("$rc")
-          done
-
-          sudo chown -R "$USER" "$L"
-          {
-            echo "# lazy fuse store: $MACHINE"
-            echo
-            # shellcheck disable=SC2016 # markdown backticks
-            printf -- '- `%s`\n' "${targets[@]}"
-            echo
-            echo "| phase | wall | network rx | |"
-            echo "|---|---|---|---|"
-            printf '%s\n' "${rows[@]}"
-            echo
-            jq -r '"lower store: \(.paths) paths from \(.roots) roots, \(.by_cache | to_entries | map("\(.value) from \(.key)") | join(", ")); missing from the caches: \(.missing | length)",
-              "an eager substitution would download \(.file_size / 1048576 | floor) MiB (\(.nar_size / 1048576 | floor) MiB unpacked)",
-              "narinfo: \(.narinfo_count) requests, \(.narinfo_bytes / 1024 | floor) KiB"' "$L/closure.json"
-            echo
-            jq -r '"lazy layer: \(.ls_count // 0) .ls listings (\((.ls_bytes // 0) / 1024 | floor) KiB), \(.nar_count // 0) NARs (\((.nar_bytes // 0) / 1048576 * 10 | floor / 10) MiB, \((.nar_unpacked_bytes // 0) / 1048576 * 10 | floor / 10) MiB unpacked)",
-              "",
-              "| NAR fetched on open() | download | unpacked |", "|---|---|---|",
-              (.nars | sort_by(-.[1]) | .[] | "| \(.[0]) | \(.[1] / 1024 | floor) KiB | \(.[2] / 1024 | floor) KiB |")' "$L/stats.json"
-            if [ -s "$L/fuse.log" ]; then
-              echo
-              echo '```'
-              grep -v '^fetched ' "$L/fuse.log" | tail -n 50
-              echo '```'
-            fi
-          } | tee -a "$GITHUB_STEP_SUMMARY"
-          for rc in "${checks[@]}"; do [ "$rc" = 0 ]; done
+      - run: bash .github/exp/lazy-fuse.sh
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: exp-lazy-fuse
-          path: |
-            ${{ runner.temp }}/lazy/*.json
-            ${{ runner.temp }}/lazy/*.log
+          path: ${{ runner.temp }}/lazy-out/
