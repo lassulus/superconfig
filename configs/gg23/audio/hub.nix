@@ -155,6 +155,9 @@ in
   # Discoverable and pairable only after the "Bluetooth pairing" button.
   hardware.bluetooth = {
     enable = true;
+    # the hostname plugin would override Name and Class with the hostname
+    # and chassis type
+    disabledPlugins = [ "hostname" ];
     settings.General = {
       Name = "gg23";
       # audio/video major class, loudspeaker, so phones show a speaker
@@ -295,6 +298,10 @@ in
           fi
         done
       }
+      # bluetoothd powers hci0 on (AutoEnable) only after it shows up
+      until [ "$(busctl get-property org.bluez /org/bluez/hci0 org.bluez.Adapter1 Powered 2>/dev/null)" = "b true" ]; do
+        sleep 1
+      done
       adapter Discoverable false
       adapter Pairable false
       trust
