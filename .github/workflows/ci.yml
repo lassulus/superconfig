@@ -74,7 +74,9 @@ jobs:
   #   and lists the machines whose toplevel is in neither cache.
   # - shared: builds the derivations needed by more than one of them once,
   #   so the machine jobs substitute them instead of each building them.
-  # - one job per listed machine, builds its toplevel by drv path.
+  # - one job per listed machine, builds its toplevel by drv path on a lazy
+  #   /nix/store (.github/lazy-store.sh): the paths it would substitute are
+  #   only downloaded once a file in them is opened.
   #
   # Every job pushes what it added to the store to cache.lassul.us
   # (.github/ci-build.sh), for deploys.
@@ -88,7 +90,8 @@ jobs:
       matrix: ${{ steps.matrix.outputs.matrix }}
       any-jobs: ${{ steps.matrix.outputs.any-jobs }}
       manifest-version: ${{ steps.matrix.outputs.manifest-version }}
-      niks3: ${{ steps.niks3.outputs.path }}
+      niks3: ${{ steps.tools.outputs.niks3 }}
+      lazy-store: ${{ steps.tools.outputs.lazy-store }}
     steps:
       - uses: actions/checkout@v4
       - uses: cachix/install-nix-action@v31
@@ -101,12 +104,15 @@ jobs:
         with:
           upstream-cache-filter: true
           filter-drv-closures: true
-      # the niks3 client of all jobs, the others substitute it
-      - id: niks3
+      # the niks3 client of all jobs and the lazy store of the machine jobs,
+      # the others substitute them
+      - id: tools
         run: |
           niks3=$(nix build --no-link --print-out-paths .#niks3)
-          echo "path=$niks3" >> "$GITHUB_OUTPUT"
-          PATH=$niks3/bin:$PATH .github/niks3-push.sh "$niks3"
+          lazy=$(nix build --no-link --print-out-paths .#lazy-store)
+          echo "niks3=$niks3" >> "$GITHUB_OUTPUT"
+          echo "lazy-store=$lazy" >> "$GITHUB_OUTPUT"
+          PATH=$niks3/bin:$PATH .github/niks3-push.sh "$niks3" "$lazy"
       - id: matrix
         uses: Mic92/hestia/matrix@v3
         with:
@@ -209,10 +215,20 @@ jobs:
       - name: build ${{ matrix.name }}
         env:
           INSTALLABLES: ${{ matrix.installables }}
+          LAZY_STORE: ${{ needs.eval.outputs.lazy-store }}
         run: |
           read -ra installables <<<"$INSTALLABLES"
           "$HESTIA_BIN" prefetch "${installables[@]}"
+          .github/lazy-store.sh "${installables[@]}"
           .github/ci-build.sh "${installables[@]}"
+      - name: lazy store log
+        if: always()
+        run: |
+          dir=$RUNNER_TEMP/lazy-store
+          if [ -s "$dir/stats.json" ]; then
+            jq -r '"\(.nar_count // 0) NARs fetched, \((.nar_bytes // 0) / 1048576 | floor) MiB"' "$dir/stats.json"
+          fi
+          cat "$dir/fuse.log" 2>/dev/null || true
 
   # Fixed-name summary of the jobs above, the required status check for
   # merging into master (the matrix job names change with the hosts).
