@@ -36,6 +36,10 @@ CACHES = os.environ.get(
     "LAZY_STORE_CACHES", "https://cache.nixos.org https://cache.lassul.us"
 ).split()
 NIX32 = "0123456789abcdfghijklmnpqrsvwxyz"
+# nix's LocalStore constructor creates <real>/.links even with read-only=true
+# (nix 2.35 local-store.cc), which fails with EROFS on this mount unless the
+# directory already exists: serve it as an empty dir.
+LINKS = ".links"
 
 
 def nix32(b):
@@ -406,6 +410,8 @@ class LazyStore:
         if not parts:
             return None, "", None
         name = parts[0]
+        if name == LINKS and len(parts) == 1:
+            return name, "", {"type": "directory", "entries": {}}
         if name not in self.paths:
             raise OSError(errno.ENOENT, path)
         node = self.listing(name)
@@ -432,7 +438,7 @@ class LazyStore:
 
     def readdir(self, path, fh):
         name, _, node = self.resolve(path)
-        entries = self.names if name is None else list(node.get("entries", {}))
+        entries = [LINKS, *self.names] if name is None else list(node.get("entries", {}))
         return [".", "..", *entries]
 
     def readlink(self, path):

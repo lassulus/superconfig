@@ -53,7 +53,8 @@ collect() {
   cp "$L"/*.json "$O"/ 2>/dev/null
   # build logs of the local-overlay store (state dir defaults to /nix/var/nix)
   sudo tar -C /nix/var/log/nix -cf "$O/nix-log.tar" . 2>/dev/null
-  cp /etc/nix/nix.conf "$O/nix.conf"
+  # the installer put the job's GitHub token into access-tokens
+  sed 's/^\(access-tokens *=\).*/\1 <redacted>/' /etc/nix/nix.conf >"$O/nix.conf"
   sudo chown -R "$(id -u):$(id -g)" "$O"
   if [ "$rc" != 0 ] && [ -s "$O/fuse.log" ]; then
     echo "::group::fuse.log (tail)"
