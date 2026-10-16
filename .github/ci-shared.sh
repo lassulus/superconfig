@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# For the shared job of ci.yml: dry-run every matrix row and list the
+# derivations that more than one row would build (not substitutable from any
+# configured substituter). Usage: ci-shared.sh MATRIX_JSON OUTDIR
+# Writes OUTDIR/<name>.drvs per row, OUTDIR/shared-all.drvs and the
+# substitutable subset OUTDIR/shared.drvs.
+set -euo pipefail
+matrix=$1
+out=$2
+mkdir -p "$out"
+
+while IFS=$'\t' read -r name installables; do
+  read -ra inst <<<"$installables"
+  nix build --dry-run "${inst[@]}" 2>"$out/$name.plan" || {
+    cat "$out/$name.plan"
+    exit 1
+  }
+  # the drv lines below the "will be built:" header, up to the next header
+  awk '/^[^ ]/ { b = /will be built:$/; next } b && $1 ~ /^\/nix\/store\// { print $1 }' \
+    "$out/$name.plan" | sort -u >"$out/$name.drvs"
+done < <(jq -r '.include[] | [.name, .installables] | @tsv' "$matrix")
+
+jq -r '.include[].name' "$matrix" | while read -r name; do cat "$out/$name.drvs"; done |
+  sort | uniq -d >"$out/shared-all.drvs"
+
+# allowSubstitutes = false (trivial builders: etc files, units, wrappers) is
+# never substituted, every machine builds those again anyway
+if [ -s "$out/shared-all.drvs" ]; then
+  xargs nix derivation show <"$out/shared-all.drvs" | jq -r '
+    (.derivations // .) | to_entries[]
+    | select(.value
+      | (.structuredAttrs // (.env.__json | values | fromjson) // .env).allowSubstitutes
+      | . != false and . != "")
+    | if (.key | startswith("/")) then .key else "/nix/store/" + .key end' |
+    sort >"$out/shared.drvs"
+else
+  : >"$out/shared.drvs"
+fi
