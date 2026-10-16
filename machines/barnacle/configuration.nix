@@ -28,6 +28,7 @@
 
     self.packages.${pkgs.system}.secretive
     pkgs.omp
+    self.packages.${pkgs.system}.browser-mcp
 
     # zsh dependencies
     pkgs.fzf
@@ -191,5 +192,12 @@
 
   system.activationScripts.postActivation.text = ''
     install ${./US_INTL.keylayout} /Library/Keyboard\ Layouts/US_INTL.keylayout
+    # Native messaging host for the Browser MCP Firefox extension (system-wide
+    # location, Firefox reads it for every user).
+    mkdir -p "/Library/Application Support/Mozilla/NativeMessagingHosts"
+    ln -sfn ${
+      self.packages.${pkgs.system}.browser-mcp
+    }/lib/mozilla/native-messaging-hosts/browser_mcp.json \
+      "/Library/Application Support/Mozilla/NativeMessagingHosts/browser_mcp.json"
   '';
 }
