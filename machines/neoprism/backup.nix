@@ -80,12 +80,13 @@
           "$db" | ${pkgs.gzip}/bin/gzip > "/var/backup/postgresql/$db.sql.gz"
       done
 
-      # Dump hedgedoc SQLite database (172MB) safely
-      ${pkgs.sqlite}/bin/sqlite3 /var/lib/hedgedoc/db.sqlite ".backup /var/backup/hedgedoc.sqlite"
+      # Dump hedgedoc SQLite database safely. It uses a rollback journal and
+      # writes often during the day, so wait for its locks instead of failing.
+      ${pkgs.sqlite}/bin/sqlite3 -cmd ".timeout 60000" /var/lib/hedgedoc/db.sqlite ".backup /var/backup/hedgedoc.sqlite"
 
       # Dump parley accounts + history SQLite databases safely
       for db in parley history; do
-        ${pkgs.sqlite}/bin/sqlite3 "/var/lib/parley/$db.db" ".backup /var/backup/parley/$db.db"
+        ${pkgs.sqlite}/bin/sqlite3 -cmd ".timeout 60000" "/var/lib/parley/$db.db" ".backup /var/backup/parley/$db.db"
       done
 
       # Dump timeful polls (when.lassul.us) from MongoDB
