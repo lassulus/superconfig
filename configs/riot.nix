@@ -48,21 +48,13 @@ in
   };
   systemd.services."container@riot".restartIfChanged = lib.mkForce false;
 
+  # The container start script sets up the address and route on ve-riot.
+  # Unmanaged keeps networkd from adding its own config there (which makes
+  # the script's `ip route add` fail) and from dropping the script's config
+  # as foreign, also if a later catch-all .network file matches ve-riot.
   systemd.network.networks."50-ve-riot" = {
     matchConfig.Name = "ve-riot";
-
-    networkConfig = {
-      # weirdly we have to use POSTROUTING MASQUERADE here
-      # and set ip_forward manually
-      # IPForward = "yes";
-      # IPMasquerade = "both";
-      LinkLocalAddressing = "no";
-      KeepConfiguration = "static";
-    };
-    # The container start script adds this route, but networkd drops it as
-    # foreign the next time it reconfigures ve-riot (e.g. when networkd
-    # restarts), and container@riot is never restarted to re-add it.
-    routes = [ { Destination = "${config.containers.riot.localAddress}/32"; } ];
+    linkConfig.Unmanaged = true;
   };
 
   boot.kernel.sysctl."net.ipv4.ip_forward" = lib.mkDefault 1;
