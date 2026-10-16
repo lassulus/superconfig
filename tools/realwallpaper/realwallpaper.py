@@ -7,7 +7,9 @@ into the plain map at its rim.
 
 Imagery is fetched over WMS at the resolution each pixel needs: a few local
 levels around home, one global level, and downsampled global mipmaps. The
-night side is the day map darkened, plus city lights as a glow. Every fetch
+day side shows live colour imagery of the geostationary satellites where
+they see it well, elsewhere the base map under infrared clouds. The night
+side is the day map darkened, plus city lights as a glow. Every fetch
 is cached with a TTL; a failing source falls back to its last good copy or
 is skipped, so one dead upstream no longer kills the whole wallpaper.
 """
@@ -38,6 +40,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 R_EARTH = 6371.0088  # km
 KM_PER_DEG = math.pi * R_EARTH / 180
+GEO_RADIUS = 42164.0 / R_EARTH  # geostationary orbit in earth radii
 GLOBAL_WIDTH = 8192  # px of the global equirectangular level
 # px per WMS request side. The servers render on the fly at a roughly fixed
 # px/s per request (EOX: ~0.35 Mpx/s) but serve requests in parallel, so
@@ -312,6 +315,9 @@ class Wms:
     oversample: int = 1
     # per-channel gain to match the colours of the other day source
     gain: tuple[float, float, float] | None = None
+    # cap TIME at the newest frame the server lists for the layer: GIBS
+    # returns nothing for a time not published yet, EUMETSAT an error
+    cap_time: bool = False
 
     def times(self, when: dt.datetime) -> list[str | None]:
         if self.days_back:
@@ -486,6 +492,10 @@ def prep_rgb(layer: "Layer", rgba: np.ndarray, cmap: Colormap | None) -> np.ndar
     return np.concatenate([rgb.astype(np.uint8), rgba[..., 3:4]], axis=-1)
 
 
+def prep_grey(layer: "Layer", rgba: np.ndarray, cmap: Colormap | None) -> np.ndarray:
+    return prep_rgb(layer, rgba, cmap)[..., [0, 3]]
+
+
 def prep_lights(layer: "Layer", rgba: np.ndarray, cmap: Colormap | None) -> np.ndarray:
     """Black Marble -> city light intensity; drops its dim blue land texture."""
     red = rgba[..., 0].astype(np.float32) / 255
@@ -608,7 +618,12 @@ def fetch_tiles(src: Wms, level: Level, t: str | None) -> np.ndarray:
         w, e = max(-180.0, w + shift), min(180.0, e + shift)
         n = level.north - r0 * px_lat
         s = level.north - r1 * px_lat
-        tile = fetch_image(src.url((s, w, n, e), c1 - c0, r1 - r0, t))
+        # GIBS now and then answers with an empty image for data it has, so
+        # an empty tile is asked for again before it is believed
+        for _ in range(3):
+            tile = fetch_image(src.url((s, w, n, e), c1 - c0, r1 - r0, t))
+            if tile[..., 3].any():
+                break
         if tile.shape[:2] != (r1 - r0, c1 - c0):
             tile = np.asarray(Image.fromarray(tile).resize((c1 - c0, r1 - r0), Image.BILINEAR))
         img[r0:r1, c0:c1] = tile
@@ -630,6 +645,7 @@ class Layer:
     combine: Callable[[list[np.ndarray]], np.ndarray] = combine_max
     colormap: str | None = None  # GIBS colormap name
     transform: Callable[[np.ndarray], np.ndarray] | None = None
+    sat_lon: float | None = None  # sub-satellite longitude of geostationary day imagery
     required: bool = False
     cmap: Colormap | None = None
     levels: list[Level] = field(default_factory=list)
@@ -750,8 +766,12 @@ def cloud_opacity(ir: np.ndarray) -> np.ndarray:
     return smoothstep(0.42, 0.78, ir) ** 1.2
 
 
-def layers() -> list[Layer]:
+def layers(when: dt.datetime) -> list[Layer]:
     day = 86400.0
+    # live imagery: one explicit TIME for all tiles, so they show the same
+    # frame; EUMETSAT picks the nearest frame, GIBS the one at or before it
+    live = dict(time=when.replace(minute=when.minute // 10 * 10, second=0, microsecond=0)
+                .strftime("%Y-%m-%dT%H:%M:%SZ"), cap_time=True)
     return [
         Layer(
             "day",
@@ -771,10 +791,38 @@ def layers() -> list[Layer]:
         ),
         Layer(
             "clouds",
-            Wms("mtg-ir105", EUMETSAT, "mtg_fd:ir105_hrfi", 1.0, 600),
-            Wms("georing-ir108", EUMETSAT, "mumi:worldcloudmap_ir108", 3.0, 3600),
+            Wms("mtg-ir105", EUMETSAT, "mtg_fd:ir105_hrfi", 1.0, 600, **live),
+            Wms("georing-ir108", EUMETSAT, "mumi:worldcloudmap_ir108", 3.0, 3600, **live),
             prep_cloud,
             transform=cloud_opacity,
+        ),
+        Layer(
+            "mtg",
+            None,
+            Wms("mtg-truecolour", EUMETSAT, "mtg_fd:rgb_truecolour", 1.0, 600, **live),
+            prep_rgb,
+            sat_lon=0.0,
+        ),
+        Layer(
+            "goes-east",
+            None,
+            Wms("goes-east", GIBS, "GOES-East_ABI_GeoColor", 2.0, 600, **live),
+            prep_rgb,
+            sat_lon=-75.2,
+        ),
+        Layer(
+            "goes-west",
+            None,
+            Wms("goes-west", GIBS, "GOES-West_ABI_GeoColor", 2.0, 600, **live),
+            prep_rgb,
+            sat_lon=-137.2,
+        ),
+        Layer(
+            "himawari",
+            None,
+            Wms("himawari-red", GIBS, "Himawari_AHI_Band3_Red_Visible_1km", 1.0, 600, **live),
+            prep_grey,
+            sat_lon=140.7,
         ),
         Layer(
             "snow",
@@ -806,9 +854,43 @@ def layers() -> list[Layer]:
     ]
 
 
+def newest_time(cache: Cache, src: Wms, when: dt.datetime) -> str | None:
+    """src.time, or the newest frame the server lists for the layer if older."""
+    import xml.etree.ElementTree as ET
+
+    if src.base == GIBS:
+        day = when.date()
+        span = f"{day - dt.timedelta(days=1)}T00:00:00Z--{day + dt.timedelta(days=1)}T00:00:00Z"
+        name = f"times-{src.key}-{span}.xml"
+        url = f"https://gibs.earthdata.nasa.gov/wmts/epsg4326/best/1.0.0/{src.layer}/default/2km/all/{span}.xml"
+    else:  # GeoServer: capabilities of the single layer
+        name = f"times-{src.key}.xml"
+        url = (src.base.removesuffix("/wms") + "/" + src.layer.replace(":", "/")
+               + "/wms?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.3.0")
+    path = cache.get_url(name, url, 300)
+    try:
+        assert path is not None
+        times = next(e.text for e in ET.parse(path).iter()
+                     if e.tag.rpartition("}")[2] in ("Domain", "Dimension")
+                     and e.get("name", "time") == "time")
+        # comma separated times and start/end/period ranges, oldest first
+        last = times.split(",")[-1].split("/")
+        newest = dt.datetime.fromisoformat(last[1] if len(last) == 3 else last[0])
+    except Exception as e:  # noqa: BLE001 - then ask for src.time and see
+        log(f"warning: {src.key}: no time dimension: {e}")
+        return src.time
+    newest_s = newest.strftime("%Y-%m-%dT%H:%M:%SZ")
+    return min(src.time, newest_s) if src.time else newest_s
+
+
 def load_layers(proj: LensMap, cache: Cache, when: dt.datetime) -> dict[str, Layer]:
     all_layers = []
-    for layer in layers():
+    for layer in layers(when):
+        if layer.local and layer.local.cap_time:
+            layer.local = dataclasses.replace(layer.local, time=newest_time(cache, layer.local, when))
+        if layer.global_.cap_time:
+            layer.global_ = dataclasses.replace(layer.global_,
+                                                time=newest_time(cache, layer.global_, when))
         if layer.colormap:
             path = cache.get_url(f"colormap-{layer.colormap}.xml",
                                  f"https://gibs.earthdata.nasa.gov/colormaps/v1.3/{layer.colormap}.xml",
@@ -974,6 +1056,51 @@ def subsolar_cos(lat, lon, sun_lat: float, sun_lon: float) -> np.ndarray:
     return np.sin(la) * math.sin(sl) + np.cos(la) * math.cos(sl) * np.cos(lo - so)
 
 
+def live_imagery(lay: dict[str, Layer], lat: np.ndarray, lon: np.ndarray, logq: np.ndarray,
+                 ground: np.ndarray, sun: tuple[float, float], cosz: np.ndarray):
+    """Geostationary day imagery: colour and opacity per point.
+
+    A satellite's view is trusted fully up to 62° from the zenith and not at
+    all from 78° on, short of the disk edge where it gets smeared. Looking
+    towards a low sun (sun and satellite on opposite sides of the sky) the
+    image is washed out by haze, so trust also needs the sun to stand at
+    least somewhat behind the satellite. Close to the terminator GeoColor
+    turns into its night blend, so the sun needs to be a few degrees up.
+    Where disks overlap, the more nadir view wins with a weight of cos^8 of
+    its zenith angle, a soft seam. Greyscale visible (Himawari) is turned
+    into white cloud over the ground colour: the reflectance it shows beyond
+    the ground's own, after taking out the sun angle, is the cloud opacity.
+    """
+    la, lo = np.radians(lat), np.radians(lon)
+    up = np.stack([np.cos(la) * np.cos(lo), np.cos(la) * np.sin(lo), np.sin(la)], -1)
+    sl, so = math.radians(sun[0]), math.radians(sun[1])
+    to_sun = np.array([math.cos(sl) * math.cos(so), math.cos(sl) * math.sin(so), math.sin(sl)])
+    total = np.zeros((len(lat), 3))
+    weight = np.zeros(len(lat))
+    alpha = np.zeros(len(lat))
+    for layer in lay.values():
+        if layer.sat_lon is None:
+            continue
+        v, cov = sample(layer, lat, lon, logq)
+        rgb = v / np.maximum(cov, 1e-6)[:, None]
+        if rgb.shape[1] == 1:
+            refl = rgb[:, 0] / np.sqrt(np.maximum(cosz, 0.25))
+            albedo = ground @ np.array([0.30, 0.59, 0.11])
+            opacity = smoothstep(0.02, 0.6, (refl - albedo) / np.maximum(1 - albedo, 0.1))
+            rgb = lerp(ground, [0.88, 0.89, 0.90], opacity)
+        s = math.radians(layer.sat_lon)
+        to_sat = GEO_RADIUS * np.array([math.cos(s), math.sin(s), 0.0]) - up
+        to_sat /= np.linalg.norm(to_sat, axis=-1, keepdims=True)
+        cos_view = (to_sat * up).sum(-1)
+        trust = (cov * smoothstep(math.cos(math.radians(78)), math.cos(math.radians(62)), cos_view)
+                 * smoothstep(-0.7, -0.2, to_sat @ to_sun) * smoothstep(0.05, 0.2, cosz))
+        w = trust * np.maximum(cos_view, 0) ** 8
+        total += rgb * w[:, None]
+        weight += w
+        alpha = np.maximum(alpha, trust)
+    return total / np.maximum(weight, 1e-9)[:, None], alpha
+
+
 # --------------------------------------------------------------------------
 # cloud post-processing: the best live cloud data is ~1 km, far coarser than
 # the zoomed-in pixels around home. Synthesise the missing detail (noise
@@ -1112,10 +1239,15 @@ def render_base(proj: LensMap, lay: dict[str, Layer], fires: Fires,
 
         cosz = subsolar_cos(lat, lon, *sun)
         light = smoothstep(-0.10, 0.08, cosz)
-        day_lit = day * (0.55 + 0.45 * np.sqrt(np.clip(cosz, 0, 1)))[:, None]
-        color = lerp(day * moonlight, day_lit, light)
+        sun_term = (0.55 + 0.45 * np.sqrt(np.clip(cosz, 0, 1)))[:, None]
+        color = lerp(day * moonlight, day * sun_term, light)
+        # real imagery replaces ground and clouds where the sun is well up;
+        # towards the terminator the IR clouds take over. The synthetic
+        # clouds, and with them their relief and shadows, give way to it
+        live, sunny = live_imagery(lay, lat, lon, logq, day, sun, cosz)
+        color = lerp(color, live * sun_term, sunny)
         if (s := get("clouds")) is not None:
-            cloud[rows] = np.clip(s[0][:, 0], 0, 1).reshape(len(ys), W)
+            cloud[rows] = (np.clip(s[0][:, 0], 0, 1) * (1 - sunny)).reshape(len(ys), W)
         if (s := get("lights")) is not None:
             lights[rows] = (s[0][:, 0] * (1 - light)).reshape(len(ys), W)
 
