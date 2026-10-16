@@ -4,6 +4,9 @@
 }:
 
 {
+  # experiment marker: changes neoprism's toplevel for the drv-cache test, never merge
+  environment.etc."ci-drv-cache-experiment".text = "run 1";
+
   imports = [
     ../../configs
     ../../configs/ssh-redirect.nix
