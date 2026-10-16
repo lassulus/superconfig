@@ -210,7 +210,6 @@
         ./skills/flake-module.nix
 
         ./wrapperModules/pi/flake-module.nix
-        ./wrapperModules/claude-code/flake-module.nix
         ./wrapperModules/noctalia-shell/flake-module.nix
         {
           options.flake.wrapperModules = nixpkgs.lib.mkOption {
