@@ -71,7 +71,25 @@ sudo modprobe fuse || true
 ls -l /dev/fuse
 grep -qx user_allow_other /etc/fuse.conf 2>/dev/null ||
   echo user_allow_other | sudo tee -a /etc/fuse.conf >/dev/null
-/usr/bin/python3 -c 'import fuse; print("fusepy", fuse.__file__, getattr(fuse, "_libfuse_path", "?"))'
+# The run that installed python3-fusepy still failed `import fuse` with
+# /usr/bin/python3, so don't rely on where the package put it: put the dir of
+# its fuse.py on PYTHONPATH, and failing that take fusepy (one pure-python
+# file over ctypes) from PyPI.
+/usr/bin/python3 -c 'import sys; print(sys.version); print(sys.path)'
+dpkg -L python3-fusepy | grep -E '\.py$' || true
+py=$L/py
+mkdir -p "$py"
+fusepy=$(dpkg -L python3-fusepy | grep -E '/fuse\.py$' | head -n 1 || true)
+[ -n "$fusepy" ] && ln -sf "$fusepy" "$py/fuse.py"
+fuse_ok() {
+  PYTHONPATH=$py /usr/bin/python3 -c 'import fuse; print("fusepy", fuse.__file__, getattr(fuse, "_libfuse_path", "?"))'
+}
+if ! fuse_ok; then
+  echo "fusepy from apt not importable, installing it from PyPI into $py"
+  rm -f "$py/fuse.py"
+  /usr/bin/python3 -m pip install -q --no-deps --break-system-packages --target "$py" fusepy==3.0.1
+  fuse_ok
+fi
 
 nixbin=$(dirname "$(readlink -f "$(command -v nix-store)")")
 rx() { awk -F'[: ]+' 'NR > 2 && $2 != "lo" { s += $3 } END { print s }' /proc/net/dev; }
@@ -116,7 +134,7 @@ sudo "$nixbin/nix-store" --option store "local?real=/lazy/load-real&state=/lazy/
 sudo ls -la /lazy/store
 
 # shellcheck disable=SC2024 # the log is ours, only the mount needs root
-sudo /usr/bin/python3 -u "$here/lazy-store.py" mount "$L" /lazy/store >"$O/fuse.log" 2>&1 &
+sudo env PYTHONPATH="$py" /usr/bin/python3 -u "$here/lazy-store.py" mount "$L" /lazy/store >"$O/fuse.log" 2>&1 &
 fuse_pid=$!
 for _ in $(seq 300); do
   mountpoint -q /lazy/store && break
