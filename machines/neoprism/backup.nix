@@ -80,6 +80,12 @@
           "$db" | ${pkgs.gzip}/bin/gzip > "/var/backup/postgresql/$db.sql.gz"
       done
 
+      # Dump zitadel (id.lassul.us) PostgreSQL database: users, passkeys,
+      # IdP links, OIDC apps. Its secrets are encrypted with the masterkey
+      # from clan vars.
+      ${pkgs.sudo}/bin/sudo -u postgres ${config.services.postgresql.package}/bin/pg_dump \
+        zitadel | ${pkgs.gzip}/bin/gzip > /var/backup/postgresql/zitadel.sql.gz
+
       # Dump hedgedoc SQLite database safely. It uses a rollback journal and
       # writes often during the day, so wait for its locks instead of failing.
       ${pkgs.sqlite}/bin/sqlite3 -cmd ".timeout 60000" /var/lib/hedgedoc/db.sqlite ".backup /var/backup/hedgedoc.sqlite"
