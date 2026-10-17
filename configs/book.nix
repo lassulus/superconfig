@@ -71,10 +71,13 @@ in
         (pkgs.writeText "book.json" (builtins.toJSON settings))
         "--caldav-password-file"
         "%d/caldav-password"
+        "--busy-token-file"
+        "%d/busy-token"
       ];
-      LoadCredential = "caldav-password:${
-        config.clan.core.vars.generators.radicale-lass.files."password".path
-      }";
+      LoadCredential = [
+        "caldav-password:${config.clan.core.vars.generators.radicale-lass.files."password".path}"
+        "busy-token:${config.clan.core.vars.generators.busy-feed.files."token".path}"
+      ];
       DynamicUser = true;
       StateDirectory = "book";
       Restart = "on-failure";
@@ -98,6 +101,25 @@ in
     };
   };
 
+  # Secret of the busy-only feed https://cal.lassul.us/busy/<token>.ics, for
+  # the availability polls on when.lassul.us (configs/timeful.nix).
+  clan.core.vars.generators.busy-feed = {
+    files."token" = { };
+    runtimeInputs = [ pkgs.coreutils ];
+    script = ''
+      head -c 24 /dev/urandom | basenc --base64url | tr -d '\n' > "$out/token"
+    '';
+  };
+
+  # book answers 404 for every /busy/ path but the one with the token.
+  services.nginx.virtualHosts."cal.lassul.us".locations."/busy/" = {
+    proxyPass = "http://127.0.0.1:${toString port}";
+    extraConfig = ''
+      proxy_set_header Host $host;
+      proxy_set_header X-Real-IP $remote_addr;
+    '';
+  };
+
   services.nginx.virtualHosts.${domain} = {
     enableACME = true;
     forceSSL = true;
@@ -111,5 +133,7 @@ in
         client_max_body_size 16k;
       '';
     };
+    # The busy feed is served on cal.lassul.us only.
+    locations."/busy/".return = "404";
   };
 }

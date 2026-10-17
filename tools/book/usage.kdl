@@ -7,6 +7,9 @@ flag "--config" help="JSON configuration file (see configs/book.nix)" required=#
 flag "--caldav-password-file" help="File holding the CalDAV user's password" required=#true {
   arg "<file>"
 }
+flag "--busy-token-file" help="File holding the secret token of the busy-only iCalendar feed /busy/<token>.ics (no feed without it)" {
+  arg "<file>"
+}
 flag "--templates" help="Template directory (default: $BOOK_TEMPLATES, set by the package)" {
   arg "<dir>"
 }
