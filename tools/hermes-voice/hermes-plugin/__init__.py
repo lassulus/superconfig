@@ -8,6 +8,11 @@ room and uses the same sender as cron delivery, through the gateway's live
 Matrix adapter. Sent messages are mirrored into the DM's session, so the
 Matrix side sees what was asked when the user answers there.
 
+end_call ends the voice call the session belongs to. The tool itself only
+checks that it runs in a voice session and says so; hermes-voice sees the
+call in the run's event stream and lets the page close the call once the
+current reply has been spoken.
+
 /assist approve|deny [code] answers an approval that hermes-voice asked in the
 DM because no call could hear it. The gateway only dispatches commands of
 allowed users (MATRIX_ALLOWED_USERS), so the answer is the user's own; the
@@ -38,6 +43,22 @@ SEND_SCHEMA = {
     },
 }
 
+END_CALL_SCHEMA = {
+    "name": "end_call",
+    "description": (
+        "End the current voice call after the current reply has been spoken. Only works in a "
+        "voice call (assist.lassul.us). Call it when the user says goodbye, says that is all, "
+        "asks you to hang up or says they are leaving, once any work they asked for has been "
+        "started or handed off; never while you still need an answer from them, such as an "
+        "approval. Your reply is still spoken before the call ends: keep it to a short "
+        "confirmation or goodbye."
+    ),
+    "parameters": {"type": "object", "properties": {}},
+}
+
+# hermes-voice names the Hermes session of a call voice-<date>-<random>.
+VOICE_SESSION_PREFIX = "voice-"
+
 CHOICES = {"approve": "once", "deny": "deny"}
 
 
@@ -47,6 +68,38 @@ def send(args, **_kw):
     return send_message_tool(
         {"action": "send", "target": "matrix", "message": args.get("message", "")}
     )
+
+
+def voice_session(session_id):
+    """Whether the calling session is a hermes-voice call: an API server
+    session whose lineage starts at a voice-* session (context compression
+    continues a session under a new id, with the old one as parent)."""
+    from gateway.session_context import get_session_env
+    from hermes_state import SessionDB
+
+    if get_session_env("HERMES_SESSION_PLATFORM", "") != "api_server":
+        return False
+    session_id = session_id or get_session_env("HERMES_SESSION_ID", "")
+    db = SessionDB(read_only=True)
+    try:
+        seen = set()
+        while session_id and session_id not in seen and len(seen) < 100:
+            if session_id.startswith(VOICE_SESSION_PREFIX):
+                return True
+            seen.add(session_id)
+            session = db.get_session(session_id)
+            session_id = session and session.get("parent_session_id")
+    finally:
+        db.close()
+    return False
+
+
+def end_call(args, session_id=None, **_kw):
+    from tools.registry import tool_error
+
+    if not voice_session(session_id):
+        return tool_error("end_call only works in a voice call; there is no call to end here.")
+    return json.dumps({"status": "The call ends once your reply has been spoken."})
 
 
 def assist(raw_args):
@@ -91,6 +144,13 @@ def register(ctx):
         schema=SEND_SCHEMA,
         handler=send,
         emoji="💬",
+    )
+    ctx.register_tool(
+        name="end_call",
+        toolset="voice_call",
+        schema=END_CALL_SCHEMA,
+        handler=end_call,
+        emoji="📴",
     )
     ctx.register_command(
         "assist",
