@@ -22,12 +22,44 @@ let
     masterkeyFile = cfg.masterKeyFile;
     inherit (cfg) tlsMode;
   };
+  idpCredentials = name: url: {
+    prompts.client_id = {
+      description = ''
+        ${name} login on ${domain}: client id of an OAuth app (${url})
+        with the callback URL
+          https://${domain}/ui/login/login/externalidp/callback
+        Leave empty to not offer ${name} logins.
+      '';
+      persist = true;
+    };
+    prompts.client_secret = {
+      description = "${name} login on ${domain}: client secret of that OAuth app";
+      type = "hidden";
+      persist = true;
+    };
+  };
 in
 {
   # Zitadel: identity provider for lassul.us services (OIDC). Anyone can
   # register; users sign in with a passkey or an external login (GitHub,
-  # Google, other OIDC) linked to their account. The external IdPs and OIDC
-  # apps are managed in the console at https://id.lassul.us/ui/console.
+  # Google, other OIDC) linked to their account. The login policy, the GitHub
+  # and Google logins and the services' projects and OIDC apps come from
+  # lass.zitadel (modules/zitadel); the zitadel-reconcile service applies
+  # them. Further IdPs and the grants of "managed" projects are done in the
+  # console at https://id.lassul.us/ui/console.
+  #
+  # Example projects for services on other hosts, once they speak OIDC (the
+  # client secret ends up in /var/lib/zitadel-apps/<project>-<app>.env here):
+  #   lass.zitadel.projects.assist = {
+  #     access = "declarative";
+  #     users = [ "lass@lassul.us" ];
+  #     apps.web.redirectUris = [ "https://assist.lassul.us/<callback>" ];
+  #   };
+  #   lass.zitadel.projects.flix = {
+  #     access = "managed";
+  #     # jellyfin-plugin-sso with a provider named id.lassul.us
+  #     apps.jellyfin.redirectUris = [ "https://flix.lassul.us/sso/OID/redirect/id.lassul.us" ];
+  #   };
 
   clan.core.vars.generators.zitadel = {
     files."masterkey".owner = "zitadel";
@@ -68,13 +100,6 @@ in
         Admin.Username = "zitadel";
         Admin.ExistingDatabase = "zitadel";
       };
-      # Applied once, when the first instance is created.
-      DefaultInstance.LoginPolicy = {
-        AllowRegister = true;
-        AllowExternalIDP = true;
-        AllowUsernamePassword = true;
-        PasswordlessType = 1; # passkeys allowed
-      };
     };
     steps.FirstInstance = {
       InstanceName = "lassul.us";
@@ -93,6 +118,38 @@ in
       };
     };
   };
+
+  lass.zitadel.loginPolicy = {
+    allowRegister = true;
+    allowExternalIdp = true;
+    allowUsernamePassword = true;
+    passwordlessType = "PASSWORDLESS_TYPE_ALLOWED";
+  };
+  lass.zitadel.idps = {
+    GitHub = {
+      type = "github";
+      clientIdFile = config.clan.core.vars.generators.zitadel-github.files.client_id.path;
+      clientSecretFile = config.clan.core.vars.generators.zitadel-github.files.client_secret.path;
+      scopes = [
+        "read:user"
+        "user:email"
+      ];
+    };
+    Google = {
+      type = "google";
+      clientIdFile = config.clan.core.vars.generators.zitadel-google.files.client_id.path;
+      clientSecretFile = config.clan.core.vars.generators.zitadel-google.files.client_secret.path;
+      scopes = [
+        "openid"
+        "profile"
+        "email"
+      ];
+    };
+  };
+  clan.core.vars.generators.zitadel-github =
+    idpCredentials "GitHub" "https://github.com/settings/applications/new";
+  clan.core.vars.generators.zitadel-google =
+    idpCredentials "Google" "https://console.cloud.google.com/apis/credentials";
 
   # The database and its owner come from ensureDatabases/ensureUsers, so the
   # zitadel role needs no CREATEROLE/CREATEDB. `zitadel init zitadel` creates
