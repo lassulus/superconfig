@@ -8,7 +8,7 @@
 let
   port = 8790;
   # The gateway's webhook platform (hermes.nix), loopback only.
-  webhookPort = 8644;
+  webhookPort = config.services.hermes-agent.settings.platforms.webhook.extra.port;
 in
 {
   # hermes-voice (tools/hermes-voice): live voice conversations with Hermes
@@ -88,20 +88,12 @@ in
   services.hermes-agent.environment.HERMES_VOICE_URL = "http://localhost:${toString port}";
 
   # How hermes-voice asks for an approval when no call can hear it: a
-  # deliver_only route posts the text to the Matrix home room through the
-  # gateway, no agent turn. Signed with WEBHOOK_SECRET, which is the API
-  # server key (hermes-env in hermes.nix), so no secret is added.
-  services.hermes-agent.settings.platforms.webhook = {
-    enabled = true;
-    extra = {
-      host = "127.0.0.1";
-      port = webhookPort;
-      routes.voice-approval = {
-        deliver = "matrix";
-        deliver_only = true;
-        prompt = "{text}";
-      };
-    };
+  # deliver_only route on the gateway's webhook platform (hermes.nix) posts
+  # the text to the Matrix home room, no agent turn.
+  services.hermes-agent.settings.platforms.webhook.extra.routes.voice-approval = {
+    deliver = "matrix";
+    deliver_only = true;
+    prompt = "{text}";
   };
 
   # OpenAI project key with GPT-Live access; billed per second of open voice

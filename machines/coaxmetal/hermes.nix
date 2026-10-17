@@ -42,6 +42,43 @@ let
     '';
   };
 
+  # The gateway's webhook platform (settings.platforms.webhook below),
+  # loopback only.
+  webhookPort = 8644;
+
+  # Post a message to the Matrix home room through the running gateway: the
+  # "notify" webhook route below hands it to the gateway's own Matrix adapter.
+  # For the agent's shell scripts (phonetpm heads-ups, background deploys).
+  # `hermes send -t matrix` is no substitute: outside the gateway it opens a
+  # second Matrix client on the gateway's device and crypto store, and the two
+  # desync the Olm sessions until no client can decrypt Hermes any more.
+  hermes-notify = pkgs.writeShellApplication {
+    name = "hermes-notify";
+    runtimeInputs = [
+      pkgs.coreutils
+      pkgs.curl
+      pkgs.gnused
+      pkgs.jq
+      pkgs.openssl
+    ];
+    text = ''
+      if [ $# -eq 0 ]; then
+        echo "usage: hermes-notify <message>" >&2
+        exit 2
+      fi
+      secret=$(sed -n 's/^WEBHOOK_SECRET=//p' "''${HERMES_HOME:-/var/lib/hermes/.hermes}/.env")
+      body=$(jq -cn --arg text "$*" '{text: $text}')
+      stamp=$(date +%s)
+      signature=$(printf '%s.%s' "$stamp" "$body" | openssl dgst -sha256 -hmac "$secret" -r | cut -d' ' -f1)
+      curl -fsS --max-time 30 -o /dev/null \
+        -H 'Content-Type: application/json' \
+        -H "X-Webhook-Timestamp: $stamp" \
+        -H "X-Webhook-Signature-V2: $signature" \
+        --data-binary "$body" \
+        http://127.0.0.1:${toString webhookPort}/webhooks/notify
+    '';
+  };
+
 in
 {
   imports = [
@@ -90,6 +127,7 @@ in
       pkgs.curl
       # ssh through the phonetpm agent (SSH_AUTH_SOCK below).
       pkgs.openssh
+      hermes-notify
     ];
 
     # Home Assistant (acheron, configs/hass) left hermes core for the
@@ -223,6 +261,22 @@ in
     # EMAIL_PASSWORD, EMAIL_IMAP_HOST and EMAIL_SMTP_HOST are set
     # (gateway/config_env.py); only an explicit `enabled: false` stops that.
     settings.platforms.email.enabled = false;
+
+    # deliver_only routes post their rendered prompt to the Matrix home room
+    # through the gateway, no agent turn. Signed with WEBHOOK_SECRET, the API
+    # server key again (hermes-env). hermes-voice.nix adds voice-approval.
+    settings.platforms.webhook = {
+      enabled = true;
+      extra = {
+        host = "127.0.0.1";
+        port = webhookPort;
+        routes.notify = {
+          deliver = "matrix";
+          deliver_only = true;
+          prompt = "{text}";
+        };
+      };
+    };
 
     # The one shared calendar (configs/radicale.nix): lass's own events, the
     # book.lassul.us requests and bookings, and anything Hermes adds. Hermes
@@ -368,13 +422,11 @@ in
       # deps are present (they are) and keeps the crypto store under
       # /var/lib/hermes/.hermes/platforms/matrix/store/.
       MATRIX_E2EE_MODE = "optional";
-      # Clients now exclude devices their owner did not cross-sign (MSC4153,
-      # Element/SchildiChat Next): they show such a device's messages as
-      # undecryptable and withhold their own room keys from it. With this set
-      # the adapter bootstraps cross-signing once (no master key on the
-      # account yet) and signs its device; the key is written here 0600 and
-      # never overwritten. Move it into pass afterwards; it is needed only to
-      # cross-sign a new device id (MATRIX_RECOVERY_KEY).
+      # Element is moving to exclude devices their owner did not cross-sign
+      # (MSC4153). With this set the adapter bootstraps cross-signing once (no
+      # master key on the account yet) and signs its device; the key is
+      # written here 0600 and never overwritten. Move it into pass afterwards;
+      # it is needed only to cross-sign a new device id (MATRIX_RECOVERY_KEY).
       MATRIX_RECOVERY_KEY_OUTPUT_FILE = "/var/lib/hermes/.hermes/matrix-recovery-key";
       # Optional defense-in-depth (confine to specific rooms; DMs are exempt):
       # MATRIX_ALLOWED_ROOMS = "!yourRoomId:lassul.us";
@@ -570,6 +622,9 @@ in
       "hermes-homeassistant"
     ];
     files."hermes.env" = { };
+    # clan regenerates a var only when its validation changes, not when the
+    # script does: without this a key added below never reaches the .env.
+    validation.script = builtins.hashString "sha256" config.clan.core.vars.generators.hermes-env.script;
     runtimeInputs = [ pkgs.coreutils ];
     script = ''
       cat > "$out/hermes.env" <<EOF
