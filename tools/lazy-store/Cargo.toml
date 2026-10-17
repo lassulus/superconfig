@@ -13,7 +13,6 @@ libc = "0.2"
 log = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-sha2 = "0.10"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "io-util", "net", "time", "sync"] }
 tokio-util = { version = "0.7", features = ["io", "io-util"] }
 futures-util = "0.3"
@@ -23,7 +22,8 @@ reqwest = { version = "0.13", default-features = false, features = ["rustls", "h
 webpki-root-certs = "1"
 async-compression = { version = "0.4", features = ["tokio", "zstd", "xz", "bzip2", "gzip", "brotli"] }
 harmonia-file-core = { git = "https://github.com/nix-community/harmonia", rev = "3edb37ae36b561c2d395980170c70bbce292bbc5" }
-harmonia-utils-base-encoding = { git = "https://github.com/nix-community/harmonia", rev = "3edb37ae36b561c2d395980170c70bbce292bbc5" }
+harmonia-file-nar = { git = "https://github.com/nix-community/harmonia", rev = "3edb37ae36b561c2d395980170c70bbce292bbc5" }
+harmonia-utils-hash = { git = "https://github.com/nix-community/harmonia", rev = "3edb37ae36b561c2d395980170c70bbce292bbc5" }
 
 [profile.release]
 debug = 1
