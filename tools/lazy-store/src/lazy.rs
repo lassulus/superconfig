@@ -21,12 +21,13 @@ use fuse_backend_rs::api::filesystem::{
     ZeroCopyWriter,
 };
 use futures_util::{stream, StreamExt};
-use harmonia_utils_base_encoding::base32;
-use tokio_util::io::{InspectReader, SyncIoBridge};
+use harmonia_file_core::{Directory, FileSystemObject, FileTree, Regular, Symlink};
+use harmonia_utils_hash::HashFormat;
+use tokio_util::io::InspectReader;
 
 use crate::closure::PathInfo;
 use crate::http::{self, Http};
-use crate::nar::{self, Tree};
+use crate::nar::{self, Size, Tree};
 use crate::stats::Stats;
 use crate::Backing;
 
@@ -179,21 +180,24 @@ impl LazyFs {
         match self.http.get(&format!("{}/{h}.ls", info.cache)).await {
             Ok((body, len)) => {
                 self.stats.add("ls", len as u64);
-                Tree::from_listing(&body)
+                nar::from_listing(&body)
             }
             // no listing: fall back to the NAR
-            Err(http::Error::NotFound) => Tree::from_path(&self.fetch(i).await?),
+            Err(http::Error::NotFound) => nar::from_path(&self.fetch(i).await?),
             Err(e) => Err(e.into()),
         }
     }
 
     /// Add the nodes of `t` (at `rel` in store path `path`), return its inode.
-    fn add(&mut self, path: u32, rel: String, t: Tree) -> u32 {
+    fn add(&mut self, path: u32, rel: String, FileTree(t): Tree) -> u32 {
         let ino = self.nodes.len() as u32 + 1;
         let (kind, entries) = match t {
-            Tree::File { size, exec } => (Kind::File { size, exec }, None),
-            Tree::Symlink(s) => (Kind::Symlink(s.into_bytes().into()), None),
-            Tree::Dir(e) => (Kind::Dir(Vec::new()), Some(e)),
+            FileSystemObject::Regular(r) => {
+                let (size, exec) = (r.contents.size, r.executable);
+                (Kind::File { size, exec }, None)
+            }
+            FileSystemObject::Symlink(s) => (Kind::Symlink(s.target.into_bytes().into()), None),
+            FileSystemObject::Directory(d) => (Kind::Dir(Vec::new()), Some(d.entries)),
         };
         self.nodes.push(Node {
             kind,
@@ -208,7 +212,7 @@ impl LazyFs {
                 } else {
                     format!("{rel}/{name}")
                 };
-                children.push((name.into_boxed_str(), self.add(path, r, c)));
+                children.push((name.into_boxed_str(), self.add(path, r, *c)));
             }
             // BTreeMap order is sorted already
             self.nodes[ino as usize - 1].kind = Kind::Dir(children);
@@ -218,18 +222,21 @@ impl LazyFs {
 
     /// The listing of `ino` as built from the `.ls` (for `fetch`).
     fn tree_of(&self, ino: u64) -> Tree {
-        match &self.nodes[ino as usize - 1].kind {
-            Kind::Dir(c) => Tree::Dir(
-                c.iter()
-                    .map(|(n, i)| (n.to_string(), self.tree_of(*i as u64)))
+        FileTree(match &self.nodes[ino as usize - 1].kind {
+            Kind::Dir(c) => FileSystemObject::Directory(Directory {
+                entries: c
+                    .iter()
+                    .map(|(n, i)| (n.to_string(), Box::new(self.tree_of(*i as u64))))
                     .collect(),
-            ),
-            Kind::File { size, exec } => Tree::File {
-                size: *size,
-                exec: *exec,
-            },
-            Kind::Symlink(t) => Tree::Symlink(String::from_utf8_lossy(t).into_owned()),
-        }
+            }),
+            Kind::File { size, exec } => FileSystemObject::Regular(Regular {
+                executable: *exec,
+                contents: Size { size: *size },
+            }),
+            Kind::Symlink(t) => FileSystemObject::Symlink(Symlink {
+                target: String::from_utf8_lossy(t).into_owned(),
+            }),
+        })
     }
 
     /// Fetch store path `name` as an open() would and check that what got
@@ -240,7 +247,7 @@ impl LazyFs {
         let p = self
             .fetch(self.nodes[ino as usize - 1].path as usize)
             .await?;
-        if Tree::from_path(&p)? != self.tree_of(ino) {
+        if nar::from_path(&p)? != self.tree_of(ino) {
             return Err(io::Error::other(format!(
                 "{name}: unpacked tree differs from its listing"
             )));
@@ -357,24 +364,16 @@ impl LazyFs {
             .open(&format!("{}/{}", info.cache, info.url))
             .await?;
         // the compressed download size
-        let file_size = Arc::new(AtomicU64::new(0));
-        let counted = InspectReader::new(body, {
-            let n = file_size.clone();
-            move |b: &[u8]| {
-                n.fetch_add(b.len() as u64, Ordering::Relaxed);
-            }
-        });
-        let nar = SyncIoBridge::new(http::decode_body(&info.compression, counted)?);
-        let unpack_to = tmp.clone();
-        let (digest, size) = tokio::task::spawn_blocking(move || nar::unpack(nar, &unpack_to))
-            .await
-            .map_err(io::Error::other)??;
-        let file_size = file_size.load(Ordering::Relaxed);
-        if !nar::hash_matches(&info.nar_hash, &digest) || size != info.nar_size {
+        let mut file_size = 0;
+        let mut body = InspectReader::new(body, |b: &[u8]| file_size += b.len() as u64);
+        let nar = http::decode_body(&info.compression, &mut body)?;
+        let (hash, size) = nar::unpack(nar, &tmp).await?;
+        drop(body);
+        if !nar::hash_matches(&info.nar_hash, &hash) || size != info.nar_size {
             nar::remove(&tmp)?;
             return Err(io::Error::other(format!(
-                "{name}: NAR hash mismatch, sha256:{} ({size} bytes) != {} ({} bytes)",
-                base32::encode_string(&digest),
+                "{name}: NAR hash mismatch, {} ({size} bytes) != {} ({} bytes)",
+                hash.as_base32(),
                 info.nar_hash,
                 info.nar_size
             )));
