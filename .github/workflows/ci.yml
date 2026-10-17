@@ -106,19 +106,24 @@ jobs:
           upstream-cache-key-names: cache.nixos.org-1 cache.lassul.us-1
           filter-drv-closures: true
       # the niks3 client of all jobs and the lazy store of the machine jobs,
-      # the others substitute them
+      # the others substitute them; nix-eval-jobs from the flake's nixpkgs,
+      # which the flake evaluation fetches anyway
       - id: tools
         run: |
           niks3=$(nix build --no-link --print-out-paths .#niks3)
           lazy=$(nix build --no-link --print-out-paths .#lazy-store)
-          echo "niks3=$niks3" >> "$GITHUB_OUTPUT"
-          echo "lazy-store=$lazy" >> "$GITHUB_OUTPUT"
+          nej=$(nix build --no-link --print-out-paths --inputs-from . nixpkgs#nix-eval-jobs)
+          {
+            echo "niks3=$niks3"
+            echo "lazy-store=$lazy"
+            echo "nix-eval-jobs=$nej/bin/nix-eval-jobs"
+          } >> "$GITHUB_OUTPUT"
           PATH=$niks3/bin:$PATH .github/niks3-push.sh "$niks3" "$lazy"
       - id: matrix
         uses: Mic92/hestia/matrix@v3
         with:
           flake: ".#ciToplevels"
-          nix-eval-jobs: "nix run nixpkgs#nix-eval-jobs -- --workers 4 --max-memory-size 3072"
+          nix-eval-jobs: "${{ steps.tools.outputs.nix-eval-jobs }} --workers 4 --max-memory-size 3072"
       - env:
           MATRIX: ${{ steps.matrix.outputs.matrix }}
         run: |
