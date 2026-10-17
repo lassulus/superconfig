@@ -129,21 +129,18 @@ for idp in config["idps"].values():
 
 # projects, OIDC apps and user grants (default organization)
 
-def find_user(name):
+def find_user(email):
+    # Only verified addresses: anyone can register with any address and any
+    # free username, including one that looks like someone's address.
     method = "TEXT_QUERY_METHOD_EQUALS_IGNORE_CASE"
-    users = search("/management/v1/users/_search", {"queries": [
-        {"loginNameQuery": {"loginName": name, "method": method}},
-    ]})
-    if not users:
-        # only verified addresses: anyone can register with any address
-        users = [
-            u for u in search("/management/v1/users/_search", {"queries": [
-                {"emailQuery": {"emailAddress": name, "method": method}},
-            ]})
-            if u.get("human", {}).get("email", {}).get("isEmailVerified")
-        ]
+    users = [
+        u for u in search("/management/v1/users/_search", {"queries": [
+            {"emailQuery": {"emailAddress": email, "method": method}},
+        ]})
+        if u.get("human", {}).get("email", {}).get("isEmailVerified")
+    ]
     if len(users) != 1:
-        print(f"user {name}: {len(users)} matches, skipped", file=sys.stderr)
+        print(f"user {email}: {len(users)} matches, skipped", file=sys.stderr)
         return None
     return users[0]["id"]
 

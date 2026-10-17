@@ -138,10 +138,11 @@ in
                 type = lib.types.listOf lib.types.str;
                 default = [ ];
                 description = ''
-                  Login names or verified email addresses of the users that
-                  get a user grant on the project (access = "declarative").
-                  Users who have not registered yet are skipped until the
-                  next run.
+                  Verified email addresses of the users that get a user
+                  grant on the project (access = "declarative"). Not login
+                  names: anyone can register a free one that looks like
+                  someone's address. Users who have not registered or
+                  verified their address yet are skipped until the next run.
                 '';
               };
               apps = lib.mkOption {
