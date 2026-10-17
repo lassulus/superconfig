@@ -127,6 +127,7 @@ fn raise_nofile() {
 }
 
 fn mount(
+    rt: &tokio::runtime::Runtime,
     outdir: &Path,
     upper: &Path,
     mnt: &Path,
@@ -135,7 +136,7 @@ fn mount(
 ) -> io::Result<()> {
     raise_nofile();
     let backing = use_passthrough.then(|| Arc::new(Backing::default()));
-    let lower = lazy::LazyFs::new(outdir, backing.clone())?;
+    let lower = rt.block_on(lazy::LazyFs::new(outdir, backing.clone()))?;
 
     let upper_fs = {
         let cfg = passthrough::Config {
@@ -196,16 +197,16 @@ fn usage() -> ! {
 fn main() {
     let _ = log::set_logger(&Logger).map(|_| log::set_max_level(log::LevelFilter::Warn));
     let args: Vec<String> = std::env::args().skip(1).collect();
+    let rt = tokio::runtime::Runtime::new().expect("starting the tokio runtime");
     let r = match args.first().map(String::as_str) {
-        Some("closure") if args.len() == 2 => closure::closure(Path::new(&args[1])),
-        Some("fetch") if args.len() >= 3 => {
-            lazy::LazyFs::new(Path::new(&args[1]), None).and_then(|fs| {
-                for name in &args[2..] {
-                    println!("{}", fs.fetch_and_check(name)?.display());
-                }
-                Ok(())
-            })
-        }
+        Some("closure") if args.len() == 2 => rt.block_on(closure::closure(Path::new(&args[1]))),
+        Some("fetch") if args.len() >= 3 => rt.block_on(async {
+            let fs = lazy::LazyFs::new(Path::new(&args[1]), None).await?;
+            for name in &args[2..] {
+                println!("{}", fs.fetch_and_check(name).await?.display());
+            }
+            Ok(())
+        }),
         Some("mount") if args.len() >= 4 => {
             let (mut workers, mut pt) = (64, true);
             let mut rest = args[4..].iter();
@@ -222,6 +223,7 @@ fn main() {
                 }
             }
             mount(
+                &rt,
                 &PathBuf::from(&args[1]),
                 Path::new(&args[2]),
                 Path::new(&args[3]),

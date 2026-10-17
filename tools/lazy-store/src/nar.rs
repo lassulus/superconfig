@@ -42,12 +42,9 @@ impl Tree {
         }
         fn tree(FileTree(t): FileTree<Size>) -> Tree {
             match t {
-                FileSystemObject::Directory(d) => Tree::Dir(
-                    d.entries
-                        .into_iter()
-                        .map(|(k, c)| (k, tree(*c)))
-                        .collect(),
-                ),
+                FileSystemObject::Directory(d) => {
+                    Tree::Dir(d.entries.into_iter().map(|(k, c)| (k, tree(*c))).collect())
+                }
                 FileSystemObject::Regular(r) => Tree::File {
                     size: r.contents.size,
                     exec: r.executable,
@@ -95,20 +92,6 @@ impl<R: Read> Read for HashingReader<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let n = self.inner.read(buf)?;
         self.hasher.update(&buf[..n]);
-        self.n += n as u64;
-        Ok(n)
-    }
-}
-
-/// Counts the bytes read from `inner` (the compressed download size).
-pub struct CountingReader<R> {
-    pub inner: R,
-    pub n: u64,
-}
-
-impl<R: Read> Read for CountingReader<R> {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let n = self.inner.read(buf)?;
         self.n += n as u64;
         Ok(n)
     }

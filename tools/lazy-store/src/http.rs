@@ -1,32 +1,23 @@
 //! Binary cache access: GET with retries, and body decoding.
 
-use std::collections::HashMap;
-use std::io::{self, Read};
-use std::net::{SocketAddr, ToSocketAddrs};
-use std::sync::Mutex;
-use std::thread::sleep;
+use std::io;
+use std::pin::Pin;
 use std::time::Duration;
+
+use async_compression::tokio::bufread::{
+    BrotliDecoder, BzDecoder, GzipDecoder, XzDecoder, ZstdDecoder,
+};
+use futures_util::TryStreamExt;
+use tokio::io::{AsyncBufRead, AsyncRead, AsyncReadExt, BufReader};
+use tokio::time::sleep;
+use tokio_util::io::StreamReader;
 
 const TRIES: u32 = 6;
 
-/// Resolves each host once and then serves it from memory. Once the FUSE
-/// file system is mounted on /nix/store, getaddrinfo() could end up looking
-/// for NSS modules in the store, i.e. in a request to ourselves.
-struct Resolver(Mutex<HashMap<String, Vec<SocketAddr>>>);
-
-impl ureq::Resolver for Resolver {
-    fn resolve(&self, netloc: &str) -> io::Result<Vec<SocketAddr>> {
-        if let Some(a) = self.0.lock().unwrap().get(netloc) {
-            return Ok(a.clone());
-        }
-        let a: Vec<SocketAddr> = netloc.to_socket_addrs()?.collect();
-        self.0.lock().unwrap().insert(netloc.to_string(), a.clone());
-        Ok(a)
-    }
-}
+pub type Body = Pin<Box<dyn AsyncRead + Send>>;
 
 pub struct Http {
-    agent: ureq::Agent,
+    client: reqwest::Client,
 }
 
 pub enum Error {
@@ -51,62 +42,67 @@ impl From<Error> for io::Error {
 }
 
 impl Http {
-    /// `caches` are base URLs; their hosts are resolved right away.
-    pub fn new<'a>(caches: impl IntoIterator<Item = &'a str>) -> Http {
-        let mut known = HashMap::new();
+    /// `caches` are base URLs. Their hosts are resolved right away and then
+    /// served from memory: once the FUSE file system is mounted on
+    /// /nix/store, getaddrinfo() could end up looking for NSS modules in
+    /// the store, i.e. in a request to ourselves.
+    pub async fn new<'a>(caches: impl IntoIterator<Item = &'a str>) -> Http {
+        // rustls with bundled roots: nothing read from /etc/ssl or the store
+        let roots = webpki_root_certs::TLS_SERVER_ROOT_CERTS
+            .iter()
+            .filter_map(|c| reqwest::Certificate::from_der(c).ok());
+        let mut b = reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(30))
+            .read_timeout(Duration::from_secs(60))
+            .pool_max_idle_per_host(64)
+            .tls_certs_only(roots);
         for c in caches {
-            let Some(rest) = c
-                .strip_prefix("https://")
-                .or_else(|| c.strip_prefix("http://"))
-            else {
+            let Ok(u) = reqwest::Url::parse(c) else {
                 continue;
             };
-            let host = rest.split('/').next().unwrap_or(rest);
-            let port = if c.starts_with("https:") { 443 } else { 80 };
-            let netloc = if host.contains(':') {
-                host.to_string()
-            } else {
-                format!("{host}:{port}")
+            let (Some(host), Some(port)) = (u.host_str(), u.port_or_known_default()) else {
+                continue;
             };
-            match netloc.to_socket_addrs() {
-                Ok(a) => {
-                    known.insert(netloc, a.collect());
-                }
-                Err(e) => eprintln!("resolving {netloc}: {e}"),
-            }
+            match tokio::net::lookup_host((host, port)).await {
+                Ok(a) => b = b.resolve_to_addrs(host, &a.collect::<Vec<_>>()),
+                Err(e) => eprintln!("resolving {host}:{port}: {e}"),
+            };
         }
-        let agent = ureq::AgentBuilder::new()
-            .timeout_connect(Duration::from_secs(30))
-            .timeout_read(Duration::from_secs(60))
-            .max_idle_connections_per_host(64)
-            .resolver(Resolver(Mutex::new(known)))
-            .build();
-        Http { agent }
+        Http {
+            client: b.build().expect("building the HTTP client"),
+        }
     }
 
     /// GET `url`, retrying 429/5xx and transport errors with backoff (the
     /// caches answer 503 under load). Returns the body reader and its
     /// Content-Encoding.
-    pub fn open(&self, url: &str) -> Result<(Box<dyn Read + Send>, Option<String>), Error> {
+    pub async fn open(&self, url: &str) -> Result<(Body, Option<String>), Error> {
         if let Some(path) = url.strip_prefix("file://") {
-            return match std::fs::File::open(path) {
-                Ok(f) => Ok((Box::new(f), None)),
+            return match tokio::fs::File::open(path).await {
+                Ok(f) => Ok((Box::pin(f), None)),
                 Err(e) if e.kind() == io::ErrorKind::NotFound => Err(Error::NotFound),
                 Err(e) => Err(Error::Other(format!("{url}: {e}"))),
             };
         }
         let mut n = 0;
         loop {
-            let err = match self.agent.get(url).call() {
-                Ok(r) => {
-                    let enc = r.header("content-encoding").map(str::to_string);
-                    return Ok((Box::new(r.into_reader()), enc));
+            let err = match self.client.get(url).send().await {
+                Ok(r) if r.status().is_success() => {
+                    let enc = r
+                        .headers()
+                        .get("content-encoding")
+                        .and_then(|v| v.to_str().ok())
+                        .map(str::to_string);
+                    let body = r.bytes_stream().map_err(io::Error::other);
+                    return Ok((Box::pin(StreamReader::new(body)), enc));
                 }
-                Err(ureq::Error::Status(403 | 404, _)) => return Err(Error::NotFound),
-                Err(ureq::Error::Status(code, _)) if code != 429 && code < 500 => {
-                    return Err(Error::Other(format!("{url}: HTTP {code}")))
-                }
-                Err(ureq::Error::Status(code, _)) => format!("HTTP {code}"),
+                Ok(r) => match r.status().as_u16() {
+                    403 | 404 => return Err(Error::NotFound),
+                    code if code != 429 && code < 500 => {
+                        return Err(Error::Other(format!("{url}: HTTP {code}")))
+                    }
+                    code => format!("HTTP {code}"),
+                },
                 Err(e) => e.to_string(),
             };
             n += 1;
@@ -114,21 +110,22 @@ impl Http {
                 return Err(Error::Other(format!("{url}: {err}")));
             }
             eprintln!("retry {n}/{} {url}: {err}", TRIES - 1);
-            sleep(Duration::from_secs((1u64 << (n - 1)).min(30)));
+            sleep(Duration::from_secs((1u64 << (n - 1)).min(30))).await;
         }
     }
 
     /// GET `url` -> decoded body. Transfer errors while reading the body are
     /// retried like failed requests.
-    pub fn get(&self, url: &str) -> Result<(Vec<u8>, usize), Error> {
+    pub async fn get(&self, url: &str) -> Result<(Vec<u8>, usize), Error> {
         let mut n = 0;
         loop {
-            let (mut r, enc) = self.open(url)?;
+            let (mut r, enc) = self.open(url).await?;
             let mut body = Vec::new();
-            match r.read_to_end(&mut body) {
+            match r.read_to_end(&mut body).await {
                 Ok(_) => {
                     let len = body.len();
                     let dec = decode(&body, enc.as_deref())
+                        .await
                         .map_err(|e| Error::Other(format!("{url}: decoding: {e}")))?;
                     return Ok((dec, len));
                 }
@@ -138,7 +135,7 @@ impl Http {
                         return Err(Error::Other(format!("{url}: {e}")));
                     }
                     eprintln!("retry {n}/{} {url}: {e}", TRIES - 1);
-                    sleep(Duration::from_secs((1u64 << (n - 1)).min(30)));
+                    sleep(Duration::from_secs((1u64 << (n - 1)).min(30))).await;
                 }
             }
         }
@@ -146,20 +143,32 @@ impl Http {
 }
 
 /// Wrap `r` in a decompressor for `method` (narinfo Compression or
-/// Content-Encoding).
+/// Content-Encoding). Concatenated streams are decoded as one, like Nix.
 pub fn decoder<'a>(
     method: &str,
-    r: impl Read + Send + 'a,
-) -> io::Result<Box<dyn Read + Send + 'a>> {
+    r: impl AsyncBufRead + Send + 'a,
+) -> io::Result<Pin<Box<dyn AsyncRead + Send + 'a>>> {
+    fn multi<D: AsyncRead + Send>(mut d: D, set: impl FnOnce(&mut D)) -> D {
+        set(&mut d);
+        d
+    }
     Ok(match method {
-        "" | "none" | "identity" => Box::new(r),
-        "zstd" => Box::new(zstd::stream::read::Decoder::new(r)?),
-        "xz" => Box::new(xz2::read::XzDecoder::new_multi_decoder(r)),
-        "bzip2" => Box::new(bzip2::read::MultiBzDecoder::new(r)),
-        "gzip" => Box::new(flate2::read::MultiGzDecoder::new(r)),
-        "br" => Box::new(brotli_decompressor::Decompressor::new(r, 1 << 16)),
+        "" | "none" | "identity" => Box::pin(r),
+        "zstd" => Box::pin(multi(ZstdDecoder::new(r), |d| d.multiple_members(true))),
+        "xz" => Box::pin(multi(XzDecoder::new(r), |d| d.multiple_members(true))),
+        "bzip2" => Box::pin(multi(BzDecoder::new(r), |d| d.multiple_members(true))),
+        "gzip" => Box::pin(multi(GzipDecoder::new(r), |d| d.multiple_members(true))),
+        "br" => Box::pin(BrotliDecoder::new(r)),
         m => return Err(io::Error::other(format!("unknown compression {m:?}"))),
     })
+}
+
+/// `decoder` for an unbuffered body.
+pub fn decode_body<'a>(
+    method: &str,
+    r: impl AsyncRead + Send + 'a,
+) -> io::Result<Pin<Box<dyn AsyncRead + Send + 'a>>> {
+    decoder(method, BufReader::with_capacity(1 << 16, r))
 }
 
 const MAGIC: &[(&[u8], &str)] = &[
@@ -170,7 +179,7 @@ const MAGIC: &[(&[u8], &str)] = &[
 
 /// Both caches store narinfo/.ls zstd-compressed (Content-Encoding), but the
 /// CDN sometimes serves them without that header: sniff the magic too.
-pub fn decode(body: &[u8], encoding: Option<&str>) -> io::Result<Vec<u8>> {
+pub async fn decode(body: &[u8], encoding: Option<&str>) -> io::Result<Vec<u8>> {
     let enc = match encoding {
         None | Some("") | Some("identity") => {
             match MAGIC.iter().find(|(m, _)| body.starts_with(m)) {
@@ -181,7 +190,7 @@ pub fn decode(body: &[u8], encoding: Option<&str>) -> io::Result<Vec<u8>> {
         Some(e) => e,
     };
     let mut out = Vec::new();
-    decoder(enc, body)?.read_to_end(&mut out)?;
+    decoder(enc, body)?.read_to_end(&mut out).await?;
     Ok(out)
 }
 
@@ -189,11 +198,15 @@ pub fn decode(body: &[u8], encoding: Option<&str>) -> io::Result<Vec<u8>> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn decode_sniffs_zstd() {
-        let z = zstd::encode_all(&b"{\"root\":1}"[..], 3).unwrap();
-        assert_eq!(decode(&z, None).unwrap(), b"{\"root\":1}");
-        assert_eq!(decode(&z, Some("zstd")).unwrap(), b"{\"root\":1}");
-        assert_eq!(decode(b"plain", None).unwrap(), b"plain");
+    #[tokio::test]
+    async fn decode_sniffs_zstd() {
+        let mut z = Vec::new();
+        async_compression::tokio::bufread::ZstdEncoder::new(&b"{\"root\":1}"[..])
+            .read_to_end(&mut z)
+            .await
+            .unwrap();
+        assert_eq!(decode(&z, None).await.unwrap(), b"{\"root\":1}");
+        assert_eq!(decode(&z, Some("zstd")).await.unwrap(), b"{\"root\":1}");
+        assert_eq!(decode(b"plain", None).await.unwrap(), b"plain");
     }
 }

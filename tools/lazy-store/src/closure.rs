@@ -4,9 +4,8 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::{self, BufRead, Write};
 use std::path::Path;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Mutex;
 
+use futures_util::{stream, StreamExt};
 use serde::{Deserialize, Serialize};
 
 use crate::http::{self, Http};
@@ -50,7 +49,7 @@ fn references(i: &HashMap<String, String>) -> impl Iterator<Item = &str> {
 
 /// The parsed narinfo of `name` from the first cache that has it, and its
 /// text.
-fn narinfo(
+async fn narinfo(
     http: &Http,
     caches: &[String],
     name: &str,
@@ -58,7 +57,7 @@ fn narinfo(
 ) -> Option<(HashMap<String, String>, Vec<u8>)> {
     let h = name.split('-').next().unwrap_or(name);
     for c in caches {
-        match http.get(&format!("{c}/{h}.narinfo")) {
+        match http.get(&format!("{c}/{h}.narinfo")).await {
             Ok((body, len)) => {
                 stats.add("narinfo", len as u64);
                 let mut i = parse_narinfo(&body);
@@ -76,39 +75,12 @@ fn narinfo(
     None
 }
 
-/// Run `f` over `items` on `threads` threads, results in order.
-pub fn par_map<T: Sync, R: Send>(
-    items: &[T],
-    threads: usize,
-    f: impl Fn(&T) -> R + Sync,
-) -> Vec<R> {
-    let next = AtomicUsize::new(0);
-    let out: Mutex<Vec<Option<R>>> = Mutex::new((0..items.len()).map(|_| None).collect());
-    std::thread::scope(|s| {
-        for _ in 0..threads.min(items.len()) {
-            s.spawn(|| loop {
-                let i = next.fetch_add(1, Ordering::Relaxed);
-                if i >= items.len() {
-                    break;
-                }
-                let r = f(&items[i]);
-                out.lock().unwrap()[i] = Some(r);
-            });
-        }
-    });
-    out.into_inner()
-        .unwrap()
-        .into_iter()
-        .map(Option::unwrap)
-        .collect()
-}
-
 /// Writes OUT/paths.json (per path: cache, NAR url, compression, hash),
 /// OUT/db.dump (input for `nix-store --load-db`), OUT/narinfo (a binary
 /// cache of just the narinfos) and OUT/closure.json.
 /// Paths that are in none of the caches, and everything referring to them,
 /// are left out: a path is registered only with its whole closure.
-pub fn closure(outdir: &Path) -> io::Result<()> {
+pub async fn closure(outdir: &Path) -> io::Result<()> {
     let mut roots = BTreeSet::new();
     for l in io::stdin().lock().lines() {
         let l = l?;
@@ -118,16 +90,22 @@ pub fn closure(outdir: &Path) -> io::Result<()> {
         }
     }
     let caches = caches();
-    let http = Http::new(caches.iter().map(String::as_str));
+    let http = Http::new(caches.iter().map(String::as_str)).await;
     let stats = Stats::new(None);
     let mut infos: BTreeMap<String, HashMap<String, String>> = BTreeMap::new();
     let mut texts: HashMap<String, Vec<u8>> = HashMap::new();
     let mut missing: BTreeSet<String> = BTreeSet::new();
     let mut todo: Vec<String> = roots.iter().cloned().collect();
     while !todo.is_empty() {
-        let res = par_map(&todo, 32, |n| narinfo(&http, &caches, n, &stats));
+        let (http, caches, stats) = (&http, &caches, &stats);
+        let mut res = stream::iter(std::mem::take(&mut todo))
+            .map(|n| async move {
+                let i = narinfo(http, caches, &n, stats).await;
+                (n, i)
+            })
+            .buffer_unordered(32);
         let mut next = BTreeSet::new();
-        for (name, i) in todo.iter().zip(res) {
+        while let Some((name, i)) = res.next().await {
             let Some((i, text)) = i else {
                 missing.insert(name.clone());
                 continue;
