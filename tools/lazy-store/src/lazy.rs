@@ -11,7 +11,7 @@ use std::io;
 use std::mem::ManuallyDrop;
 use std::os::fd::{AsRawFd, FromRawFd};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
@@ -20,11 +20,13 @@ use fuse_backend_rs::api::filesystem::{
     Context, DirEntry, Entry, FileSystem, GetxattrReply, ListxattrReply, OpenOptions,
     ZeroCopyWriter,
 };
+use futures_util::{stream, StreamExt};
 use harmonia_utils_base_encoding::base32;
+use tokio_util::io::{InspectReader, SyncIoBridge};
 
-use crate::closure::{par_map, PathInfo};
+use crate::closure::PathInfo;
 use crate::http::{self, Http};
-use crate::nar::{self, CountingReader, Tree};
+use crate::nar::{self, Tree};
 use crate::stats::Stats;
 use crate::Backing;
 
@@ -67,7 +69,9 @@ pub struct LazyFs {
     http: Http,
     pub stats: Arc<Stats>,
     /// per store path: where it is unpacked, once fetched
-    fetched: Vec<Mutex<Option<PathBuf>>>,
+    fetched: Vec<tokio::sync::Mutex<Option<PathBuf>>>,
+    /// for the FUSE worker threads, to fetch on the runtime
+    rt: tokio::runtime::Handle,
     handles: RwLock<HashMap<u64, Arc<Handle>>>,
     next_handle: AtomicU64,
     backing: Option<Arc<Backing>>,
@@ -83,15 +87,16 @@ fn err(e: i32) -> io::Error {
 }
 
 impl LazyFs {
-    pub fn new(outdir: &Path, backing: Option<Arc<Backing>>) -> io::Result<LazyFs> {
+    pub async fn new(outdir: &Path, backing: Option<Arc<Backing>>) -> io::Result<LazyFs> {
         let paths: BTreeMap<String, PathInfo> =
             serde_json::from_slice(&std::fs::read(outdir.join("paths.json"))?)?;
         let (names, infos): (Vec<String>, Vec<PathInfo>) = paths.into_iter().unzip();
         let cache = outdir.join("cache");
         std::fs::create_dir_all(&cache)?;
-        let http = Http::new(infos.iter().map(|i| i.cache.as_str()));
+        let http = Http::new(infos.iter().map(|i| i.cache.as_str())).await;
         let mut fs = LazyFs {
-            fetched: names.iter().map(|_| Mutex::new(None)).collect(),
+            fetched: names.iter().map(|_| Default::default()).collect(),
+            rt: tokio::runtime::Handle::current(),
             names,
             infos,
             nodes: Vec::new(),
@@ -105,7 +110,7 @@ impl LazyFs {
             backing_ids: Mutex::new(HashMap::new()),
             backing_failed: AtomicBool::new(false),
         };
-        fs.load_listings()?;
+        fs.load_listings().await?;
         fs.stats.save();
         Ok(fs)
     }
@@ -114,26 +119,32 @@ impl LazyFs {
     /// for paths without one) and build the inode table from them. Fails if
     /// any path is left without a listing: all of them get registered as
     /// valid in nix's database.
-    fn load_listings(&mut self) -> io::Result<()> {
+    async fn load_listings(&mut self) -> io::Result<()> {
         let t = Instant::now();
-        let idx: Vec<usize> = (0..self.names.len()).collect();
-        let done = AtomicUsize::new(0);
-        let trees = par_map(&idx, 64, |&i| {
-            let r = self.listing(i);
-            let n = done.fetch_add(1, Ordering::Relaxed) + 1;
-            if n.is_multiple_of(500) {
-                eprintln!("listings: {n}/{}", idx.len());
+        let total = self.names.len();
+        let mut trees: Vec<Option<io::Result<Tree>>> = (0..total).map(|_| None).collect();
+        let this = &*self;
+        let mut done = stream::iter(0..total)
+            .map(|i| async move { (i, this.listing(i).await) })
+            .buffer_unordered(64);
+        let mut n = 0;
+        while let Some((i, r)) = done.next().await {
+            trees[i] = Some(r);
+            n += 1;
+            if n % 500 == 0 {
+                eprintln!("listings: {n}/{total}");
             }
-            r
-        });
-        let mut root = Vec::with_capacity(trees.len());
+        }
+        drop(done);
+        let trees = trees.into_iter().map(Option::unwrap);
+        let mut root = Vec::with_capacity(total);
         self.nodes.push(Node {
             kind: Kind::Dir(Vec::new()),
             path: u32::MAX,
             rel: "".into(),
         });
         let mut failed = 0;
-        for (i, t) in trees.into_iter().enumerate() {
+        for (i, t) in trees.enumerate() {
             match t {
                 Ok(t) => {
                     let ino = self.add(i as u32, String::new(), t);
@@ -162,16 +173,16 @@ impl LazyFs {
         Ok(())
     }
 
-    fn listing(&self, i: usize) -> io::Result<Tree> {
+    async fn listing(&self, i: usize) -> io::Result<Tree> {
         let info = &self.infos[i];
         let h = self.names[i].split('-').next().unwrap_or("");
-        match self.http.get(&format!("{}/{h}.ls", info.cache)) {
+        match self.http.get(&format!("{}/{h}.ls", info.cache)).await {
             Ok((body, len)) => {
                 self.stats.add("ls", len as u64);
                 Tree::from_listing(&body)
             }
             // no listing: fall back to the NAR
-            Err(http::Error::NotFound) => Tree::from_path(&self.fetch(i)?),
+            Err(http::Error::NotFound) => Tree::from_path(&self.fetch(i).await?),
             Err(e) => Err(e.into()),
         }
     }
@@ -223,10 +234,12 @@ impl LazyFs {
 
     /// Fetch store path `name` as an open() would and check that what got
     /// unpacked matches its listing (`lazy-store fetch`, no FUSE needed).
-    pub fn fetch_and_check(&self, name: &str) -> io::Result<PathBuf> {
+    pub async fn fetch_and_check(&self, name: &str) -> io::Result<PathBuf> {
         let c = CString::new(name).map_err(io::Error::other)?;
         let ino = self.lookup_child(1, &c).ok_or_else(|| err(libc::ENOENT))?;
-        let p = self.fetch(self.nodes[ino as usize - 1].path as usize)?;
+        let p = self
+            .fetch(self.nodes[ino as usize - 1].path as usize)
+            .await?;
         if Tree::from_path(&p)? != self.tree_of(ino) {
             return Err(io::Error::other(format!(
                 "{name}: unpacked tree differs from its listing"
@@ -310,8 +323,8 @@ impl LazyFs {
 
     /// The unpacked store path `i`, fetching it first if needed. Concurrent
     /// callers for the same path wait for one fetch.
-    fn fetch(&self, i: usize) -> io::Result<PathBuf> {
-        let mut slot = self.fetched[i].lock().unwrap();
+    async fn fetch(&self, i: usize) -> io::Result<PathBuf> {
+        let mut slot = self.fetched[i].lock().await;
         if let Some(p) = &*slot {
             return Ok(p.clone());
         }
@@ -319,7 +332,7 @@ impl LazyFs {
         let dest = self.cache.join(name);
         let mut last = None;
         for attempt in 1..=3 {
-            match self.fetch_once(i, &dest) {
+            match self.fetch_once(i, &dest).await {
                 Ok(()) => {
                     *slot = Some(dest.clone());
                     return Ok(dest);
@@ -333,15 +346,30 @@ impl LazyFs {
         Err(last.unwrap())
     }
 
-    fn fetch_once(&self, i: usize, dest: &Path) -> io::Result<()> {
+    async fn fetch_once(&self, i: usize, dest: &Path) -> io::Result<()> {
         let (name, info) = (&self.names[i], &self.infos[i]);
         let t = Instant::now();
         let tmp = dest.with_extension("tmp");
         nar::remove(&tmp)?;
         nar::remove(dest)?;
-        let (body, _) = self.http.open(&format!("{}/{}", info.cache, info.url))?;
-        let mut counted = CountingReader { inner: body, n: 0 };
-        let (digest, size) = nar::unpack(http::decoder(&info.compression, &mut counted)?, &tmp)?;
+        let (body, _) = self
+            .http
+            .open(&format!("{}/{}", info.cache, info.url))
+            .await?;
+        // the compressed download size
+        let file_size = Arc::new(AtomicU64::new(0));
+        let counted = InspectReader::new(body, {
+            let n = file_size.clone();
+            move |b: &[u8]| {
+                n.fetch_add(b.len() as u64, Ordering::Relaxed);
+            }
+        });
+        let nar = SyncIoBridge::new(http::decode_body(&info.compression, counted)?);
+        let unpack_to = tmp.clone();
+        let (digest, size) = tokio::task::spawn_blocking(move || nar::unpack(nar, &unpack_to))
+            .await
+            .map_err(io::Error::other)??;
+        let file_size = file_size.load(Ordering::Relaxed);
         if !nar::hash_matches(&info.nar_hash, &digest) || size != info.nar_size {
             nar::remove(&tmp)?;
             return Err(io::Error::other(format!(
@@ -352,10 +380,9 @@ impl LazyFs {
             )));
         }
         std::fs::rename(&tmp, dest)?;
-        self.stats.nar(name, counted.n, size);
+        self.stats.nar(name, file_size, size);
         eprintln!(
-            "fetched {name}: {} bytes in {:.1} s",
-            counted.n,
+            "fetched {name}: {file_size} bytes in {:.1} s",
             t.elapsed().as_secs_f64()
         );
         Ok(())
@@ -451,7 +478,7 @@ impl FileSystem for LazyFs {
         if acc != libc::O_RDONLY || flags as i32 & libc::O_TRUNC != 0 {
             return Err(err(libc::EROFS));
         }
-        let root = self.fetch(n.path as usize).map_err(|e| {
+        let root = self.rt.block_on(self.fetch(n.path as usize)).map_err(|e| {
             eprintln!("open {}/{}: {e}", self.names[n.path as usize], n.rel);
             err(libc::EIO)
         })?;
