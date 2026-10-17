@@ -60,7 +60,6 @@ fi
 if [ ! -e "$L/ready" ]; then
   exit 0
 fi
-n=$(jq length "$L/paths.json")
 nixbin=$(dirname "$(readlink -f "$(command -v nix-store)")")
 
 sudo modprobe fuse || true
@@ -77,13 +76,16 @@ fuse_alive() {
   local s
   s=$(ps -o stat= -p "$fuse") && [[ $s != Z* ]]
 }
-# it fetches all .ls listings before mounting
+# it fetches all .ls listings before mounting; paths without one, and those
+# referring to them, it leaves out of paths.json and db.dump, so that the
+# build substitutes them
 until mountpoint -q /nix/store; do
   fuse_alive || fallback "lazy-store exited before mounting /nix/store"
   sleep 1
 done
 grep -m1 '^init: ' "$L/fuse.log" || true
 
+n=$(jq length "$L/paths.json")
 some=$(jq -r 'keys[0]' "$L/paths.json")
 [ -e "/nix/store/$some" ] || fallback "/nix/store/$some is not served"
 # shellcheck disable=SC2024 # db.dump is ours, only nix-store needs root
@@ -91,7 +93,9 @@ sudo "$nixbin/nix-store" --load-db <"$L/db.dump" || fallback "registering the pa
 # registered: the mount has to stay
 trap - ERR
 set +e
-echo "lazy store: mounted on /nix/store, $n paths registered"
+grep '^no listing for ' "$L/fuse.log"
+jq -r --arg n "$n" '"lazy store: mounted on /nix/store, \($n) paths registered; \(.failed | length) without a listing, \(.incomplete) referring to those"' \
+  "$L/no-listing.json"
 # niks3 and hestia leave out what cache.nixos.org signed by the signatures
 # in nix's database; without them they would upload (and so download)
 # those paths
