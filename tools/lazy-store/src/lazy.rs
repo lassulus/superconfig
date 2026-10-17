@@ -4,7 +4,7 @@
 //! (NarHash/NarSize) and unpacks that path's NAR. Opens of a path that is
 //! being fetched wait for that fetch.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::ffi::{CStr, CString};
 use std::fs::File;
 use std::io;
@@ -29,7 +29,7 @@ use crate::closure::PathInfo;
 use crate::http::{self, Http};
 use crate::nar::{self, Size, Tree};
 use crate::stats::Stats;
-use crate::Backing;
+use crate::{Backing, STORE};
 
 /// The store paths never change: let the kernel cache everything.
 pub const TTL: Duration = Duration::from_secs(86400);
@@ -87,6 +87,57 @@ fn err(e: i32) -> io::Error {
     io::Error::from_raw_os_error(e)
 }
 
+/// `dump` (a `nix-store --load-db` input) without the store paths `failed`
+/// and everything referring to them, like `closure` leaves out what refers
+/// to paths not in the caches; and the names of the paths left out.
+fn leave_out<'a>(
+    dump: &'a str,
+    failed: impl IntoIterator<Item = &'a str>,
+) -> io::Result<(String, BTreeSet<String>)> {
+    let bad = || io::Error::other("malformed db.dump");
+    let name = |l: &'a str| l.strip_prefix(STORE).ok_or_else(bad);
+    // per path: name, references and its lines
+    let mut records = Vec::new();
+    let mut lines = dump.split_inclusive('\n');
+    while let Some(p) = lines.next() {
+        let mut text = p.to_string();
+        for _ in 0..3 {
+            text += lines.next().ok_or_else(bad)?;
+        }
+        let count = lines.next().ok_or_else(bad)?;
+        text += count;
+        let count: usize = count.trim_end().parse().map_err(|_| bad())?;
+        let mut refs = Vec::with_capacity(count);
+        for _ in 0..count {
+            let r = lines.next().ok_or_else(bad)?;
+            text += r;
+            refs.push(name(r.trim_end())?);
+        }
+        records.push((name(p.trim_end())?, refs, text));
+    }
+    let mut referrers: HashMap<&str, Vec<&str>> = HashMap::new();
+    for (n, refs, _) in &records {
+        for r in refs.iter().filter(|r| *r != n) {
+            referrers.entry(r).or_default().push(n);
+        }
+    }
+    let mut out: BTreeSet<&str> = failed.into_iter().collect();
+    let mut todo: Vec<&str> = out.iter().copied().collect();
+    while let Some(m) = todo.pop() {
+        for r in referrers.get(m).into_iter().flatten() {
+            if out.insert(r) {
+                todo.push(r);
+            }
+        }
+    }
+    let kept = records
+        .iter()
+        .filter(|(n, _, _)| !out.contains(n))
+        .map(|(_, _, t)| t.as_str())
+        .collect();
+    Ok((kept, out.into_iter().map(str::to_string).collect()))
+}
+
 impl LazyFs {
     pub async fn new(outdir: &Path, backing: Option<Arc<Backing>>) -> io::Result<LazyFs> {
         let paths: BTreeMap<String, PathInfo> =
@@ -111,16 +162,17 @@ impl LazyFs {
             backing_ids: Mutex::new(HashMap::new()),
             backing_failed: AtomicBool::new(false),
         };
-        fs.load_listings().await?;
+        fs.load_listings(outdir).await?;
         fs.stats.save();
         Ok(fs)
     }
 
     /// Fetch the `.ls` listing of every store path (falling back to the NAR
-    /// for paths without one) and build the inode table from them. Fails if
-    /// any path is left without a listing: all of them get registered as
-    /// valid in nix's database.
-    async fn load_listings(&mut self) -> io::Result<()> {
+    /// for paths without one) and build the inode table from them. Paths
+    /// left without a listing, and everything referring to them, are left
+    /// out of OUT/paths.json and OUT/db.dump (see `leave_out`), so they are
+    /// neither served nor registered; OUT/no-listing.json counts them.
+    async fn load_listings(&mut self, outdir: &Path) -> io::Result<()> {
         let t = Instant::now();
         let total = self.names.len();
         let mut trees: Vec<Option<io::Result<Tree>>> = (0..total).map(|_| None).collect();
@@ -144,32 +196,54 @@ impl LazyFs {
             path: u32::MAX,
             rel: "".into(),
         });
-        let mut failed = 0;
+        let mut ok = Vec::with_capacity(total);
+        let mut failed = Vec::new();
         for (i, t) in trees.enumerate() {
             match t {
-                Ok(t) => {
-                    let ino = self.add(i as u32, String::new(), t);
-                    root.push((self.names[i].clone().into_boxed_str(), ino));
-                }
+                Ok(t) => ok.push((i, t)),
                 Err(e) => {
                     eprintln!("no listing for {}: {e}", self.names[i]);
-                    failed += 1;
+                    failed.push(self.names[i].clone());
                 }
             }
         }
-        if failed > 0 {
-            return Err(io::Error::other(format!(
-                "{failed} of {} store paths without a listing",
-                self.names.len()
-            )));
+        let mut left_out = BTreeSet::new();
+        if !failed.is_empty() {
+            let dump = std::fs::read_to_string(outdir.join("db.dump"))?;
+            let (kept, out) = leave_out(&dump, failed.iter().map(String::as_str))?;
+            std::fs::write(outdir.join("db.dump"), kept)?;
+            let paths: BTreeMap<&String, &PathInfo> = self
+                .names
+                .iter()
+                .zip(&self.infos)
+                .filter(|(n, _)| !out.contains(n.as_str()))
+                .collect();
+            std::fs::write(outdir.join("paths.json"), serde_json::to_vec(&paths)?)?;
+            left_out = out;
+        }
+        std::fs::write(
+            outdir.join("no-listing.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "failed": failed,
+                "incomplete": left_out.len() - failed.len(),
+            }))?,
+        )?;
+        for (i, t) in ok {
+            if left_out.contains(&self.names[i]) {
+                continue;
+            }
+            let ino = self.add(i as u32, String::new(), t);
+            root.push((self.names[i].clone().into_boxed_str(), ino));
         }
         root.sort();
         self.nodes[0].kind = Kind::Dir(root);
         eprintln!(
-            "listings: {} store paths, {} inodes in {:.1} s",
+            "listings: {} store paths, {} inodes in {:.1} s; {} without a listing, {} referring to those left out",
             self.names.len(),
             self.nodes.len(),
             t.elapsed().as_secs_f64(),
+            failed.len(),
+            left_out.len() - failed.len(),
         );
         Ok(())
     }
@@ -634,5 +708,35 @@ impl FileSystem for LazyFs {
             return Err(err(libc::EROFS));
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn leave_out_referrers() {
+        let rec = |n: &str, refs: &[&str]| {
+            let mut s = format!("{STORE}{n}\nsha256:x\n8\n\n{}\n", refs.len());
+            for r in refs {
+                s += &format!("{STORE}{r}\n");
+            }
+            s
+        };
+        // w -> x -> y (failed), y -> y, z
+        let dump = [
+            rec("w", &["x"]),
+            rec("x", &["x", "y"]),
+            rec("y", &["y"]),
+            rec("z", &[]),
+        ]
+        .concat();
+        let (kept, out) = leave_out(&dump, ["y"]).unwrap();
+        assert_eq!(kept, rec("z", &[]));
+        assert_eq!(out, ["w", "x", "y"].map(String::from).into());
+        let (kept, out) = leave_out(&dump, []).unwrap();
+        assert_eq!(kept, dump);
+        assert!(out.is_empty());
     }
 }

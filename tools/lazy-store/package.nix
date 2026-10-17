@@ -125,6 +125,23 @@ rustPlatform.buildRustPackage (finalAttrs: {
           nix store copy-sigs --store "$root" -s "file://$PWD/closure/narinfo" --stdin
         nix path-info --store "$root" --sigs /nix/store/$A | grep -q "[[:space:]]test-1:$(printf %64s | base64 -w0)$"
         test "$(nix-store --store "$root" -q --references /nix/store/$A | wc -l)" = 2
+
+        # b's listing is broken: b and a, which refers to it, are left out,
+        # c is served
+        echo broken > cache/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.ls
+        printf 'StorePath: /nix/store/%s\nURL: nar/c.nar.zst\nCompression: zstd\nNarHash: sha256:%s\nNarSize: %s\nReferences: \n' \
+          $C "$(nix-hash --type sha256 --base32 src/c)" "$(size src/c)" > cache/cccccccccccccccccccccccccccccccc.narinfo
+        mkdir partial
+        printf '/nix/store/%s\n' $A $C | LAZY_STORE_CACHES="file://$PWD/cache" lazy-store closure partial
+        lazy-store fetch partial $C
+        diff -r src/c partial/cache/$C
+        jq -e '.failed == ["'$B'"] and .incomplete == 1' partial/no-listing.json
+        jq -e 'keys == ["'$C'"]' partial/paths.json
+        test "$(grep -c ^/nix/store/ partial/db.dump)" = 1
+        grep -qx /nix/store/$C partial/db.dump
+        if lazy-store fetch partial $A; then
+          echo "path referring to one without a listing was served"; exit 1
+        fi
         touch $out
       '';
 

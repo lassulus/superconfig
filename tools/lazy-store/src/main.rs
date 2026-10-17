@@ -12,6 +12,9 @@
 //!                           their listing (testing without FUSE)
 //!   mount OUT UPPER MNT     mount the store dir UPPER, merged with the paths
 //!                           of OUT/paths.json, at MNT (see storefs.rs).
+//!                           Paths without a listing, and those referring
+//!                           to them, are left out of OUT/paths.json and
+//!                           OUT/db.dump (counted in OUT/no-listing.json).
 //!                           Stats go to OUT/stats.json.
 //!     [--workers N]         FUSE worker threads (default 64)
 //!     [--no-passthrough]    don't use kernel FUSE passthrough
