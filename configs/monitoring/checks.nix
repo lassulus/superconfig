@@ -50,6 +50,7 @@ in
       (https "matrix" "https://matrix.lassul.us/_matrix/client/versions")
       (https "pad" "https://pad.lassul.us/")
       (https "id" "https://id.lassul.us/debug/healthz")
+      (https "byoidc" "https://byoidc.lassul.us/healthz")
       (https "paint" "https://paint.lassul.us/")
       (https "ntfy" "https://ntfy.lassul.us/v1/health")
       (https "cache" "https://cache.lassul.us/nix-cache-info")
