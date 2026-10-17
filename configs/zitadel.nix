@@ -125,6 +125,18 @@ in
     allowUsernamePassword = true;
     passwordlessType = "PASSWORDLESS_TYPE_ALLOWED";
   };
+  # Verification codes and password resets. Zitadel asks every user whose
+  # address is unverified (registration, byoidc) to verify it before the
+  # login finishes. Sent as the send-only account id@lassul.us of the
+  # mailserver here (configs/mailserver.nix), which DKIM-signs it.
+  lass.zitadel.smtp = {
+    senderAddress = "id@lassul.us";
+    senderName = "lassul.us ID";
+    host = "mail.lassul.us:465";
+    tls = true;
+    user = "id@lassul.us";
+    passwordFile = config.clan.core.vars.generators.mailserver-id.files."password".path;
+  };
   lass.zitadel.idps = {
     GitHub = {
       type = "github";
