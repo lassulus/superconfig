@@ -6,6 +6,9 @@ use std::io::{self, BufRead, Write};
 use std::path::Path;
 
 use futures_util::{stream, StreamExt};
+use harmonia_store_nar_info::{parse_narinfo_txt, NarInfo};
+use harmonia_store_path::{StoreDir, StorePath};
+use harmonia_utils_hash::{Hash, HashFormat};
 use serde::{Deserialize, Serialize};
 
 use crate::http::{self, Http};
@@ -32,45 +35,47 @@ pub fn caches() -> Vec<String> {
         .collect()
 }
 
-fn parse_narinfo(text: &[u8]) -> HashMap<String, String> {
-    String::from_utf8_lossy(text)
-        .lines()
-        .filter_map(|l| l.split_once(": "))
-        .map(|(k, v)| (k.to_string(), v.to_string()))
-        .collect()
+/// A narinfo, the cache it is from and its text.
+struct Found {
+    cache: String,
+    info: NarInfo,
+    text: Vec<u8>,
 }
 
-fn references(i: &HashMap<String, String>) -> impl Iterator<Item = &str> {
-    i.get("References")
-        .map(String::as_str)
-        .unwrap_or("")
-        .split_whitespace()
+impl Found {
+    fn references(&self) -> &BTreeSet<StorePath> {
+        &self.info.info.info.references
+    }
 }
 
-/// The parsed narinfo of `name` from the first cache that has it, and its
-/// text.
-async fn narinfo(
-    http: &Http,
-    caches: &[String],
-    name: &str,
-    stats: &Stats,
-) -> Option<(HashMap<String, String>, Vec<u8>)> {
-    let h = name.split('-').next().unwrap_or(name);
+/// The narinfo of `path` from the first cache that has it.
+async fn narinfo(http: &Http, caches: &[String], path: &StorePath, stats: &Stats) -> Option<Found> {
+    let h = path.hash();
     for c in caches {
-        match http.get(&format!("{c}/{h}.narinfo")).await {
-            Ok((body, len)) => {
+        let url = format!("{c}/{h}.narinfo");
+        let err = match http.get(&url).await {
+            Ok((text, len)) => {
                 stats.add("narinfo", len as u64);
-                let mut i = parse_narinfo(&body);
-                i.insert("cache".into(), c.clone());
-                return Some((i, body));
+                let parsed = std::str::from_utf8(&text)
+                    .map_err(|e| e.to_string())
+                    .and_then(|s| {
+                        parse_narinfo_txt(&StoreDir::default(), s).map_err(|e| e.to_string())
+                    });
+                match parsed {
+                    Ok(info) => {
+                        let cache = c.clone();
+                        return Some(Found { cache, info, text });
+                    }
+                    Err(e) => e,
+                }
             }
-            Err(http::Error::NotFound) => {}
-            // still failing after the retries: try the next cache
-            Err(e) => {
-                eprintln!("giving up on {c}/{h}.narinfo: {e}");
-                stats.add("narinfo_error", 0);
-            }
-        }
+            Err(http::Error::NotFound) => continue,
+            // still failing after the retries
+            Err(e) => e.to_string(),
+        };
+        // try the next cache
+        eprintln!("giving up on {url}: {err}");
+        stats.add("narinfo_error", 0);
     }
     None
 }
@@ -86,33 +91,32 @@ pub async fn closure(outdir: &Path) -> io::Result<()> {
         let l = l?;
         let l = l.trim();
         if !l.is_empty() {
-            roots.insert(l.strip_prefix(STORE).unwrap_or(l).to_string());
+            let p = l.strip_prefix(STORE).unwrap_or(l);
+            roots.insert(p.parse::<StorePath>().map_err(io::Error::other)?);
         }
     }
     let caches = caches();
     let http = Http::new(caches.iter().map(String::as_str)).await;
     let stats = Stats::new(None);
-    let mut infos: BTreeMap<String, HashMap<String, String>> = BTreeMap::new();
-    let mut texts: HashMap<String, Vec<u8>> = HashMap::new();
-    let mut missing: BTreeSet<String> = BTreeSet::new();
-    let mut todo: Vec<String> = roots.iter().cloned().collect();
+    let mut infos: BTreeMap<StorePath, Found> = BTreeMap::new();
+    let mut missing: BTreeSet<StorePath> = BTreeSet::new();
+    let mut todo: Vec<StorePath> = roots.iter().cloned().collect();
     while !todo.is_empty() {
         let (http, caches, stats) = (&http, &caches, &stats);
         let mut res = stream::iter(std::mem::take(&mut todo))
-            .map(|n| async move {
-                let i = narinfo(http, caches, &n, stats).await;
-                (n, i)
+            .map(|p| async move {
+                let i = narinfo(http, caches, &p, stats).await;
+                (p, i)
             })
             .buffer_unordered(32);
         let mut next = BTreeSet::new();
-        while let Some((name, i)) = res.next().await {
-            let Some((i, text)) = i else {
-                missing.insert(name.clone());
+        while let Some((path, i)) = res.next().await {
+            let Some(i) = i else {
+                missing.insert(path);
                 continue;
             };
-            next.extend(references(&i).map(str::to_string));
-            infos.insert(name.clone(), i);
-            texts.insert(name.clone(), text);
+            next.extend(i.references().iter().cloned());
+            infos.insert(path, i);
         }
         todo = next
             .into_iter()
@@ -120,61 +124,58 @@ pub async fn closure(outdir: &Path) -> io::Result<()> {
             .collect();
     }
 
-    let mut referrers: HashMap<String, Vec<String>> = HashMap::new();
+    let mut referrers: HashMap<&StorePath, Vec<&StorePath>> = HashMap::new();
     for (n, i) in &infos {
-        for r in references(i).filter(|r| *r != n.as_str()) {
-            referrers.entry(r.to_string()).or_default().push(n.clone());
+        for r in i.references().iter().filter(|r| *r != n) {
+            referrers.entry(r).or_default().push(n);
         }
     }
     let mut incomplete = BTreeSet::new();
-    let mut todo: Vec<&String> = missing.iter().collect();
+    let mut todo: Vec<&StorePath> = missing.iter().collect();
     while let Some(m) = todo.pop() {
         for r in referrers.get(m).into_iter().flatten() {
-            if incomplete.insert(r.clone()) {
+            if incomplete.insert((*r).clone()) {
                 todo.push(r);
             }
         }
     }
     infos.retain(|n, _| !incomplete.contains(n));
 
-    let mut paths = BTreeMap::new();
-    for (n, i) in &infos {
-        let get = |k: &str| {
-            i.get(k)
-                .cloned()
-                .ok_or_else(|| io::Error::other(format!("{n}: narinfo without {k}")))
-        };
-        paths.insert(
-            n.clone(),
-            PathInfo {
-                cache: get("cache")?,
-                url: get("URL")?,
-                compression: i
-                    .get("Compression")
-                    .cloned()
-                    .unwrap_or_else(|| "none".into()),
-                nar_hash: get("NarHash")?,
-                nar_size: get("NarSize")?.parse().map_err(io::Error::other)?,
-                file_size: i.get("FileSize").and_then(|s| s.parse().ok()).unwrap_or(0),
-            },
-        );
-    }
+    let nar_hash = |i: &Found| {
+        Hash::from(i.info.info.info.nar_hash)
+            .as_base32()
+            .to_string()
+    };
+    let paths: BTreeMap<&StorePath, PathInfo> = infos
+        .iter()
+        .map(|(n, i)| {
+            let ni = &i.info.info;
+            let info = PathInfo {
+                cache: i.cache.clone(),
+                url: ni.url.clone().unwrap_or_default(),
+                compression: ni.compression.clone().unwrap_or_else(|| "none".into()),
+                nar_hash: nar_hash(i),
+                nar_size: ni.info.nar_size,
+                file_size: ni.download_size.unwrap_or(0),
+            };
+            (n, info)
+        })
+        .collect();
     std::fs::write(outdir.join("paths.json"), serde_json::to_vec(&paths)?)?;
 
     let mut db = io::BufWriter::new(std::fs::File::create(outdir.join("db.dump"))?);
     for (n, i) in &infos {
-        let refs: Vec<&str> = references(i).collect();
-        let d = i.get("Deriver").map(String::as_str).unwrap_or("");
-        let deriver = if d.ends_with(".drv") {
-            format!("{STORE}{d}")
-        } else {
-            String::new()
+        let pi = &i.info.info.info;
+        let deriver = match &pi.deriver {
+            Some(d) if d.is_derivation() => format!("{STORE}{d}"),
+            _ => String::new(),
         };
+        let refs = i.references();
         writeln!(
             db,
             "{STORE}{n}\n{}\n{}\n{deriver}\n{}",
-            i["NarHash"],
-            i["NarSize"],
+            nar_hash(i),
+            pi.nar_size,
             refs.len()
         )?;
         for r in refs {
@@ -188,14 +189,13 @@ pub async fn closure(outdir: &Path) -> io::Result<()> {
     let dir = outdir.join("narinfo");
     std::fs::create_dir_all(&dir)?;
     std::fs::write(dir.join("nix-cache-info"), "StoreDir: /nix/store\n")?;
-    for n in infos.keys() {
-        let h = n.split('-').next().unwrap_or(n);
-        std::fs::write(dir.join(format!("{h}.narinfo")), &texts[n])?;
+    for (n, i) in &infos {
+        std::fs::write(dir.join(format!("{}.narinfo", n.hash())), &i.text)?;
     }
 
-    let mut by_cache: BTreeMap<String, u64> = BTreeMap::new();
+    let mut by_cache: BTreeMap<&str, u64> = BTreeMap::new();
     for p in paths.values() {
-        *by_cache.entry(p.cache.clone()).or_default() += 1;
+        *by_cache.entry(&p.cache).or_default() += 1;
     }
     let mut summary = serde_json::json!({
         "roots": roots.len(),

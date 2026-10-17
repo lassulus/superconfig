@@ -329,6 +329,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "curve25519-dalek"
+version = "5.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b5eed333089e2e1c1ac8c6c0398e5e2497b4c9926ca6d0365ed1e099afa5bc23"
+dependencies = [
+ "cfg-if",
+ "cpufeatures",
+ "curve25519-dalek-derive",
+ "digest",
+ "fiat-crypto",
+ "rustc_version",
+ "subtle",
+ "zeroize",
+]
+
+[[package]]
+name = "curve25519-dalek-derive"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f46882e17999c6cc590af592290432be3bce0428cb0d5f8b6715e4dc7b383eb3"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "data-encoding"
 version = "2.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -386,6 +413,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 
 [[package]]
+name = "ed25519"
+version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "29fcf32e6c73d1079f83ab4d782de2d81620346a5f38c6237a86a22f8368980a"
+dependencies = [
+ "signature",
+]
+
+[[package]]
+name = "ed25519-dalek"
+version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6ebaa1a2bf1290ab3bfe5a7b771d050ebffab2711c19a81691c683a5144a25de"
+dependencies = [
+ "curve25519-dalek",
+ "ed25519",
+ "sha2",
+ "subtle",
+ "zeroize",
+]
+
+[[package]]
 name = "endian-type"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -404,8 +453,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
+
+[[package]]
+name = "fiat-crypto"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "64cd1e32ddd350061ae6edb1b082d7c54915b5c672c389143b9a63403a109f24"
 
 [[package]]
 name = "find-msvc-tools"
@@ -661,6 +716,57 @@ dependencies = [
 ]
 
 [[package]]
+name = "harmonia-store-content-address"
+version = "3.3.0"
+source = "git+https://github.com/nix-community/harmonia?rev=3edb37ae36b561c2d395980170c70bbce292bbc5#3edb37ae36b561c2d395980170c70bbce292bbc5"
+dependencies = [
+ "derive_more",
+ "harmonia-store-path",
+ "harmonia-utils-hash",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
+name = "harmonia-store-nar-info"
+version = "3.3.0"
+source = "git+https://github.com/nix-community/harmonia?rev=3edb37ae36b561c2d395980170c70bbce292bbc5#3edb37ae36b561c2d395980170c70bbce292bbc5"
+dependencies = [
+ "harmonia-store-content-address",
+ "harmonia-store-path",
+ "harmonia-store-path-info",
+ "harmonia-utils-hash",
+ "harmonia-utils-signature",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
+name = "harmonia-store-path"
+version = "3.3.0"
+source = "git+https://github.com/nix-community/harmonia?rev=3edb37ae36b561c2d395980170c70bbce292bbc5#3edb37ae36b561c2d395980170c70bbce292bbc5"
+dependencies = [
+ "derive_more",
+ "harmonia-utils-base-encoding",
+ "harmonia-utils-hash",
+ "serde",
+ "thiserror",
+ "zerocopy",
+]
+
+[[package]]
+name = "harmonia-store-path-info"
+version = "3.3.0"
+source = "git+https://github.com/nix-community/harmonia?rev=3edb37ae36b561c2d395980170c70bbce292bbc5#3edb37ae36b561c2d395980170c70bbce292bbc5"
+dependencies = [
+ "harmonia-store-content-address",
+ "harmonia-store-path",
+ "harmonia-utils-hash",
+ "harmonia-utils-signature",
+ "serde",
+]
+
+[[package]]
 name = "harmonia-utils-base-encoding"
 version = "0.0.0-alpha.0"
 source = "git+https://github.com/nix-community/harmonia?rev=3edb37ae36b561c2d395980170c70bbce292bbc5#3edb37ae36b561c2d395980170c70bbce292bbc5"
@@ -700,6 +806,21 @@ dependencies = [
  "nix 0.31.3",
  "pin-project-lite",
  "tokio",
+]
+
+[[package]]
+name = "harmonia-utils-signature"
+version = "3.3.0"
+source = "git+https://github.com/nix-community/harmonia?rev=3edb37ae36b561c2d395980170c70bbce292bbc5#3edb37ae36b561c2d395980170c70bbce292bbc5"
+dependencies = [
+ "data-encoding",
+ "ed25519-dalek",
+ "getrandom 0.4.3",
+ "harmonia-utils-base-encoding",
+ "serde",
+ "subtle",
+ "thiserror",
+ "zeroize",
 ]
 
 [[package]]
@@ -1021,6 +1142,8 @@ dependencies = [
  "futures-util",
  "harmonia-file-core",
  "harmonia-file-nar",
+ "harmonia-store-nar-info",
+ "harmonia-store-path",
  "harmonia-utils-hash",
  "libc",
  "log",
@@ -1281,7 +1404,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1463,7 +1586,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1617,6 +1740,12 @@ dependencies = [
  "errno",
  "libc",
 ]
+
+[[package]]
+name = "signature"
+version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "28d567dcbaf0049cb8ac2608a76cd95ff9e4412e1899d389ee400918ca7537f5"
 
 [[package]]
 name = "simd-adler32"
@@ -2105,7 +2234,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -2295,6 +2424,26 @@ dependencies = [
  "quote",
  "syn 3.0.9",
  "synstructure",
+]
+
+[[package]]
+name = "zerocopy"
+version = "0.8.63"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e5fe1f8f1b06191a00962174c61aa5005e0bb391a6d80d07e24d115c01a92ed8"
+dependencies = [
+ "zerocopy-derive",
+]
+
+[[package]]
+name = "zerocopy-derive"
+version = "0.8.63"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "863ad3ac83293fb4d740aedbfdc9240dd8d1a50c1099acd76ce80ce7c7230c7f"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]

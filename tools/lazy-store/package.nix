@@ -63,7 +63,8 @@ rustPlatform.buildRustPackage (finalAttrs: {
         B=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-b
         C=cccccccccccccccccccccccccccccccc-c
         D=dddddddddddddddddddddddddddddddd-d
-        E=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-e
+        # store path hashes are nix32, which has no e
+        E=ffffffffffffffffffffffffffffffff-f
         ls='{"version":1,"root":{"type":"directory","entries":{
           "file":{"type":"regular","size":6},
           "link":{"type":"symlink","target":"file"},
