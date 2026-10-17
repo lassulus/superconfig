@@ -1,0 +1,6 @@
+name: hermes-voice
+version: 1.0.0
+description: "hermes-voice's side in the gateway: sessions may write to the owner's Matrix DM (the Matrix home room), and /assist answers approvals of voice-call runs from Matrix."
+author: lassulus
+provides_tools:
+  - matrix_dm_send
