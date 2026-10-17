@@ -197,7 +197,7 @@ in
       };
     };
 
-    # Text replies only: live voice moved to hermes-voice (voice.lassul.us,
+    # Text replies only: live voice moved to hermes-voice (assist.lassul.us,
     # hermes-voice.nix). Voice notes still reach the agent through STT, and
     # `/voice tts` in a chat still turns spoken replies on there.
     settings.voice.auto_tts = false;

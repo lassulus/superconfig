@@ -79,7 +79,7 @@ in
   # the voice page for the phone. hermes-voice gates every API route with its
   # own access token, so nothing is filtered by path here. /delegate streams
   # NDJSON for the length of a Hermes turn, so the streaming settings apply.
-  services.nginx.virtualHosts."voice.lassul.us" = {
+  services.nginx.virtualHosts."assist.lassul.us" = {
     enableACME = true;
     forceSSL = true;
     extraConfig = ''

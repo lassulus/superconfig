@@ -54,7 +54,7 @@ cdio IN CNAME neoprism
 c IN CNAME neoprism
 hass IN CNAME neoprism
 hermes IN CNAME neoprism
-voice IN CNAME neoprism
+assist IN CNAME neoprism
 vault IN CNAME neoprism
 cal IN CNAME neoprism
 kanban IN CNAME neoprism
