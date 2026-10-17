@@ -2,8 +2,9 @@
 # For the eval job of ci.yml: dry-run every matrix row, in parallel, and list
 # the derivations that more than one row would build (not substitutable from
 # any configured substituter). Usage: ci-shared.sh MATRIX_JSON OUTDIR
-# Writes OUTDIR/<name>.drvs per row, OUTDIR/shared-all.drvs and the
-# substitutable subset OUTDIR/shared.drvs.
+# Writes per row OUTDIR/<name>.drvs and OUTDIR/<name>.fetch, the paths it
+# would substitute (for .github/lazy-store.sh), OUTDIR/shared-all.drvs and
+# the substitutable subset OUTDIR/shared.drvs.
 set -euo pipefail
 matrix=$1
 out=$2
@@ -16,9 +17,13 @@ plan() {
     cat "$out/$name.plan"
     return 1
   }
-  # the drv lines below the "will be built:" header, up to the next header
-  awk '/^[^ ]/ { b = /will be built:$/; next } b && $1 ~ /^\/nix\/store\// { print $1 }' \
-    "$out/$name.plan" | sort -u >"$out/$name.drvs"
+  section 'will be built:$' <"$out/$name.plan" >"$out/$name.drvs"
+  section 'will be fetched' <"$out/$name.plan" >"$out/$name.fetch"
+}
+
+# the path lines below the header matching $1, up to the next header
+section() {
+  awk -v h="$1" '/^[^ ]/ { f = $0 ~ h; next } f && $1 ~ /^\/nix\/store\// { print $1 }' | sort -u
 }
 
 pids=()
