@@ -38,6 +38,8 @@
     tokenURL = "https://id.lassul.us/oauth/v2/token";
     userProfileURL = "https://id.lassul.us/oidc/v1/userinfo";
     scope = "openid email profile";
+    # sub, not the freely chosen username: HedgeDoc shares one user table with GitHub logins.
+    userProfileIdAttr = "sub";
     userProfileUsernameAttr = "preferred_username";
     userProfileDisplayNameAttr = "name";
     userProfileEmailAttr = "email";
