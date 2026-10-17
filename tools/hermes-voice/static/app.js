@@ -7,6 +7,11 @@ const PRICE_PER_MINUTE = 0.05;
 const APPEND_CHAR_LIMIT = 1400;
 // Transcript deltas can trail the delegation event; wait for the last words.
 const DELEGATION_SETTLE_MS = 400;
+// Once Hermes ended the call (end_call item), the call closes when the voice
+// has been quiet this long after speaking the reply, at the latest after
+// END_CALL_MAX_MS.
+const END_CALL_QUIET_MS = 800;
+const END_CALL_MAX_MS = 30000;
 const STORAGE_KEY = "hermes-voice";
 
 const talk = document.getElementById("talk");
@@ -169,6 +174,8 @@ class Call {
     this.lastSpeaker = null;
     this.delegation = null;
     this.closed = false;
+    this.closing = false;
+    this.ending = null;
     this.eventCounter = 0;
   }
 
@@ -263,6 +270,7 @@ class Call {
         this.speaking = speaking;
         talk.classList.toggle("speaking", speaking);
       }
+      if (this.ending?.spoken && quiet * 100 >= END_CALL_QUIET_MS) this.close();
     }, 100);
   }
 
@@ -287,6 +295,7 @@ class Call {
       case "session.output_transcript.delta":
         this.lastActivity = Date.now();
         addTranscript("assistant", event.delta || "");
+        if (this.ending) this.ending.spoken = true;
         break;
       case "session.delegation.created":
         this.delegate(event.delegation.id);
@@ -340,6 +349,7 @@ class Call {
 
     let answer = "";
     let failure = null;
+    let endCall = false;
     try {
       const response = await api("/delegate", {
         method: "POST",
@@ -389,6 +399,8 @@ class Call {
                 APPEND_CHAR_LIMIT,
               ),
             });
+          } else if (item.type === "end_call") {
+            endCall = true;
           } else if (item.type === "delta") {
             answer += item.text;
           } else if (item.type === "done" && item.error) {
@@ -427,7 +439,16 @@ class Call {
           content: chunk,
         });
     }
-    setStatus("Listening");
+    if (endCall) this.endAfterReply();
+    else setStatus("Listening");
+  }
+
+  // Hermes ended the call: close it once the voice has spoken the reply just
+  // handed over.
+  endAfterReply() {
+    this.ending = { spoken: false };
+    this.endTimer = setTimeout(() => this.close(), END_CALL_MAX_MS);
+    setStatus("Ending the call…");
   }
 
   askApproval(id, item) {
@@ -522,7 +543,8 @@ class Call {
   }
 
   close() {
-    if (this.closed) return;
+    if (this.closed || this.closing) return;
+    this.closing = true;
     if (!this.send({ type: "session.close" })) {
       this.finish("closed");
       return;
@@ -554,6 +576,7 @@ class Call {
     if (this.closed) return;
     this.closed = true;
     clearTimeout(this.closeTimer);
+    clearTimeout(this.endTimer);
     clearInterval(this.idleTimer);
     clearInterval(this.probe);
     this.hangUp();

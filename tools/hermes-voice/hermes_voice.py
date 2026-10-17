@@ -19,6 +19,11 @@ the question goes to the owner's Matrix DM (the gateway's Matrix home room,
 through its webhook platform), and the hermes-voice plugin's
 `/assist approve|deny <code>` command answers it.
 
+Hermes ends a call itself: when the user says goodbye, the voice model
+delegates that like any request, and Hermes calls the plugin's end_call tool.
+This server sees the call in the run's events and tells a listening page to
+close the session once the voice has spoken the reply.
+
 This server exists so neither secret reaches the browser: it exchanges the
 page's SDP offer for a Live session with the OpenAI key, and it calls Hermes
 with the API server's bearer token. That token is root-equivalent for the
@@ -100,6 +105,8 @@ EVENTS_READ_TIMEOUT = 60
 # went away while a run is quiet (e.g. waiting for an approval).
 PAGE_KEEPALIVE_SECONDS = 10
 SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+# Hermes's tool that ends the call (hermes-plugin/__init__.py).
+END_CALL_TOOL = "end_call"
 
 # Frontend persona, adapted from Hermes's own (tools/voice_live.py): role,
 # style and a labelled delegation policy. The backend carries the real
@@ -119,6 +126,8 @@ Delegate to the backend when:
 - The user asks you to do, check, find, make, fix, run or remember anything.
 - A correction changes work already requested.
 
+- The user says goodbye, says that is all, asks you to hang up, or says they are leaving. Hermes ends the call after your reply; you may still say a short goodbye, but never end the call yourself.
+
 Do not delegate to the backend when:
 - The user greets you, makes small talk, or asks you to repeat a result already provided.
 - You need a brief clarification to understand the request.
@@ -130,11 +139,11 @@ Hermes sometimes needs the user's approval before it runs a command. When you ar
 
 # Ephemeral system prompt for every delegated Hermes turn (Hermes layers system
 # messages on top of its core prompt without storing them).
-BACKEND_NOTE = """This turn is a delegation from a live spoken conversation. The user message is a speech transcript: it may contain mis-hearings, phonetic spellings of technical terms, hesitations and later corrections; use the latest intent. Your reply will be spoken aloud by a friendly voice model that paraphrases it: answer in warm, plain conversational sentences, keep it short (a few sentences unless the user asked for detail), no markdown, no lists, no code blocks, no URLs read out character by character. Do the work with your tools as usual; only the final facts need to be spoken. Report an action as done only after it actually succeeded. The user may hang up before your reply is spoken: when they asked for a result or a question somewhere else, such as their Matrix chat (matrix_dm_send), send it there yourself."""
+BACKEND_NOTE = """This turn is a delegation from a live spoken conversation. The user message is a speech transcript: it may contain mis-hearings, phonetic spellings of technical terms, hesitations and later corrections; use the latest intent. Your reply will be spoken aloud by a friendly voice model that paraphrases it: answer in warm, plain conversational sentences, keep it short (a few sentences unless the user asked for detail), no markdown, no lists, no code blocks, no URLs read out character by character. Do the work with your tools as usual; only the final facts need to be spoken. Report an action as done only after it actually succeeded. The user may hang up before your reply is spoken: when they asked for a result or a question somewhere else, such as their Matrix chat (matrix_dm_send), send it there yourself. When the user says goodbye, says that is all, asks to hang up or says they are leaving, call end_call: only after any work they asked for has been started or handed off (for example a result promised to their Matrix chat), and never while you still need an answer from them, such as an approval. Your reply is still spoken before the call ends, so make it a short confirmation or goodbye."""
 
 # Instead of BACKEND_NOTE for what the user said right before hanging up, when
 # the voice model had not delegated it yet.
-HUNG_UP_NOTE = """This turn comes from a live spoken conversation the user has already hung up. The user message is a speech transcript of what they said since the last request: it may contain mis-hearings, phonetic spellings of technical terms, hesitations and later corrections; use the latest intent. Nobody hears your reply. If the transcript asks for something, do it with your tools; when the user asked for a result somewhere, such as their Matrix chat (matrix_dm_send), send it there, and if you need something from them, ask in their Matrix chat. If it only says goodbye or thanks, or repeats a request already handled in this conversation, do nothing and reply with a short note saying so."""
+HUNG_UP_NOTE = """This turn comes from a live spoken conversation the user has already hung up. The user message is a speech transcript of what they said since the last request: it may contain mis-hearings, phonetic spellings of technical terms, hesitations and later corrections; use the latest intent. Nobody hears your reply. If the transcript asks for something, do it with your tools; when the user asked for a result somewhere, such as their Matrix chat (matrix_dm_send), send it there, and if you need something from them, ask in their Matrix chat. If it only says goodbye or thanks, or repeats a request already handled in this conversation, do nothing and reply with a short note saying so. The call is over already: do not call end_call."""
 
 
 def glossary_text(glossary):
@@ -318,14 +327,19 @@ def hermes_start_run(config, hermes_session, lines, hung_up=False):
 
 def hermes_follow_run(config, run_id):
     """Follow a run's events; yield NDJSON-ready dicts (tool, delta, approval,
-    done, error). Leaving early only detaches: the run keeps going."""
+    end_call, done, error). Leaving early only detaches: the run keeps going."""
     with hermes_request(
         config, "GET", f"/v1/runs/{run_id}/events", timeout=EVENTS_READ_TIMEOUT
     ) as response:
         for _, data in iter_sse(response):
             payload = json.loads(data)
             event = payload.get("event", "")
-            if event in ("tool.started", "tool.completed"):
+            if payload.get("tool") == END_CALL_TOOL:
+                # The plugin's tool fails outside a voice session; the page
+                # closes the call after speaking the reply.
+                if event == "tool.completed" and not payload.get("error"):
+                    yield {"type": "end_call"}
+            elif event in ("tool.started", "tool.completed"):
                 status = "running" if event == "tool.started" else "completed"
                 if payload.get("error"):
                     status = "error"
@@ -457,6 +471,10 @@ class Run:
         with self.cond:
             self.items.append(item)
             self.cond.notify_all()
+            unheard = not self.pages or self.hung_up
+        if item["type"] == "end_call":
+            # Without a page the call has ended already.
+            log.info("run %s ends the call%s", self.run_id, " (no call)" if unheard else "")
         self.ask_unheard()
 
     def attach(self):
