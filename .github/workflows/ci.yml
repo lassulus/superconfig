@@ -70,7 +70,7 @@ jobs:
   # The NixOS machines, built on plain runners with hestia (the GitHub Actions
   # cache) as binary cache next to cache.lassul.us:
   #
-  # - eval: evaluates ciToplevels once, uploads the drv closures to hestia,
+  # - eval: evaluates ciToplevels once (iets), uploads the drv closures to hestia,
   #   lists the machines whose toplevel is in neither cache and the
   #   derivations needed by more than one of them (.github/ci-shared.sh).
   # - shared: builds those once, so the machine jobs substitute them instead
@@ -108,24 +108,24 @@ jobs:
           upstream-cache-key-names: cache.nixos.org-1 cache.lassul.us-1
           filter-drv-closures: true
       # the niks3 client of all jobs and the lazy store of the machine jobs,
-      # the others substitute them; nix-eval-jobs from the flake's nixpkgs,
-      # which the flake evaluation fetches anyway
+      # the others substitute them; iets for the evaluation, its eval-jobs
+      # is nix-eval-jobs about 5 times faster (no import from derivation)
       - id: tools
         run: |
           niks3=$(nix build --no-link --print-out-paths .#niks3)
           lazy=$(nix build --no-link --print-out-paths .#lazy-store)
-          nej=$(nix build --no-link --print-out-paths --inputs-from . nixpkgs#nix-eval-jobs)
+          iets=$(nix build --no-link --print-out-paths .#iets)
           {
             echo "niks3=$niks3"
             echo "lazy-store=$lazy"
-            echo "nix-eval-jobs=$nej/bin/nix-eval-jobs"
+            echo "iets=$iets/bin/iets"
           } >> "$GITHUB_OUTPUT"
-          PATH=$niks3/bin:$PATH .github/niks3-push.sh "$niks3" "$lazy"
+          PATH=$niks3/bin:$PATH .github/niks3-push.sh "$niks3" "$lazy" "$iets"
       - id: matrix
         uses: Mic92/hestia/matrix@v3
         with:
           flake: ".#ciToplevels"
-          nix-eval-jobs: "${{ steps.tools.outputs.nix-eval-jobs }} --workers 4 --max-memory-size 3072"
+          nix-eval-jobs: "${{ steps.tools.outputs.iets }} eval-jobs --workers 4 --max-memory-size 3072"
       - env:
           MATRIX: ${{ steps.matrix.outputs.matrix }}
         run: |

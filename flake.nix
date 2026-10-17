@@ -84,6 +84,11 @@
     byoidc.inputs.nixpkgs.follows = "nixpkgs";
     byoidc.inputs.treefmt-nix.follows = "treefmt-nix";
 
+    # Nix evaluator in Rust, CI evaluates the machines with its eval-jobs
+    # (.github/workflows/ci.yml). No import from derivation there.
+    iets.url = "github:numtide/iets";
+    iets.inputs.nixpkgs.follows = "nixpkgs";
+
   };
 
   outputs =
@@ -249,6 +254,8 @@
           packages.clan-cli = clan-core.packages.${system}.clan-cli;
           # CI pushes its builds to cache.lassul.us with it (.github/niks3-push.sh)
           packages.niks3 = inputs.niks3.packages.${system}.niks3;
+          # CI's eval job evaluates ciToplevels with it
+          packages.iets = inputs.iets.packages.${system}.default;
           devShells.default = pkgs.mkShell {
             packages = [
               self.packages.${pkgs.system}.pass
