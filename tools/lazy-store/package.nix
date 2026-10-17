@@ -22,6 +22,7 @@ rustPlatform.buildRustPackage (finalAttrs: {
   cargoLock = {
     lockFile = ./Cargo.lock;
     outputHashes."fuse-backend-rs-0.14.0" = "sha256-pSnYq8IhfpxtnTS7bnE8GHAVP+yZ+hItChTEmGUP7xM=";
+    outputHashes."harmonia-file-core-3.3.0" = "sha256-aPNxxJLjRd+wVFyAcUnzrakC0BNj/N9rJWV2y8wpCAs=";
   };
   # Static, so that once it serves /nix/store it loads nothing from there.
   # (Not glibc.static in buildInputs: build scripts would link against it.)

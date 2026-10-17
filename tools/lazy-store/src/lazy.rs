@@ -20,6 +20,7 @@ use fuse_backend_rs::api::filesystem::{
     Context, DirEntry, Entry, FileSystem, GetxattrReply, ListxattrReply, OpenOptions,
     ZeroCopyWriter,
 };
+use harmonia_utils_base_encoding::base32;
 
 use crate::closure::{par_map, PathInfo};
 use crate::http::{self, Http};
@@ -345,7 +346,7 @@ impl LazyFs {
             nar::remove(&tmp)?;
             return Err(io::Error::other(format!(
                 "{name}: NAR hash mismatch, sha256:{} ({size} bytes) != {} ({} bytes)",
-                nar::nix32(&digest),
+                base32::encode_string(&digest),
                 info.nar_hash,
                 info.nar_size
             )));

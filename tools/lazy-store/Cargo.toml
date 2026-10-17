@@ -21,6 +21,8 @@ xz2 = { version = "0.1", features = ["static"] }
 bzip2 = { version = "0.4", features = ["static"] }
 flate2 = "1"
 brotli-decompressor = "4"
+harmonia-file-core = { git = "https://github.com/nix-community/harmonia", rev = "3edb37ae36b561c2d395980170c70bbce292bbc5" }
+harmonia-utils-base-encoding = { git = "https://github.com/nix-community/harmonia", rev = "3edb37ae36b561c2d395980170c70bbce292bbc5" }
 
 [profile.release]
 debug = 1
