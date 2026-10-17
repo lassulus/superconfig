@@ -122,7 +122,12 @@ in
     # recognizes plugins/homeassistant: without the marker it would see
     # HASS_TOKEN, call the plugin missing, and warn on every start that it
     # cannot fetch it (lazy installs are off in the sealed venv).
-    settings.plugins.enabled = [ "homeassistant" ];
+    # settings does not merge lists, so hermes-voice.nix's plugin is enabled
+    # here as well.
+    settings.plugins.enabled = [
+      "homeassistant"
+      "hermes-voice"
+    ];
     settings._left_core_installed = [ "homeassistant" ];
 
     settings.model = {
@@ -343,10 +348,10 @@ in
       MATRIX_HOMESERVER = "https://matrix.lassul.us";
       MATRIX_USER_ID = "@hermes:lassul.us";
       MATRIX_ALLOWED_USERS = "@lassulus:lassul.us";
-      # The DM with lassulus: default target for deliver=matrix (cron jobs, and
-      # sessions without a Matrix origin such as the voice agent on the API
-      # server). Without it cron delivery fails with "no delivery target
-      # resolved for deliver=matrix".
+      # The DM with lassulus: default target for deliver=matrix (cron jobs,
+      # the voice-approval webhook and the matrix_dm_send tool of
+      # hermes-voice.nix). Without it cron delivery fails with "no delivery
+      # target resolved for deliver=matrix".
       MATRIX_HOME_ROOM = "!QSmQTYGdeExThpCqNh:lassul.us";
 
       # The shared calendar (calendar skill above); CALDAV_PASSWORD comes from
@@ -387,7 +392,9 @@ in
 
     # Secrets (MATRIX_ACCESS_TOKEN, LLAMA_API_TOKEN, API_SERVER_KEY,
     # EMAIL_PASSWORD, HASS_TOKEN) come from clan vars below,
-    # merged into $HERMES_HOME/.env at activation.
+    # merged into $HERMES_HOME/.env at activation. WEBHOOK_SECRET is the API
+    # server key again: hermes-voice signs its webhook posts with it
+    # (hermes-voice.nix).
     environmentFiles = [
       config.clan.core.vars.generators.hermes-env.files."hermes.env".path
     ];
@@ -561,6 +568,7 @@ in
       MATRIX_ACCESS_TOKEN=$(cat "$in"/hermes-matrix/matrix-access-token)
       LLAMA_API_TOKEN=$(cat "$in"/hermes-llama/llama-api-token)
       API_SERVER_KEY=$(cat "$in"/hermes-api/api_key)
+      WEBHOOK_SECRET=$(cat "$in"/hermes-api/api_key)
       CALDAV_PASSWORD=$(cat "$in"/radicale-hermes/password)
       ANTHROPIC_TOKEN=$(cat "$in"/hermes-anthropic/oauth-token)
       EMAIL_PASSWORD=$(cat "$in"/hermes-mail/password)

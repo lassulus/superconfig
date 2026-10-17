@@ -7,6 +7,8 @@
 }:
 let
   port = 8790;
+  # The gateway's webhook platform (hermes.nix), loopback only.
+  webhookPort = 8644;
 in
 {
   # hermes-voice (tools/hermes-voice): live voice conversations with Hermes
@@ -40,6 +42,8 @@ in
         "%d/openai-key"
         "--access-token-file"
         "%d/access-token"
+        "--matrix-webhook"
+        "http://127.0.0.1:${toString webhookPort}/webhooks/voice-approval"
       ];
       LoadCredential = [
         "hermes-key:${config.clan.core.vars.generators.hermes-api.files."api_key".path}"
@@ -70,6 +74,35 @@ in
   # Only retiolum: neoprism's proxy and devices on the mesh. Every other
   # interface keeps the default DROP (configs/default.nix).
   networking.firewall.interfaces.retiolum.allowedTCPPorts = [ port ];
+
+  # hermes-voice's side in the gateway (tools/hermes-voice/hermes-plugin): the
+  # matrix_dm_send and end_call tools, on for every platform like any plugin
+  # toolset (end_call refuses outside voice sessions), and /assist, which
+  # answers approvals asked in the Matrix DM through hermes-voice
+  # (authenticated with API_SERVER_KEY).
+  services.hermes-agent.extraPlugins = [
+    (pkgs.runCommand "hermes-voice" { } ''
+      cp -r ${../../tools/hermes-voice/hermes-plugin} $out
+    '')
+  ];
+  services.hermes-agent.environment.HERMES_VOICE_URL = "http://localhost:${toString port}";
+
+  # How hermes-voice asks for an approval when no call can hear it: a
+  # deliver_only route posts the text to the Matrix home room through the
+  # gateway, no agent turn. Signed with WEBHOOK_SECRET, which is the API
+  # server key (hermes-env in hermes.nix), so no secret is added.
+  services.hermes-agent.settings.platforms.webhook = {
+    enabled = true;
+    extra = {
+      host = "127.0.0.1";
+      port = webhookPort;
+      routes.voice-approval = {
+        deliver = "matrix";
+        deliver_only = true;
+        prompt = "{text}";
+      };
+    };
+  };
 
   # OpenAI project key with GPT-Live access; billed per second of open voice
   # session. persist=true so the prompt value is stored once.
