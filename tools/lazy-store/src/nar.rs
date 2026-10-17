@@ -29,14 +29,21 @@ pub struct Size {
 /// The metadata of a store path, as in the caches' `.ls` listings.
 pub type Tree = FileTree<Size>;
 
-/// Parse a `.ls` listing (`{"version": 1, "root": {...}}`).
+/// Parse a `.ls` listing (`{"version": 1, "root": {...}}`). Empty
+/// directories may come without `entries`.
 pub fn from_listing(body: &[u8]) -> io::Result<Tree> {
-    #[derive(Deserialize)]
-    struct Listing {
-        root: Tree,
+    fn fill(v: &mut serde_json::Value) {
+        if v["type"] == "directory" {
+            match v.get_mut("entries").and_then(|e| e.as_object_mut()) {
+                Some(e) => e.values_mut().for_each(fill),
+                None => v["entries"] = serde_json::json!({}),
+            }
+        }
     }
-    let l: Listing = serde_json::from_slice(body).map_err(io::Error::other)?;
-    Ok(l.root)
+    let mut v: serde_json::Value = serde_json::from_slice(body).map_err(io::Error::other)?;
+    let mut root = v["root"].take();
+    fill(&mut root);
+    serde_json::from_value(root).map_err(io::Error::other)
 }
 
 /// Listing of an unpacked store path (for paths without `.ls`).
@@ -169,6 +176,19 @@ mod tests {
             "bin":{"type":"regular","size":10,"executable":true,"narOffset":96},
             "link":{"type":"symlink","target":"bin"}}}}"#;
         assert_eq!(from_listing(ls).unwrap(), t);
+        remove(&dir).unwrap();
+
+        // as cache.lassul.us serves empty directories
+        let ls = br#"{"version":1,"root":{"type":"directory","entries":{
+            "empty":{"type":"directory"}}}}"#;
+        fs::create_dir_all(dir.join("empty")).unwrap();
+        assert_eq!(from_listing(ls).unwrap(), from_path(&dir).unwrap());
+        assert_eq!(
+            from_listing(br#"{"version":1,"root":{"type":"directory"}}"#).unwrap(),
+            FileTree(FileSystemObject::Directory(Directory {
+                entries: BTreeMap::new()
+            }))
+        );
         remove(&dir).unwrap();
 
         // the caller's NarSize check rejects it
