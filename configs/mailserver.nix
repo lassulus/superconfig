@@ -57,6 +57,12 @@ in
         hashedPasswordFile =
           config.clan.core.vars.generators.mailserver-bot.files."bot-mail-password-hash".path;
       };
+      # Zitadel (configs/zitadel.nix): verification codes and password resets.
+      # Zitadel 2.71 needs a password for an SMTP provider.
+      "id@lassul.us" = {
+        hashedPasswordFile = config.clan.core.vars.generators.mailserver-id.files."password-hash".path;
+        sendOnly = true;
+      };
       # Hermes agent on coaxmetal; shared password var, see hermes-mail-vars.nix.
       "hermes@lassul.us" = {
         hashedPasswordFile = config.clan.core.vars.generators.hermes-mail.files."password-hash".path;
@@ -130,6 +136,21 @@ in
       IMAP_PASSWORD=$(cat "$out/bot-mail-password")
       IMAP_HOST=localhost
       EOF
+    '';
+  };
+
+  # the plaintext is read by zitadel-reconcile (root)
+  clan.core.vars.generators.mailserver-id = {
+    files."password" = { };
+    files."password-hash" = { };
+    runtimeInputs = with pkgs; [
+      coreutils
+      mkpasswd
+      pwgen
+    ];
+    script = ''
+      pwgen -s 32 1 | tr -d '\n' > "$out/password"
+      mkpasswd -sm bcrypt < "$out/password" > "$out/password-hash"
     '';
   };
 
