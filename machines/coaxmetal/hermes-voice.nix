@@ -12,7 +12,7 @@ in
   # hermes-voice (tools/hermes-voice): live voice conversations with Hermes
   # through OpenAI's gpt-live-1. Runs next to Hermes so its API key never
   # leaves this host; reachable over retiolum and publicly as
-  # https://voice.lassul.us through neoprism (configs/hermes-proxy.nix).
+  # https://assist.lassul.us through neoprism (configs/hermes-proxy.nix).
   #
   # SECURITY: the page drives Hermes, which has terminal tools and code
   # execution as lass (machines/coaxmetal/hermes.nix). The access token below
