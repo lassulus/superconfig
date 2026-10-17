@@ -2,6 +2,7 @@
 # admin and management APIs. Objects are found by name, created when missing
 # and updated when they differ. Projects and apps missing from the config
 # are left alone.
+import hashlib
 import json
 import os
 import pwd
@@ -75,6 +76,47 @@ def differs(current, wanted):
     return any(
         current.get(k, ZERO.get(k, False)) != v for k, v in wanted.items()
     )
+
+
+# SMTP provider (instance), found by its description
+
+if config["smtp"] is not None:
+    wanted = {"description": "lass.zitadel", **config["smtp"]}
+    with open(wanted.pop("passwordFile")) as f:
+        password = f.read().strip()
+    # Zitadel never shows the password, so a hash of the one it has is kept
+    password_hash = hashlib.sha256(password.encode()).hexdigest()
+    state_file = f"{config['stateDir']}/smtp.json"
+    saved = {}
+    if os.path.exists(state_file):
+        with open(state_file) as f:
+            saved = json.load(f)
+    current = next((
+        c for c in search("/admin/v1/smtp/_search")
+        if c.get("description") == wanted["description"]
+    ), None)
+    if current is None:
+        smtp_id = call("POST", "/admin/v1/smtp", {
+            **wanted,
+            "password": password,
+        })["id"]
+        print("smtp: created")
+    else:
+        smtp_id = current["id"]
+        if differs(current, wanted):
+            call("PUT", f"/admin/v1/smtp/{smtp_id}", wanted)
+            print("smtp: updated")
+        if saved.get(smtp_id) != password_hash:
+            call("PUT", f"/admin/v1/smtp/{smtp_id}/password", {
+                "password": password,
+            })
+            print("smtp: new password")
+    if saved.get(smtp_id) != password_hash:
+        with open(state_file, "w") as f:
+            json.dump({smtp_id: password_hash}, f)
+    if current is None or current.get("state") != "SMTP_CONFIG_ACTIVE":
+        call("POST", f"/admin/v1/smtp/{smtp_id}/_activate", {})
+        print("smtp: activated")
 
 
 # login policy and external IdPs (instance defaults)
