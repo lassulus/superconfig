@@ -16,39 +16,41 @@
     };
   };
 
-  # pocket-id (id.lassul.us) OIDC login, offered alongside GitHub. The endpoints
-  # are public config; only the client id/secret are secret (clan vars below).
-  # Register the client in pocket-id with callback URL:
-  #   https://pad.lassul.us/auth/oauth2/callback
+  # Zitadel (id.lassul.us) OIDC login, offered alongside GitHub, open to every
+  # registered user. zitadel-reconcile creates the app and writes its client
+  # id/secret into the env file below.
+  lass.zitadel.projects.pad = {
+    access = "public";
+    apps.hedgedoc = {
+      redirectUris = [ "https://pad.lassul.us/auth/oauth2/callback" ];
+      # HedgeDoc sends the secret in the token request body.
+      authMethod = "post";
+      envFile = {
+        owner = "hedgedoc";
+        clientIdVariable = "CMD_OAUTH2_CLIENT_ID";
+        clientSecretVariable = "CMD_OAUTH2_CLIENT_SECRET";
+      };
+    };
+  };
   services.hedgedoc.settings.oauth2 = {
-    providerName = "pocket-id";
-    authorizationURL = "https://id.lassul.us/authorize";
-    tokenURL = "https://id.lassul.us/api/oidc/token";
-    userProfileURL = "https://id.lassul.us/api/oidc/userinfo";
+    providerName = "lassul.us ID";
+    authorizationURL = "https://id.lassul.us/oauth/v2/authorize";
+    tokenURL = "https://id.lassul.us/oauth/v2/token";
+    userProfileURL = "https://id.lassul.us/oidc/v1/userinfo";
     scope = "openid email profile";
     userProfileUsernameAttr = "preferred_username";
     userProfileDisplayNameAttr = "name";
     userProfileEmailAttr = "email";
   };
-  clan.core.vars.generators.hedgedoc-pocket-id = {
-    files."pocket-id.env" = { };
-    prompts."pocket-id.env" = {
-      description = ''
-        Register an OIDC client in pocket-id (https://id.lassul.us):
-          name:         HedgeDoc
-          callback URL: https://pad.lassul.us/auth/oauth2/callback
-        Generate a client secret, then paste:
-        CMD_OAUTH2_CLIENT_ID=...
-        CMD_OAUTH2_CLIENT_SECRET=...
-      '';
-      type = "multiline";
-    };
-  };
 
   # GitHub session-secret env comes from module.nix; append both external-auth
   # env files here (systemd merges the EnvironmentFile lists).
-  systemd.services.hedgedoc.serviceConfig.EnvironmentFile = [
-    config.clan.core.vars.generators.hedgedoc-github-auth.files."hedgedoc.env".path
-    config.clan.core.vars.generators.hedgedoc-pocket-id.files."pocket-id.env".path
-  ];
+  systemd.services.hedgedoc = {
+    wants = [ "zitadel-reconcile.service" ];
+    after = [ "zitadel-reconcile.service" ];
+    serviceConfig.EnvironmentFile = [
+      config.clan.core.vars.generators.hedgedoc-github-auth.files."hedgedoc.env".path
+      config.lass.zitadel.projects.pad.apps.hedgedoc.envFile.path
+    ];
+  };
 }
