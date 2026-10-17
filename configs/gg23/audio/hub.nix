@@ -141,7 +141,15 @@ in
     # phones play into the hub: acheron is only an A2DP sink (no headset or
     # LE audio roles), and the received stream targets "hub"
     wireplumber.extraConfig."10-bluetooth-hub" = {
-      "monitor.bluez.properties"."bluez5.roles" = [ "a2dp_sink" ];
+      "monitor.bluez.properties" = {
+        "bluez5.roles" = [ "a2dp_sink" ];
+        # phones in HD audio mode pick other codecs, whose input node fails
+        "bluez5.codecs" = [
+          "sbc"
+          "sbc_xq"
+          "aac"
+        ];
+      };
       "monitor.bluez.rules" = [
         {
           matches = [ { "node.name" = "~bluez_input.*"; } ];
