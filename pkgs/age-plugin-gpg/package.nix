@@ -21,9 +21,8 @@ rustPlatform.buildRustPackage (finalAttrs: {
   # smartcard stub in gpg-agent), e.g. on hosts generating clan vars.
   patches = [ ./keyring-fallback.patch ];
 
-  cargoLock = {
-    lockFile = "${finalAttrs.src}/Cargo.lock";
-  };
+  # not cargoLock.lockFile from src: reading it is import from derivation
+  cargoHash = "sha256-lmy5MCCuYwHThobQhk/mRbWrSyHdwniARNbBfmZaeQk=";
 
   nativeBuildInputs = [
     pkg-config
