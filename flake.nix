@@ -80,6 +80,10 @@
     niks3.inputs.nixpkgs.follows = "nixpkgs";
     niks3.inputs.treefmt-nix.follows = "treefmt-nix";
 
+    byoidc.url = "github:lassulus/byoidc";
+    byoidc.inputs.nixpkgs.follows = "nixpkgs";
+    byoidc.inputs.treefmt-nix.follows = "treefmt-nix";
+
   };
 
   outputs =

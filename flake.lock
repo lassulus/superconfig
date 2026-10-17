@@ -50,6 +50,29 @@
         "type": "github"
       }
     },
+    "byoidc": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ],
+        "treefmt-nix": [
+          "treefmt-nix"
+        ]
+      },
+      "locked": {
+        "lastModified": 1792238066,
+        "narHash": "sha256-eoBatHVF4jH7WNxR4Am7gGMn4e4V1M90O9iQFR5Vbrc=",
+        "owner": "lassulus",
+        "repo": "byoidc",
+        "rev": "ccc087d194318290f9b749b3182c976285e4d758",
+        "type": "github"
+      },
+      "original": {
+        "owner": "lassulus",
+        "repo": "byoidc",
+        "type": "github"
+      }
+    },
     "clan-core": {
       "inputs": {
         "data-mesher": [],
@@ -649,6 +672,7 @@
     },
     "root": {
       "inputs": {
+        "byoidc": "byoidc",
         "clan-core": "clan-core",
         "disko": "disko",
         "hermes-agent": "hermes-agent",

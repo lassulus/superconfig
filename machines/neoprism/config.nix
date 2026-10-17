@@ -103,6 +103,8 @@
 
     # zitadel SSO IdP (id.lassul.us)
     ../../configs/zitadel.nix
+    # "Your own provider" logins for zitadel (byoidc.lassul.us)
+    ../../configs/byoidc.nix
 
     # radicle public seed (radicle.lassul.us)
     ../../configs/radicle.lassul.us.nix
