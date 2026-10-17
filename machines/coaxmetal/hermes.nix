@@ -368,6 +368,14 @@ in
       # deps are present (they are) and keeps the crypto store under
       # /var/lib/hermes/.hermes/platforms/matrix/store/.
       MATRIX_E2EE_MODE = "optional";
+      # Clients now exclude devices their owner did not cross-sign (MSC4153,
+      # Element/SchildiChat Next): they show such a device's messages as
+      # undecryptable and withhold their own room keys from it. With this set
+      # the adapter bootstraps cross-signing once (no master key on the
+      # account yet) and signs its device; the key is written here 0600 and
+      # never overwritten. Move it into pass afterwards; it is needed only to
+      # cross-sign a new device id (MATRIX_RECOVERY_KEY).
+      MATRIX_RECOVERY_KEY_OUTPUT_FILE = "/var/lib/hermes/.hermes/matrix-recovery-key";
       # Optional defense-in-depth (confine to specific rooms; DMs are exempt):
       # MATRIX_ALLOWED_ROOMS = "!yourRoomId:lassul.us";
 
