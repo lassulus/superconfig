@@ -7,25 +7,10 @@ use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{symlink, MetadataExt, PermissionsExt};
 use std::path::Path;
 
+use harmonia_file_core::{FileSystemObject, FileTree};
+use harmonia_utils_base_encoding::base32;
+use serde::Deserialize;
 use sha2::{Digest, Sha256};
-
-const NIX32: &[u8] = b"0123456789abcdfghijklmnpqrsvwxyz";
-
-pub fn nix32(b: &[u8]) -> String {
-    let n = (b.len() * 8 - 1) / 5 + 1;
-    (0..n)
-        .rev()
-        .map(|i| {
-            let bit = i * 5;
-            let (j, k) = (bit / 8, bit % 8);
-            let mut c = (b[j] as u32) >> k;
-            if j + 1 < b.len() {
-                c |= (b[j + 1] as u32) << (8 - k);
-            }
-            NIX32[(c & 0x1f) as usize] as char
-        })
-        .collect()
-}
 
 /// Does `digest` match a narinfo NarHash (`sha256:<nix32>` or base16)?
 pub fn hash_matches(expected: &str, digest: &[u8]) -> bool {
@@ -33,7 +18,7 @@ pub fn hash_matches(expected: &str, digest: &[u8]) -> bool {
         return false;
     };
     let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
-    h == nix32(digest) || h == hex
+    h == base32::encode_string(digest) || h == hex
 }
 
 /// The metadata of a store path, as in the caches' `.ls` listings.
@@ -47,29 +32,31 @@ pub enum Tree {
 impl Tree {
     /// Parse a `.ls` listing (`{"version": 1, "root": {...}}`).
     pub fn from_listing(body: &[u8]) -> io::Result<Tree> {
-        let v: serde_json::Value = serde_json::from_slice(body).map_err(io::Error::other)?;
-        Tree::from_json(&v["root"])
-    }
-
-    fn from_json(v: &serde_json::Value) -> io::Result<Tree> {
-        let bad = || io::Error::other(format!("bad listing node {v}"));
-        Ok(match v["type"].as_str().ok_or_else(bad)? {
-            "directory" => {
-                let mut m = BTreeMap::new();
-                if let Some(e) = v["entries"].as_object() {
-                    for (k, c) in e {
-                        m.insert(k.clone(), Tree::from_json(c)?);
-                    }
-                }
-                Tree::Dir(m)
+        #[derive(Deserialize)]
+        struct Size {
+            size: u64,
+        }
+        #[derive(Deserialize)]
+        struct Listing {
+            root: FileTree<Size>,
+        }
+        fn tree(FileTree(t): FileTree<Size>) -> Tree {
+            match t {
+                FileSystemObject::Directory(d) => Tree::Dir(
+                    d.entries
+                        .into_iter()
+                        .map(|(k, c)| (k, tree(*c)))
+                        .collect(),
+                ),
+                FileSystemObject::Regular(r) => Tree::File {
+                    size: r.contents.size,
+                    exec: r.executable,
+                },
+                FileSystemObject::Symlink(s) => Tree::Symlink(s.target),
             }
-            "regular" => Tree::File {
-                size: v["size"].as_u64().unwrap_or(0),
-                exec: v["executable"].as_bool().unwrap_or(false),
-            },
-            "symlink" => Tree::Symlink(v["target"].as_str().ok_or_else(bad)?.to_string()),
-            _ => return Err(bad()),
-        })
+        }
+        let l: Listing = serde_json::from_slice(body).map_err(io::Error::other)?;
+        Ok(tree(l.root))
     }
 
     /// Listing of an unpacked store path (for paths without `.ls`).
@@ -329,13 +316,21 @@ mod tests {
     }
 
     #[test]
-    fn nix32_matches_nix() {
+    fn hash_matches_nix() {
         // nix hash convert --to nix32 sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=
         let d = Sha256::digest(b"");
-        assert_eq!(
-            nix32(&d),
-            "0mdqa9w1p6cmli6976v4wi0sw9r4p5prkj7lzfd1877wk11c9c73"
-        );
+        assert!(hash_matches(
+            "sha256:0mdqa9w1p6cmli6976v4wi0sw9r4p5prkj7lzfd1877wk11c9c73",
+            &d
+        ));
+        assert!(hash_matches(
+            "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            &d
+        ));
+        assert!(!hash_matches(
+            "0mdqa9w1p6cmli6976v4wi0sw9r4p5prkj7lzfd1877wk11c9c73",
+            &d
+        ));
     }
 
     #[test]
