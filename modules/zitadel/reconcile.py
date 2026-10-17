@@ -88,9 +88,13 @@ providers = search("/admin/v1/idps/templates/_search")
 linked = {
     i["idpId"] for i in search("/admin/v1/policies/login/idps/_search")
 }
-for name, idp in config["idps"].items():
-    with open(idp["clientIdFile"]) as f:
-        client_id = f.read().strip()
+IDP_PATHS = {"github": "github", "google": "google", "oidc": "generic_oidc"}
+for idp in config["idps"].values():
+    name = idp["name"]
+    client_id = idp["clientId"]
+    if client_id is None:
+        with open(idp["clientIdFile"]) as f:
+            client_id = f.read().strip()
     with open(idp["clientSecretFile"]) as f:
         client_secret = f.read().strip()
     if not client_id or not client_secret:
@@ -101,18 +105,22 @@ for name, idp in config["idps"].items():
         "clientId": client_id,
         "clientSecret": client_secret,
         "scopes": idp["scopes"],
-        "providerOptions": {
-            "isLinkingAllowed": True,
-            "isCreationAllowed": True,
-            "isAutoUpdate": True,
-        },
+        "providerOptions": idp["providerOptions"],
     }
+    if idp["type"] == "oidc":
+        body |= {
+            "issuer": idp["issuer"],
+            # user info from the ID token, without a userinfo request
+            "isIdTokenMapping": True,
+            "usePkce": True,
+        }
+    path = f"/admin/v1/idps/{IDP_PATHS[idp['type']]}"
     existing = by_name(providers, name)
     if existing:
         idp_id = existing["id"]
-        call("PUT", f"/admin/v1/idps/{idp['type']}/{idp_id}", body)
+        call("PUT", f"{path}/{idp_id}", body)
     else:
-        idp_id = call("POST", f"/admin/v1/idps/{idp['type']}", body)["id"]
+        idp_id = call("POST", path, body)["id"]
         print(f"idp {name}: created")
     if idp_id not in linked:
         call("POST", "/admin/v1/policies/login/idps", {"idpId": idp_id})

@@ -45,24 +45,63 @@ in
     idps = lib.mkOption {
       default = { };
       description = ''
-        External identity providers, by display name, added to the login
-        policy. Users may log in, register and link accounts with them. An
-        IdP whose credential files are empty is skipped.
+        External identity providers, added to the login policy. An IdP whose
+        client id or secret is empty is skipped.
       '';
       type = lib.types.attrsOf (
-        lib.types.submodule {
-          options = {
-            type = lib.mkOption {
-              type = lib.types.enum [
-                "github"
-                "google"
-              ];
+        lib.types.submodule (
+          { name, ... }:
+          {
+            options = {
+              type = lib.mkOption {
+                type = lib.types.enum [
+                  "github"
+                  "google"
+                  "oidc"
+                ];
+              };
+              name = lib.mkOption {
+                type = lib.types.str;
+                default = name;
+                description = "Display name on the login page; the IdP is found by it.";
+              };
+              issuer = lib.mkOption {
+                type = lib.types.nullOr lib.types.str;
+                default = null;
+                description = "Issuer of a generic OIDC IdP (type = \"oidc\").";
+              };
+              clientId = lib.mkOption {
+                type = lib.types.nullOr lib.types.str;
+                default = null;
+              };
+              clientIdFile = lib.mkOption {
+                type = lib.types.nullOr lib.types.str;
+                default = null;
+              };
+              clientSecretFile = lib.mkOption { type = lib.types.str; };
+              scopes = lib.mkOption {
+                type = lib.types.listOf lib.types.str;
+                default = [
+                  "openid"
+                  "profile"
+                  "email"
+                ];
+              };
+              providerOptions = lib.mkOption {
+                type = lib.types.attrsOf lib.types.bool;
+                default = {
+                  isLinkingAllowed = true;
+                  isCreationAllowed = true;
+                  isAutoUpdate = true;
+                };
+                description = ''
+                  Options of the IdP, as in Zitadel's admin API
+                  (zitadel.idp.v1.Options).
+                '';
+              };
             };
-            clientIdFile = lib.mkOption { type = lib.types.str; };
-            clientSecretFile = lib.mkOption { type = lib.types.str; };
-            scopes = lib.mkOption { type = lib.types.listOf lib.types.str; };
-          };
-        }
+          }
+        )
       );
     };
 
@@ -154,10 +193,19 @@ in
   };
 
   config = lib.mkIf zitadel.enable {
-    assertions = lib.mapAttrsToList (name: project: {
-      assertion = project.users == [ ] || project.access == "declarative";
-      message = "lass.zitadel.projects.${name}.users needs access = \"declarative\"";
-    }) cfg.projects;
+    assertions =
+      lib.mapAttrsToList (name: project: {
+        assertion = project.users == [ ] || project.access == "declarative";
+        message = "lass.zitadel.projects.${name}.users needs access = \"declarative\"";
+      }) cfg.projects
+      ++ lib.mapAttrsToList (name: idp: {
+        assertion = (idp.clientId == null) != (idp.clientIdFile == null);
+        message = "lass.zitadel.idps.${name} needs exactly one of clientId and clientIdFile";
+      }) cfg.idps
+      ++ lib.mapAttrsToList (name: idp: {
+        assertion = (idp.type == "oidc") == (idp.issuer != null);
+        message = "lass.zitadel.idps.${name}.issuer is needed for, and only for, type = \"oidc\"";
+      }) cfg.idps;
 
     services.zitadel.steps.FirstInstance = {
       PatPath = patFile;
