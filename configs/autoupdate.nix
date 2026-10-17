@@ -37,7 +37,7 @@ let
       done
       if [ "$deployed" -eq 0 ]; then deployed=$(stat -c %Y /run/current-system); fi
       if ! meta=$(nix flake metadata --refresh --json ${lib.escapeShellArg flake}); then
-        echo "autoupgrade: cannot reach ${flake}; letting nixos-upgrade report the error"
+        echo "autoupgrade: nix flake metadata ${flake} failed; upgrading unpinned and letting nixos-upgrade report any error"
         exit 0
       fi
       remote=$(jq -r '.lastModified // 0' <<<"$meta")
@@ -54,10 +54,15 @@ in
   system.autoUpgrade = {
     enable = true;
     # Goes into the nixos-upgrade script unquoted, so the shell expands the
-    # pinned revision. Without a rev file (guard could not reach the flake)
+    # pinned revision. Without a rev file (guard could not read the flake)
     # the ref stays unpinned and the recorded revision becomes unknown.
     flake = "${flake}/$(cat ${revFile} 2>/dev/null)";
     randomizedDelaySec = "6h";
+  };
+
+  # Containers get the host's nix db read-only; go through the daemon socket.
+  systemd.services.nixos-upgrade.environment = lib.mkIf config.boot.isContainer {
+    NIX_REMOTE = "daemon";
   };
 
   systemd.services.nixos-upgrade.serviceConfig = {
