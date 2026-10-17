@@ -60,11 +60,14 @@ in
   # takes the deploying ssh session over <machine>.r with it.
   systemd.services."tinc.retiolum".stopIfChanged = false;
 
-  # debugLevel 0 is still Info, and reconnect/MTU/path-revalidation chatter
-  # at Info floods journald; keep Warn and Error only. Target-scoped on
+  # Warn and Error for every tinc* crate, plus Info for the per-event
+  # targets: reachability (graph), meta connections (conn) and UDP path,
+  # MTU and key-exchange changes (net). Their Debug/Trace and the other
+  # targets' Info (autoconnect, auth, proto) stay off. Target-scoped on
   # purpose: `-d 0` sets the global directive and replaces a bare
   # RUST_LOG=warn, while `tinc` prefix-matches every tinc* crate's target.
-  systemd.services."tinc.retiolum".environment.RUST_LOG = "tinc=warn";
+  systemd.services."tinc.retiolum".environment.RUST_LOG =
+    "tinc=warn,tincd::graph=info,tincd::conn=info,tincd::net=info";
 
   # Copy keys into the tinc config directory before tinc starts.
   # Running before nixpkgs' preStart ensures key generation is skipped.
