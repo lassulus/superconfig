@@ -4,6 +4,7 @@
 }:
 
 {
+  environment.etc."ci-lazy-test".text = "lazy-store FUSE test 1792260662";
   imports = [
     ../../configs
     ../../configs/ssh-redirect.nix
