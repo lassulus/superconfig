@@ -131,7 +131,8 @@ jobs:
         run: |
           echo "not cached: $(jq -r '[.include[].name] | join(" ")' <<<"$MATRIX")" |
             tee -a "$GITHUB_STEP_SUMMARY"
-      # the derivations the shared job builds, none for a single machine
+      # the derivations the shared job builds and per machine the paths its
+      # lazy store registers
       - id: plan
         if: steps.matrix.outputs.any-jobs == 'true'
         env:
@@ -140,26 +141,24 @@ jobs:
           matrix=$RUNNER_TEMP/matrix.json
           plans=$RUNNER_TEMP/plans
           printf '%s' "$MATRIX" > "$matrix"
-          mkdir -p "$plans"
-          : > "$plans/shared.drvs"
-          if [ "$(jq '.include | length' "$matrix")" -ge 2 ]; then
-            .github/ci-shared.sh "$matrix" "$plans"
-            {
-              for name in $(jq -r '.include[].name' "$matrix"); do
-                echo "- $name: $(wc -l < "$plans/$name.drvs") derivations to build"
-              done
-              echo "- shared (needed by >= 2 machines): $(wc -l < "$plans/shared.drvs")"
-              sed -E 's|^/nix/store/[^-]+-(.*)\.drv$|    \1|' "$plans/shared.drvs"
-            } | tee -a "$GITHUB_STEP_SUMMARY"
-          fi
+          .github/ci-shared.sh "$matrix" "$plans"
+          {
+            for name in $(jq -r '.include[].name' "$matrix"); do
+              echo "- $name: $(wc -l < "$plans/$name.drvs") derivations to build"
+            done
+            echo "- shared (needed by >= 2 machines): $(wc -l < "$plans/shared.drvs")"
+            sed -E 's|^/nix/store/[^-]+-(.*)\.drv$|    \1|' "$plans/shared.drvs"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
           if [ -s "$plans/shared.drvs" ]; then
             echo "shared=true" >> "$GITHUB_OUTPUT"
           fi
-      - if: steps.plan.outputs.shared == 'true'
+      - if: steps.matrix.outputs.any-jobs == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: plans
-          path: ${{ runner.temp }}/plans/shared.drvs
+          path: |
+            ${{ runner.temp }}/plans/shared.drvs
+            ${{ runner.temp }}/plans/*.fetch
 
   shared:
     needs: eval
@@ -241,14 +240,24 @@ jobs:
         run: |
           nix-store --realise "$NIKS3"
           echo "$NIKS3/bin" >> "$GITHUB_PATH"
+      - uses: actions/download-artifact@v4
+        with:
+          name: plans
+          path: ${{ runner.temp }}/plans
       - name: build ${{ matrix.name }}
         env:
+          NAME: ${{ matrix.name }}
           INSTALLABLES: ${{ matrix.installables }}
           LAZY_STORE: ${{ needs.eval.outputs.lazy-store }}
         run: |
           read -ra installables <<<"$INSTALLABLES"
+          # the closure needs only the caches, so it runs while the drvs are
+          # fetched
+          .github/lazy-store.sh closure "$RUNNER_TEMP/plans/$NAME.fetch" &
+          closure=$!
           "$HESTIA_BIN" prefetch "${installables[@]}"
-          .github/lazy-store.sh "${installables[@]}"
+          wait "$closure"
+          .github/lazy-store.sh mount
           .github/ci-build.sh "${installables[@]}"
       - name: lazy store log
         if: always()
