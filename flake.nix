@@ -39,7 +39,7 @@
 
     # Only for darwinModules.tincr (launchd plumbing); the package comes
     # from pkgs/tincr, which pins the same fork branch.
-    tincr.url = "github:Lassulus/tincr/lassulus/fixes";
+    tincr.url = "github:Lassulus/tincr/lassulus/fixes-rebased";
     tincr.inputs.nixpkgs.follows = "nixpkgs";
     tincr.inputs.treefmt-nix.follows = "treefmt-nix";
 
