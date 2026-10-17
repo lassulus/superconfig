@@ -20,10 +20,15 @@ nothing.
 The only mail a stranger can trigger goes to the owner. Guests receive mail
 only after the owner acted on their request, so the form cannot be abused to
 send mail to arbitrary addresses.
+
+With --busy-token-file, /busy/<token>.ics serves the same busy time (calendar
+plus held requests) as an iCalendar feed of merged intervals that carry
+nothing but their times.
 """
 
 import argparse
 import base64
+import hashlib
 import json
 import logging
 import os
@@ -61,6 +66,9 @@ EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{20,64}$")
 MAX_BODY = 16 * 1024
 LIMITS = {"name": 100, "email": 254, "note": 2000, "message": 2000}
+# The busy feed covers [now - BUSY_PAST, now + BUSY_AHEAD).
+BUSY_PAST = timedelta(days=7)
+BUSY_AHEAD = timedelta(days=90)
 
 DAV = "DAV:"
 CALDAV = "urn:ietf:params:xml:ns:caldav"
@@ -517,6 +525,41 @@ class App:
         busy += self.store.holds(*window)
         return [s for s in slots if not overlaps(s - pad, s + length + pad, busy)]
 
+    def busy_feed(self) -> bytes:
+        """Busy time around now as a VCALENDAR without any event details.
+
+        Overlapping and adjacent intervals are merged; the UID is a hash of
+        the interval's times.
+        """
+        now = now_utc()
+        start, end = now - BUSY_PAST, now + BUSY_AHEAD
+        try:
+            busy = self.cal.busy(start, end)
+        except CalDAVError as e:
+            log.error("cannot read calendar: %s", e)
+            raise Unavailable from e
+        busy += self.store.holds(start, end)
+        merged: list[list[datetime]] = []
+        for a, b in sorted(busy):
+            if merged and a <= merged[-1][1]:
+                merged[-1][1] = max(merged[-1][1], b)
+            elif a < b:
+                merged.append([a, b])
+        cal = icalendar.Calendar()
+        cal.add("prodid", "-//lassul.us//book busy//EN")
+        cal.add("version", "2.0")
+        for a, b in merged:
+            ev = icalendar.Event()
+            digest = hashlib.sha256(f"{epoch(a)}-{epoch(b)}".encode()).hexdigest()
+            ev.add("uid", f"{digest[:32]}@busy")
+            ev.add("dtstamp", now)
+            ev.add("dtstart", a)
+            ev.add("dtend", b)
+            ev.add("summary", "Busy")
+            ev.add("transp", "OPAQUE")
+            cal.add_component(ev)
+        return cal.to_ical()
+
     # mail
 
     def send(
@@ -802,6 +845,7 @@ class HTTPError(Exception):
 
 class Handler(BaseHTTPRequestHandler):
     app: App
+    busy_token: str | None = None
     server_version = "book"
     sys_version = ""
 
@@ -859,6 +903,20 @@ class Handler(BaseHTTPRequestHandler):
             if not parts:
                 return self.index() if method == "GET" else self.not_found()
             head, rest = parts[0], parts[1:]
+            if head == "busy":
+                if (
+                    method == "GET"
+                    and self.busy_token
+                    and len(rest) == 1
+                    and secrets.compare_digest(rest[0].encode(), f"{self.busy_token}.ics".encode())
+                ):
+                    return self.respond(
+                        HTTPStatus.OK,
+                        self.app.busy_feed(),
+                        "text/calendar; charset=utf-8",
+                        {"Cache-Control": "no-store"},
+                    )
+                return self.not_found()
             if head in ("a", "r") and rest and TOKEN_RE.match(rest[0]):
                 column = "admin_token" if head == "a" else "guest_token"
                 b = self.app.store.by_token(column, rest[0])
@@ -1062,6 +1120,7 @@ def main() -> None:
     parser.add_argument("--caldav-password-file", required=True, help="file holding the CalDAV password")
     parser.add_argument("--templates", default=os.environ.get("BOOK_TEMPLATES"), required="BOOK_TEMPLATES" not in os.environ)
     parser.add_argument("--static", default=os.environ.get("BOOK_STATIC"), required="BOOK_STATIC" not in os.environ)
+    parser.add_argument("--busy-token-file", help="file holding the secret of the busy feed /busy/<token>.ics")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
@@ -1088,6 +1147,8 @@ def main() -> None:
 
     threading.Thread(target=sweeper, daemon=True).start()
     Handler.app = app
+    if args.busy_token_file:
+        Handler.busy_token = Path(args.busy_token_file).read_text().strip()
     server = ThreadingHTTPServer((cfg.listen_host, cfg.listen_port), Handler)
     server.daemon_threads = True
     log.info("listening on %s:%d", cfg.listen_host, cfg.listen_port)
