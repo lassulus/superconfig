@@ -17,7 +17,7 @@ let
       domain = zitadel.settings.ExternalDomain;
       stateDir = appsDir;
       inherit patFile;
-      inherit (cfg) loginPolicy idps;
+      inherit (cfg) loginPolicy idps smtp;
       projects = lib.mapAttrs (_: project: {
         inherit (project) access users;
         apps = lib.mapAttrs (_: app: {
@@ -39,6 +39,27 @@ in
       description = ''
         Fields of the instance's default login policy, as in Zitadel's admin
         API (PUT /admin/v1/policies/login). Unlisted fields keep their value.
+      '';
+    };
+
+    smtp = lib.mkOption {
+      type = lib.types.nullOr (lib.types.attrsOf lib.types.anything);
+      default = null;
+      example = {
+        senderAddress = "id@example.org";
+        senderName = "example.org ID";
+        host = "mail.example.org:465";
+        tls = true;
+        user = "id@example.org";
+        passwordFile = "/run/secrets/id-mail-password";
+      };
+      description = ''
+        SMTP provider for the instance's emails (verification codes,
+        password resets), as in Zitadel's admin API (POST /admin/v1/smtp),
+        with the password read from passwordFile (Zitadel ignores providers
+        without one). It is created when missing, updated when it differs
+        and activated. Without one, users whose email address is not
+        verified cannot finish logging in.
       '';
     };
 
