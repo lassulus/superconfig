@@ -101,8 +101,8 @@
     # n2n supernode (n2n.lassul.us)
     ../../configs/n2n-supernode.nix
 
-    # pocket-id SSO IdP (id.lassul.us)
-    ../../configs/pocket-id.nix
+    # zitadel SSO IdP (id.lassul.us)
+    ../../configs/zitadel.nix
 
     # radicle public seed (radicle.lassul.us)
     ../../configs/radicle.lassul.us.nix
