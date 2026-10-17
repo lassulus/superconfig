@@ -42,8 +42,8 @@ in
 {
   # Zitadel: identity provider for lassul.us services (OIDC). Anyone can
   # register; users sign in with a passkey or an external login (GitHub,
-  # Google, other OIDC) linked to their account. The login policy, the GitHub
-  # and Google logins and the services' projects and OIDC apps come from
+  # Google, their own OpenID provider via byoidc) linked to their account. The
+  # login policy, these logins and the services' projects and OIDC apps come from
   # lass.zitadel (modules/zitadel); the zitadel-reconcile service applies
   # them. Further IdPs and the grants of "managed" projects are done in the
   # console at https://id.lassul.us/ui/console.
@@ -144,6 +144,22 @@ in
         "profile"
         "email"
       ];
+    };
+    # byoidc (configs/byoidc.nix): sign in with any OpenID provider. Anyone
+    # can run one that claims any email address, so these accounts are never
+    # linked to existing ones.
+    byoidc = {
+      type = "oidc";
+      name = "Your own provider";
+      issuer = "https://byoidc.lassul.us";
+      clientId = "zitadel";
+      clientSecretFile = config.clan.core.vars.generators.byoidc.files."client-secret".path;
+      providerOptions = {
+        isLinkingAllowed = false;
+        isCreationAllowed = true;
+        isAutoCreation = true;
+        isAutoUpdate = true;
+      };
     };
   };
   clan.core.vars.generators.zitadel-github =
