@@ -315,6 +315,7 @@ class Call {
       this.answerApproval(id);
       return;
     }
+    const replace = Boolean(this.delegation);
     if (this.delegation) this.delegation.controller.abort();
     const controller = new AbortController();
     const delegation = { id, controller };
@@ -322,7 +323,8 @@ class Call {
     setStatus("Hermes is working…");
 
     await new Promise((resolve) => setTimeout(resolve, DELEGATION_SETTLE_MS));
-    if (this.delegation !== delegation) return;
+    // A hang-up meanwhile sent these lines along itself.
+    if (this.delegation !== delegation || this.closed) return;
     const fresh = state.lines
       .slice(state.delegated)
       .filter((line) => line.speaker !== "hermes" && line.speaker !== "error");
@@ -342,7 +344,11 @@ class Call {
       const response = await api("/delegate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ hermes_session: state.hermesSession, lines }),
+        body: JSON.stringify({
+          hermes_session: state.hermesSession,
+          lines,
+          replace,
+        }),
         signal: controller.signal,
       });
       if (!response.ok)
@@ -360,8 +366,11 @@ class Call {
         buffered += value;
         let newline;
         while ((newline = buffered.indexOf("\n")) >= 0) {
-          const item = JSON.parse(buffered.slice(0, newline));
+          const line = buffered.slice(0, newline);
           buffered = buffered.slice(newline + 1);
+          // Blank lines are the server's keepalives.
+          if (!line.trim()) continue;
+          const item = JSON.parse(line);
           this.lastActivity = Date.now();
           if (item.type === "approval") {
             this.askApproval(id, item);
@@ -422,11 +431,7 @@ class Call {
   }
 
   askApproval(id, item) {
-    this.approval = {
-      delegationId: id,
-      runId: item.run_id,
-      requestId: item.request_id,
-    };
+    this.approval = { delegationId: id, code: item.code };
     const what = item.description || "run a command";
     setStatus("Hermes needs your approval");
     addLine(
@@ -484,11 +489,7 @@ class Call {
       const response = await api("/approve", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          run_id: approval.runId,
-          request_id: approval.requestId,
-          choice,
-        }),
+        body: JSON.stringify({ code: approval.code, choice }),
       });
       const result = await response.json();
       ok = response.ok;
@@ -530,13 +531,33 @@ class Call {
     this.closeTimer = setTimeout(() => this.finish("close timed out"), 15000);
   }
 
+  // Tell the server the call is over, with what the user said since the last
+  // delegation: a request spoken right before hanging up still reaches
+  // Hermes. keepalive lets the request outlive the page.
+  hangUp() {
+    const lines = state.lines
+      .slice(state.delegated)
+      .filter(
+        (line) => line.speaker === "user" || line.speaker === "assistant",
+      );
+    state.delegated = state.lines.length;
+    saveState();
+    api("/hangup", {
+      method: "POST",
+      keepalive: true,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hermes_session: state.hermesSession, lines }),
+    }).catch(() => {});
+  }
+
   finish(reason) {
     if (this.closed) return;
     this.closed = true;
     clearTimeout(this.closeTimer);
     clearInterval(this.idleTimer);
     clearInterval(this.probe);
-    // Only the stream is dropped; the Hermes run keeps going on the server.
+    this.hangUp();
+    // Only the stream is dropped; the server keeps following the Hermes run.
     if (this.delegation) this.delegation.controller.abort();
     this.audioContext?.close().catch(() => {});
     this.mic?.getTracks().forEach((track) => track.stop());
@@ -577,6 +598,8 @@ talk.addEventListener("click", async () => {
     call.finish("failed to start");
   }
 });
+
+window.addEventListener("pagehide", () => call?.finish("page closed"));
 
 document.getElementById("new").addEventListener("click", () => {
   if (call) call.close();

@@ -8,10 +8,16 @@ one Hermes session id per conversation), follows the run's event stream and
 streams the reply back. The page then gives the answer to the voice model,
 which says it aloud.
 
-A run lives independently of any HTTP connection, so a turn survives the page
-going away. A newer delegation for the same conversation stops the previous
-run (the user corrected or replaced the request); hanging up just ends the
-call, and the run finishes whatever the user asked for.
+A run lives independently of any HTTP connection, and this server follows
+every run it started to its end, whether or not a page is still listening. A
+newer delegation within the same call stops the previous run (the user
+corrected or replaced the request); hanging up just ends the call, and the run
+finishes whatever the user asked for. On hang-up the page sends what the user
+said since the last delegation, so a request spoken right before hanging up
+still reaches Hermes. When a run asks for approval while no page is listening,
+the question goes to the owner's Matrix DM (the gateway's Matrix home room,
+through its webhook platform), and the hermes-voice plugin's
+`/assist approve|deny <code>` command answers it.
 
 This server exists so neither secret reaches the browser: it exchanges the
 page's SDP offer for a Live session with the OpenAI key, and it calls Hermes
@@ -24,11 +30,13 @@ Vendor contract: https://developers.openai.com/api/docs/guides/live-delegation
 """
 
 import argparse
+import hashlib
 import hmac
 import json
 import logging
 import os
 import re
+import secrets
 import socket
 import threading
 import time
@@ -88,14 +96,15 @@ MAX_BODY = 256 * 1024
 # The run event stream sends a keepalive every 10s, so a read that stalls this
 # long means the API server is gone.
 EVENTS_READ_TIMEOUT = 60
+# Same cadence towards the page: a write is the only way to notice that a page
+# went away while a run is quiet (e.g. waiting for an approval).
+PAGE_KEEPALIVE_SECONDS = 10
 SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
-# Hermes run ids are "run_<hex>", approval request ids hex.
-RUN_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,256}$")
 
 # Frontend persona, adapted from Hermes's own (tools/voice_live.py): role,
 # style and a labelled delegation policy. The backend carries the real
 # instructions, tools and memory.
-PERSONA = """You are Hermes, lass's warm, upbeat and genuinely helpful voice assistant. Sound friendly and glad to help: positive and encouraging, never curt, annoyed, bored or sarcastic, even when delivering bad news or when the user is short with you. Talk fast: speak at a rapid, energetic pace, like someone who talks quickly by nature, with no slow drawn-out words and no long pauses between sentences. Keep replies short; a brief warm acknowledgment before the facts is good.
+PERSONA = """You are Hermes, the user's warm, upbeat and genuinely helpful voice assistant. Sound friendly and glad to help: positive and encouraging, never curt, annoyed, bored or sarcastic, even when delivering bad news or when the user is short with you. Talk fast: speak at a rapid, energetic pace, like someone who talks quickly by nature, with no slow drawn-out words and no long pauses between sentences. Keep replies short; a brief warm acknowledgment before the facts is good.
 
 Backchannel policy: Use moderate backchannels. Acknowledge naturally without competing with the main response.
 
@@ -103,7 +112,7 @@ Interruption policy: Stop speaking when the user interrupts. Listen to what they
 
 Delegation policy:
 Backend tools:
-- Hermes agent: a full AI agent with tools. It can run commands on lass's machines, read and edit files, manage the calendar, browse the web, search, and remember things across sessions. It is the one who actually does work and knows facts.
+- Hermes agent: a full AI agent with tools. It can run commands on the user's machines, read and edit files, manage the calendar, write and read messages in the user's Matrix chat, browse the web, search, and remember things across sessions. It is the one who actually does work and knows facts.
 
 Delegate to the backend when:
 - The user asks a question that needs facts, current information, or careful reasoning.
@@ -121,7 +130,11 @@ Hermes sometimes needs the user's approval before it runs a command. When you ar
 
 # Ephemeral system prompt for every delegated Hermes turn (Hermes layers system
 # messages on top of its core prompt without storing them).
-BACKEND_NOTE = """This turn is a delegation from a live spoken conversation. The user message is a speech transcript: it may contain mis-hearings, phonetic spellings of technical terms, hesitations and later corrections; use the latest intent. Your reply will be spoken aloud by a friendly voice model that paraphrases it: answer in warm, plain conversational sentences, keep it short (a few sentences unless the user asked for detail), no markdown, no lists, no code blocks, no URLs read out character by character. Do the work with your tools as usual; only the final facts need to be spoken. Report an action as done only after it actually succeeded."""
+BACKEND_NOTE = """This turn is a delegation from a live spoken conversation. The user message is a speech transcript: it may contain mis-hearings, phonetic spellings of technical terms, hesitations and later corrections; use the latest intent. Your reply will be spoken aloud by a friendly voice model that paraphrases it: answer in warm, plain conversational sentences, keep it short (a few sentences unless the user asked for detail), no markdown, no lists, no code blocks, no URLs read out character by character. Do the work with your tools as usual; only the final facts need to be spoken. Report an action as done only after it actually succeeded. The user may hang up before your reply is spoken: when they asked for a result or a question somewhere else, such as their Matrix chat (matrix_dm_send), send it there yourself."""
+
+# Instead of BACKEND_NOTE for what the user said right before hanging up, when
+# the voice model had not delegated it yet.
+HUNG_UP_NOTE = """This turn comes from a live spoken conversation the user has already hung up. The user message is a speech transcript of what they said since the last request: it may contain mis-hearings, phonetic spellings of technical terms, hesitations and later corrections; use the latest intent. Nobody hears your reply. If the transcript asks for something, do it with your tools; when the user asked for a result somewhere, such as their Matrix chat (matrix_dm_send), send it there, and if you need something from them, ask in their Matrix chat. If it only says goodbye or thanks, or repeats a request already handled in this conversation, do nothing and reply with a short note saying so."""
 
 
 def glossary_text(glossary):
@@ -138,7 +151,8 @@ def glossary_text(glossary):
 
 
 class Config:
-    def __init__(self, raw, openai_key, hermes_url, hermes_key):
+    def __init__(self, raw, openai_key, hermes_url, hermes_key, matrix_webhook=None):
+        self.matrix_webhook = matrix_webhook
         self.model = raw.get("model", DEFAULT_MODEL)
         self.voice = raw.get("voice", DEFAULT_VOICE)
         self.idle_seconds = int(raw.get("idle_seconds", DEFAULT_IDLE_SECONDS))
@@ -159,11 +173,12 @@ class Config:
             parts.append(self.extra_instructions)
         return "\n\n".join(parts)
 
-    def backend_note(self):
+    def backend_note(self, hung_up=False):
+        note = HUNG_UP_NOTE if hung_up else BACKEND_NOTE
         if not self.glossary:
-            return BACKEND_NOTE
+            return note
         return (
-            BACKEND_NOTE
+            note
             + "\n\nTerms the transcript may contain as phonetic misspellings:\n"
             + glossary_text(self.glossary)
         )
@@ -285,8 +300,9 @@ def hermes_call(config, method, path, payload=None):
         return json.load(response)
 
 
-def hermes_start_run(config, hermes_session, lines):
-    """Start one Hermes turn as a run; return its run id."""
+def hermes_start_run(config, hermes_session, lines, hung_up=False):
+    """Start one Hermes turn as a run; return its run id. Hermes queues it
+    behind a run of the same session that is still going."""
     # A plain string input: Hermes then loads the history of session_id itself.
     return hermes_call(
         config,
@@ -294,7 +310,7 @@ def hermes_start_run(config, hermes_session, lines):
         "/v1/runs",
         {
             "input": transcript_message(lines),
-            "instructions": config.backend_note(),
+            "instructions": config.backend_note(hung_up),
             "session_id": hermes_session,
         },
     )["run_id"]
@@ -316,12 +332,15 @@ def hermes_follow_run(config, run_id):
                 yield {"type": "tool", "status": status, "label": payload.get("tool")}
             elif event == "approval.request":
                 # The run blocks until POST /v1/runs/{run_id}/approval answers.
+                # Under the gateway's session authority the request is named
+                # prompt_id and the answer must carry its execution_generation.
                 yield {
                     "type": "approval",
-                    "run_id": run_id,
-                    "request_id": payload.get("request_id"),
+                    "request_id": payload.get("request_id") or payload.get("prompt_id"),
+                    "execution_generation": payload.get("execution_generation"),
                     "command": payload.get("command"),
                     "description": payload.get("description"),
+                    "timeout_s": payload.get("timeout_s"),
                 }
             elif event == "run.completed":
                 # Only the final answer: message.delta also streams commentary.
@@ -336,25 +355,174 @@ def hermes_follow_run(config, run_id):
     yield {"type": "error", "message": "Hermes event stream ended early"}
 
 
-def hermes_approve(config, run_id, request_id, choice):
+def hermes_approve(config, run_id, approval, choice):
     """Answer a pending approval of a Hermes run."""
     answer = {"choice": choice}
-    if request_id:
-        answer["request_id"] = request_id
+    if approval.get("request_id"):
+        answer["request_id"] = approval["request_id"]
+    if approval.get("execution_generation") is not None:
+        answer["execution_generation"] = approval["execution_generation"]
     return hermes_call(config, "POST", f"/v1/runs/{run_id}/approval", answer)
 
 
-# The active run per Hermes session, so a newer delegation can stop it.
+def notify_matrix(config, text):
+    """Post text to the owner's Matrix DM (the gateway's Matrix home room)
+    through the gateway's webhook platform (a deliver_only route, signed with
+    the API server key)."""
+    body = json.dumps({"text": text}).encode()
+    stamp = str(int(time.time()))
+    signature = hmac.new(
+        config.hermes_key.encode(), stamp.encode() + b"." + body, hashlib.sha256
+    ).hexdigest()
+    request = urllib.request.Request(
+        config.matrix_webhook,
+        data=body,
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "X-Webhook-Timestamp": stamp,
+            "X-Webhook-Signature-V2": signature,
+        },
+    )
+    with urllib.request.urlopen(request, timeout=30):
+        pass
+
+
+# Live runs by run id, and the latest run per Hermes session, which a
+# correction in the same call replaces.
 RUNS = {}
+LATEST = {}
 RUNS_LOCK = threading.Lock()
+# Pending approvals by short code: the page and the Matrix command answer
+# with the code.
+APPROVALS = {}
+APPROVALS_LOCK = threading.Lock()
 
 
-def take_run(hermes_session, run_id=None):
-    """Remove and return the session's run (only if it is run_id, when given)."""
-    with RUNS_LOCK:
-        if run_id is None or RUNS.get(hermes_session) == run_id:
-            return RUNS.pop(hermes_session, None)
-        return None
+class Run:
+    """A Hermes run this server follows to its end, page or no page. Pages
+    replay its items; an approval nobody can hear goes to Matrix."""
+
+    def __init__(self, config, hermes_session, run_id, hung_up=False):
+        self.config = config
+        self.hermes_session = hermes_session
+        self.run_id = run_id
+        self.items = []
+        self.finished = False
+        self.pages = 0
+        self.hung_up = hung_up
+        self.cond = threading.Condition()
+        with RUNS_LOCK:
+            RUNS[run_id] = self
+            if not hung_up:
+                LATEST[hermes_session] = self
+        threading.Thread(target=self.follow, daemon=True).start()
+
+    def follow(self):
+        started = time.monotonic()
+        tools = 0
+        try:
+            for item in hermes_follow_run(self.config, self.run_id):
+                if item["type"] == "tool" and item["status"] == "running":
+                    tools += 1
+                self.add(item)
+        except urllib.error.HTTPError as error:
+            detail = error.read().decode("utf-8", "replace")[:400]
+            self.add({"type": "error", "message": f"Hermes {error.code}: {detail}"})
+        except (urllib.error.URLError, OSError, ValueError) as error:
+            self.add({"type": "error", "message": f"Hermes unreachable: {error}"})
+        settle_approvals(self)
+        with self.cond:
+            self.finished = True
+            self.cond.notify_all()
+        with RUNS_LOCK:
+            RUNS.pop(self.run_id, None)
+            if LATEST.get(self.hermes_session) is self:
+                del LATEST[self.hermes_session]
+        last = self.items[-1] if self.items else {}
+        log.info(
+            "run %s ended (%s) after %.1fs, %d tool calls",
+            self.run_id,
+            last.get("finish_reason") or last.get("message"),
+            time.monotonic() - started,
+            tools,
+        )
+
+    def add(self, item):
+        # Anything after an approval request means Hermes moved on (answered,
+        # or its own timeout).
+        settle_approvals(self)
+        if item["type"] == "approval":
+            item["code"] = open_approval(self, item)
+        with self.cond:
+            self.items.append(item)
+            self.cond.notify_all()
+        self.ask_unheard()
+
+    def attach(self):
+        with self.cond:
+            self.pages += 1
+
+    def detach(self):
+        with self.cond:
+            self.pages -= 1
+        self.ask_unheard()
+
+    def hang_up(self):
+        with self.cond:
+            self.hung_up = True
+        self.ask_unheard()
+
+    def ask_unheard(self):
+        """Send a pending approval to Matrix once no call can answer it."""
+        with self.cond:
+            if self.pages and not self.hung_up:
+                return
+        with APPROVALS_LOCK:
+            unasked = [
+                (code, item)
+                for code, (run, item) in APPROVALS.items()
+                if run is self and not item.get("asked")
+            ]
+            for _, item in unasked:
+                item["asked"] = True
+        for code, item in unasked:
+            ask_matrix(self.config, code, item)
+
+
+def open_approval(run, item):
+    with APPROVALS_LOCK:
+        code = secrets.token_hex(2)
+        while code in APPROVALS:
+            code = secrets.token_hex(2)
+        APPROVALS[code] = (run, item)
+    return code
+
+
+def settle_approvals(run):
+    with APPROVALS_LOCK:
+        for code in [code for code, (owner, _) in APPROVALS.items() if owner is run]:
+            del APPROVALS[code]
+
+
+def ask_matrix(config, code, item):
+    if not config.matrix_webhook:
+        log.info("approval %s has no listener and no Matrix webhook", code)
+        return
+    text = (
+        "Hermes needs your approval for work from a voice call: "
+        + (item.get("description") or "run a command")
+    )
+    if item.get("command"):
+        text += f"\n```\n{item['command']}\n```"
+    text += f"\nAnswer with `/assist approve {code}` or `/assist deny {code}`."
+    if item.get("timeout_s"):
+        text += f" Unanswered, it is denied after {round(item['timeout_s'] / 60)} minutes."
+    try:
+        notify_matrix(config, text)
+        log.info("approval %s asked in Matrix", code)
+    except (urllib.error.URLError, OSError) as error:
+        log.warning("asking approval %s in Matrix failed: %s", code, error)
 
 
 def stop_run(config, run_id):
@@ -372,14 +540,19 @@ class Handler(BaseHTTPRequestHandler):
     static: Path
     access_token: "str | None" = None
 
-    def authorized(self):
-        """Check the page's bearer token; answer 401 when it is wrong."""
+    def authorized(self, also_hermes_key=False):
+        """Check the page's bearer token (or, where allowed, the API server key
+        the hermes-voice plugin in the gateway holds); answer 401 when it is
+        wrong."""
         if self.access_token is None:
             return True
         header = self.headers.get("Authorization", "")
         scheme, _, token = header.partition(" ")
-        if scheme == "Bearer" and hmac.compare_digest(
-            token.encode(), self.access_token.encode()
+        accepted = [self.access_token]
+        if also_hermes_key:
+            accepted.append(self.config.hermes_key)
+        if scheme == "Bearer" and any(
+            hmac.compare_digest(token.encode(), key.encode()) for key in accepted
         ):
             return True
         self.send_json(HTTPStatus.UNAUTHORIZED, {"error": "access token required"})
@@ -435,7 +608,7 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_POST(self):
-        if not self.authorized():
+        if not self.authorized(also_hermes_key=self.path == "/approve"):
             return
         try:
             request = self.read_json()
@@ -446,6 +619,8 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_session(request)
         elif self.path == "/delegate":
             self.handle_delegate(request)
+        elif self.path == "/hangup":
+            self.handle_hangup(request)
         elif self.path == "/approve":
             self.handle_approve(request)
         else:
@@ -488,13 +663,19 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(lines, list) or not lines:
             self.send_json(HTTPStatus.BAD_REQUEST, {"error": "lines required"})
             return
-        # One run per conversation: a newer delegation (usually a correction)
-        # supersedes and stops the previous run.
-        previous = take_run(hermes_session)
-        if previous:
-            stop_run(self.config, previous)
+        # A correction within the same call (the page says so) supersedes and
+        # stops the run it replaces; runs from earlier calls keep going.
+        if request.get("replace") is True:
+            with RUNS_LOCK:
+                previous = LATEST.pop(hermes_session, None)
+            if previous:
+                stop_run(self.config, previous.run_id)
         try:
-            run_id = hermes_start_run(self.config, hermes_session, lines)
+            run = Run(
+                self.config,
+                hermes_session,
+                hermes_start_run(self.config, hermes_session, lines),
+            )
         except urllib.error.HTTPError as error:
             detail = error.read().decode("utf-8", "replace")[:400]
             self.send_json(HTTPStatus.BAD_GATEWAY, {"error": f"Hermes {error.code}: {detail}"})
@@ -502,53 +683,89 @@ class Handler(BaseHTTPRequestHandler):
         except (urllib.error.URLError, OSError, ValueError, KeyError) as error:
             self.send_json(HTTPStatus.BAD_GATEWAY, {"error": f"Hermes unreachable: {error}"})
             return
-        with RUNS_LOCK:
-            RUNS[hermes_session] = run_id
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "application/x-ndjson")
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Accel-Buffering", "no")
         self.end_headers()
+        run.attach()
         try:
-            try:
-                started = time.monotonic()
-                tools = 0
-                for item in hermes_follow_run(self.config, run_id):
-                    if item["type"] == "tool" and item["status"] == "running":
-                        tools += 1
+            sent = 0
+            while True:
+                with run.cond:
+                    if sent == len(run.items) and not run.finished:
+                        run.cond.wait(PAGE_KEEPALIVE_SECONDS)
+                    new = run.items[sent:]
+                    sent += len(new)
+                    done = run.finished and sent == len(run.items)
+                for item in new:
                     self.write_line(item)
-                log.info(
-                    "hermes turn took %.1fs (%d tool calls)", time.monotonic() - started, tools
-                )
-            except urllib.error.HTTPError as error:
-                detail = error.read().decode("utf-8", "replace")[:400]
-                self.write_line({"type": "error", "message": f"Hermes {error.code}: {detail}"})
-            except (urllib.error.URLError, OSError, ValueError) as error:
-                self.write_line({"type": "error", "message": f"Hermes unreachable: {error}"})
-            take_run(hermes_session, run_id)
+                if done:
+                    break
+                if not new:
+                    self.wfile.write(b"\n")
+                    self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError):
-            # The page went away; the run keeps going and stays registered, so
-            # a later delegation still supersedes it.
-            log.info("delegation for %s abandoned by the page", hermes_session)
+            # Only the page is gone: this server keeps following the run.
+            log.info("page left run %s", run.run_id)
+        finally:
+            run.detach()
+
+    def handle_hangup(self, request):
+        """The call ended. No page hears this conversation's runs any more, and
+        what the user said since the last delegation becomes its own run."""
+        hermes_session = request.get("hermes_session")
+        lines = request.get("lines") or []
+        if (
+            not isinstance(hermes_session, str)
+            or not SESSION_ID_RE.match(hermes_session)
+            or not isinstance(lines, list)
+        ):
+            self.send_json(HTTPStatus.BAD_REQUEST, {"error": "invalid hang-up"})
+            return
+        with RUNS_LOCK:
+            LATEST.pop(hermes_session, None)
+            runs = [run for run in RUNS.values() if run.hermes_session == hermes_session]
+        for run in runs:
+            run.hang_up()
+        if not any(line.get("speaker") == "user" for line in lines):
+            self.send_json(HTTPStatus.OK, {"run_id": None})
+            return
+        try:
+            run_id = hermes_start_run(self.config, hermes_session, lines, hung_up=True)
+        except urllib.error.HTTPError as error:
+            detail = error.read().decode("utf-8", "replace")[:400]
+            self.send_json(HTTPStatus.BAD_GATEWAY, {"error": f"Hermes {error.code}: {detail}"})
+            return
+        except (urllib.error.URLError, OSError, ValueError, KeyError) as error:
+            self.send_json(HTTPStatus.BAD_GATEWAY, {"error": f"Hermes unreachable: {error}"})
+            return
+        Run(self.config, hermes_session, run_id, hung_up=True)
+        log.info("hang-up of %s left a request: run %s", hermes_session, run_id)
+        self.send_json(HTTPStatus.OK, {"run_id": run_id})
 
     def handle_approve(self, request):
-        run_id = request.get("run_id")
-        request_id = request.get("request_id")
+        code = request.get("code")
         choice = request.get("choice")
         # No "always": a permanent allowlist entry is not a voice decision.
-        if (
-            choice not in ("once", "session", "deny")
-            or not isinstance(run_id, str)
-            or not RUN_ID_RE.match(run_id)
-            or not (
-                request_id is None
-                or (isinstance(request_id, str) and RUN_ID_RE.match(request_id))
-            )
+        if choice not in ("once", "session", "deny") or not (
+            code is None or isinstance(code, str)
         ):
             self.send_json(HTTPStatus.BAD_REQUEST, {"error": "invalid approval answer"})
             return
+        with APPROVALS_LOCK:
+            if code is None and len(APPROVALS) == 1:
+                code = next(iter(APPROVALS))
+            pending = APPROVALS.get(code)
+        if pending is None:
+            self.send_json(
+                HTTPStatus.CONFLICT,
+                {"error": f"no pending approval {code}" if code else "no single pending approval"},
+            )
+            return
+        run, item = pending
         try:
-            result = hermes_approve(self.config, run_id, request_id, choice)
+            result = hermes_approve(self.config, run.run_id, item, choice)
         except urllib.error.HTTPError as error:
             detail = error.read().decode("utf-8", "replace")[:400]
             self.send_json(HTTPStatus.BAD_GATEWAY, {"error": f"Hermes {error.code}: {detail}"})
@@ -556,8 +773,16 @@ class Handler(BaseHTTPRequestHandler):
         except (urllib.error.URLError, OSError, ValueError) as error:
             self.send_json(HTTPStatus.BAD_GATEWAY, {"error": f"Hermes unreachable: {error}"})
             return
-        log.info("approval %s for run %s: %s", choice, run_id, result.get("resolved"))
-        self.send_json(HTTPStatus.OK, result)
+        with APPROVALS_LOCK:
+            APPROVALS.pop(code, None)
+        if result.get("status") == "already_resolved":
+            self.send_json(HTTPStatus.CONFLICT, {"error": f"approval {code} was already answered"})
+            return
+        log.info("approval %s (run %s): %s %s", code, run.run_id, choice, result.get("status"))
+        self.send_json(
+            HTTPStatus.OK,
+            {"code": code, "choice": choice, "description": item.get("description")},
+        )
 
     def write_line(self, item):
         self.wfile.write(json.dumps(item).encode() + b"\n")
@@ -571,6 +796,11 @@ def main():
     parser.add_argument("--hermes-key-file", required=True, help="file holding API_SERVER_KEY")
     parser.add_argument("--openai-key-file", required=True, help="file holding the OpenAI API key")
     parser.add_argument("--access-token-file", help="file holding the token the page must present")
+    parser.add_argument(
+        "--matrix-webhook",
+        help="Hermes webhook route (deliver_only to Matrix, signed with API_SERVER_KEY) that "
+        "receives approvals no call can answer",
+    )
     parser.add_argument("--config", help="JSON file: voice, model, idle_seconds, glossary, instructions")
     parser.add_argument(
         "--static",
@@ -591,6 +821,7 @@ def main():
         openai_key=Path(args.openai_key_file).read_text().strip(),
         hermes_url=args.hermes_url,
         hermes_key=Path(args.hermes_key_file).read_text().strip(),
+        matrix_webhook=args.matrix_webhook,
     )
     Handler.config = config
     Handler.static = Path(args.static)
