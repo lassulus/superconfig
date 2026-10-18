@@ -23,22 +23,14 @@ const approvalBox = document.getElementById("approval");
 const approvalText = document.getElementById("approval-text");
 const voiceSelect = document.getElementById("voice-select");
 const VOICE_KEY = "hermes-voice-voice";
-const TOKEN_KEY = "hermes-voice-token";
-const loginForm = document.getElementById("login");
-const tokenInput = document.getElementById("token");
 
-// Every API route needs the page's access token; a 401 asks for it again.
+// The proxy in front adds the access token to logged-in requests. Once the
+// login expired it redirects to the login, which a reload follows.
 async function api(path, options = {}) {
-  const response = await fetch(path, {
-    ...options,
-    headers: {
-      ...options.headers,
-      Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY) || ""}`,
-    },
-  });
-  if (response.status === 401) {
-    showLogin();
-    throw new Error("Sign in with the access token first");
+  const response = await fetch(path, { ...options, redirect: "manual" });
+  if (response.type === "opaqueredirect") {
+    location.reload();
+    throw new Error("Login expired");
   }
   return response;
 }
@@ -640,19 +632,6 @@ document
   .getElementById("deny")
   .addEventListener("click", () => call?.respondApproval("deny", null));
 
-function showLogin() {
-  loginForm.hidden = false;
-  talk.disabled = true;
-  setStatus("Sign in with the access token");
-}
-
-loginForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  localStorage.setItem(TOKEN_KEY, tokenInput.value.trim());
-  tokenInput.value = "";
-  loadConfig();
-});
-
 voiceSelect.addEventListener("change", () =>
   localStorage.setItem(VOICE_KEY, voiceSelect.value),
 );
@@ -662,11 +641,11 @@ async function loadConfig() {
   try {
     const response = await api("/config");
     config = await response.json();
-  } catch (_) {
-    return; // 401 already showed the login form
+  } catch (error) {
+    setStatus(`Settings not loaded: ${error.message}`);
+    return;
   }
   settings = config;
-  loginForm.hidden = true;
   talk.disabled = false;
   setStatus("Idle");
   const saved = localStorage.getItem(VOICE_KEY);

@@ -1,6 +1,15 @@
-{ lib, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 let
   upstream = "http://coaxmetal.r:8642";
+  assist = "assist.lassul.us";
+  voiceUpstream = "http://coaxmetal.r:8790";
+  oauth2Proxy = config.services.oauth2-proxy.httpAddress;
+  voiceAuthHeader = "/run/hermes-voice-auth/authorization.conf";
 
   # Agent turns run for minutes and /v1/chat/completions streams SSE chunks the
   # whole time. nginx's default 60s proxy_read_timeout would cut a long turn off
@@ -41,6 +50,8 @@ let
   ];
 in
 {
+  imports = [ ./hermes-voice-vars.nix ];
+
   # Public door to the Hermes API server on coaxmetal (machines/coaxmetal/hermes.nix).
   # This is what the WakeHermesClaw app on massulus points at when it is not on
   # retiolum: the assistant button posts to /v1/chat/completions here.
@@ -76,20 +87,133 @@ in
   };
 
   # Public door to hermes-voice on coaxmetal (machines/coaxmetal/hermes-voice.nix):
-  # the voice page for the phone. hermes-voice gates every API route with its
-  # own access token, so nothing is filtered by path here. /delegate streams
-  # NDJSON for the length of a Hermes turn, so the streaming settings apply.
-  services.nginx.virtualHosts."assist.lassul.us" = {
+  # the voice page for the phone. Everything but the files Chrome fetches
+  # without cookies to install the page and verify the Android app needs a
+  # login on id.lassul.us (oauth2-proxy below, via auth_request); logged-in
+  # requests get hermes-voice's access token added. /delegate streams NDJSON
+  # for the length of a Hermes turn, so the streaming settings apply.
+  services.nginx.virtualHosts.${assist} = {
     enableACME = true;
     forceSSL = true;
     extraConfig = ''
       client_max_body_size 256k;
+      auth_request /oauth2/auth;
+      error_page 401 = @login;
     '';
-    locations."/" = {
-      recommendedProxySettings = true;
-      proxyPass = "http://coaxmetal.r:8790";
-      extraConfig = streamingProxy;
+    locations =
+      lib.genAttrs
+        [
+          "= /.well-known/assetlinks.json"
+          "= /manifest.webmanifest"
+          "= /icon-192.png"
+          "= /icon-512.png"
+        ]
+        (_: {
+          proxyPass = voiceUpstream;
+          extraConfig = ''
+            auth_request off;
+          '';
+        })
+      // {
+        "/" = {
+          recommendedProxySettings = true;
+          proxyPass = voiceUpstream;
+          extraConfig = streamingProxy + ''
+            include ${voiceAuthHeader};
+          '';
+        };
+        "/oauth2/" = {
+          recommendedProxySettings = true;
+          proxyPass = oauth2Proxy;
+          extraConfig = ''
+            auth_request off;
+          '';
+        };
+        "= /oauth2/auth" = {
+          recommendedProxySettings = true;
+          proxyPass = oauth2Proxy;
+          extraConfig = ''
+            auth_request off;
+            proxy_pass_request_body off;
+            proxy_set_header Content-Length "";
+          '';
+        };
+        "@login" = {
+          return = "307 /oauth2/start?rd=$request_uri";
+          extraConfig = ''
+            auth_request off;
+          '';
+        };
+      };
+  };
+
+  # Login for assist.lassul.us: only users with a grant on the Zitadel
+  # project, and of those only this verified address. Sessions are keyed by
+  # `sub`. zitadel-reconcile writes the client id/secret to the keyFile.
+  lass.zitadel.projects.assist = {
+    access = "declarative";
+    users = [ "lass@lassul.us" ];
+    apps.web = {
+      redirectUris = [ "https://${assist}/oauth2/callback" ];
+      envFile = {
+        clientIdVariable = "OAUTH2_PROXY_CLIENT_ID";
+        clientSecretVariable = "OAUTH2_PROXY_CLIENT_SECRET";
+      };
     };
+  };
+  services.oauth2-proxy = {
+    enable = true;
+    provider = "oidc";
+    oidcIssuerUrl = "https://id.lassul.us";
+    keyFile = config.lass.zitadel.projects.assist.apps.web.envFile.path;
+    redirectURL = "https://${assist}/oauth2/callback";
+    email.addresses = "lass@lassul.us";
+    cookie.secretFile = config.clan.core.vars.generators.oauth2-proxy.files."cookie-secret".path;
+    extraConfig.skip-provider-button = true;
+  };
+  systemd.services.oauth2-proxy = {
+    wants = [ "zitadel-reconcile.service" ];
+    after = [ "zitadel-reconcile.service" ];
+  };
+  clan.core.vars.generators.oauth2-proxy = {
+    files."cookie-secret" = { };
+    runtimeInputs = [
+      pkgs.coreutils
+      pkgs.openssl
+    ];
+    script = ''
+      openssl rand -hex 16 | tr -d '\n' > "$out/cookie-secret"
+    '';
+  };
+
+  # The Authorization header with hermes-voice's access token, as an nginx
+  # include readable only by nginx. A switch reloads nginx through
+  # nginx-config-reload instead of starting nginx, so the include has to be in
+  # place before either, and multi-user.target starts it on a switch that
+  # newly adds this unit.
+  systemd.services.hermes-voice-auth-header = {
+    wantedBy = [ "multi-user.target" ];
+    before = [
+      "nginx.service"
+      "nginx-config-reload.service"
+    ];
+    requiredBy = [
+      "nginx.service"
+      "nginx-config-reload.service"
+    ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      RuntimeDirectory = "hermes-voice-auth";
+      RuntimeDirectoryPreserve = true;
+      UMask = "0077";
+    };
+    script = ''
+      token=$(cat ${config.clan.core.vars.generators.hermes-voice.files."access-token".path})
+      printf 'proxy_set_header Authorization "Bearer %s";\n' "$token" > ${voiceAuthHeader}.tmp
+      chown ${config.services.nginx.user} ${voiceAuthHeader}.tmp
+      mv ${voiceAuthHeader}.tmp ${voiceAuthHeader}
+    '';
   };
 
   # One phone driving one agent needs a trickle of requests; a turn is a single
