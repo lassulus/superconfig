@@ -116,4 +116,26 @@ in
       openssl rand -hex 32 | tr -d '\n' > "$out/access-token"
     '';
   };
+
+  # Signing key of the Android wrapper (packages.hermes-voice-android); only
+  # read when signing, so nothing is deployed. The fingerprint goes into the
+  # page's assetlinks.json (tools/hermes-voice/flake-module.nix).
+  clan.core.vars.generators.hermes-voice-android-signing = {
+    files.keystore.deploy = false;
+    files.password.deploy = false;
+    files.fingerprint.secret = false;
+    runtimeInputs = [
+      pkgs.coreutils
+      pkgs.jdk17_headless
+      pkgs.openssl
+    ];
+    script = ''
+      openssl rand -hex 32 | tr -d '\n' > "$out/password"
+      keytool -genkeypair -noprompt -storetype PKCS12 -keystore "$out/keystore" \
+        -storepass:file "$out/password" -alias assist -dname CN=Assist \
+        -keyalg RSA -keysize 4096 -validity 36500
+      keytool -exportcert -rfc -keystore "$out/keystore" -storepass:file "$out/password" -alias assist |
+        openssl x509 -noout -fingerprint -sha256 | cut -d= -f2 > "$out/fingerprint"
+    '';
+  };
 }

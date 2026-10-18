@@ -612,8 +612,13 @@ class Handler(BaseHTTPRequestHandler):
             "/": ("index.html", "text/html; charset=utf-8"),
             "/app.js": ("app.js", "text/javascript; charset=utf-8"),
             "/style.css": ("style.css", "text/css; charset=utf-8"),
+            "/manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json"),
+            "/icon-192.png": ("icon-192.png", "image/png"),
+            "/icon-512.png": ("icon-512.png", "image/png"),
+            # Missing until the Android signing key exists.
+            "/.well-known/assetlinks.json": (".well-known/assetlinks.json", "application/json"),
         }
-        if self.path not in names:
+        if self.path not in names or not (self.static / names[self.path][0]).is_file():
             self.send_error(HTTPStatus.NOT_FOUND)
             return
         name, content_type = names[self.path]
