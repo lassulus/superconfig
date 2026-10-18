@@ -27,7 +27,8 @@ let
         "host_metrics"
         "revision_metric"
         "memory_pressure_metric"
-      ];
+      ]
+      ++ config.monitoring.extraMetrics;
       endpoint = "http://${server}.r:${toString ports.victoriametrics}/api/v1/write";
       healthcheck.enabled = false;
       inherit buffer;
@@ -49,12 +50,21 @@ let
   };
 in
 {
-  services.prometheus.exporters.smartctl = lib.mkIf smart {
+  # Vector components of machine specific metrics, defined by other modules
+  # (e.g. configs/gg23/internet.nix). They have to set the host tag
+  # themselves, like transforms.host_metrics does.
+  options.monitoring.extraMetrics = lib.mkOption {
+    type = lib.types.listOf lib.types.str;
+    default = [ ];
+    description = "Vector component ids added to the inputs of the metric sinks.";
+  };
+
+  config.services.prometheus.exporters.smartctl = lib.mkIf smart {
     enable = true;
     listenAddress = "127.0.0.1";
   };
 
-  services.vector = {
+  config.services.vector = {
     enable = true;
     journaldAccess = true;
     settings = {
