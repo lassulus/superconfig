@@ -2,6 +2,7 @@
 {
   imports = [
     ./zigbee.nix
+    ./monitoring.nix
   ];
 
   # Runs on the gg23 router: the LAN (int0) is a trusted interface there
