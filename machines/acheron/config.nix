@@ -5,7 +5,6 @@
     ../../configs/retiolum.nix
     ../../configs/gg23.nix
     ../../configs/hass
-    ../../configs/snapserver.nix
     ../../configs/gg23/audio/hub.nix
     ../../configs/gg23/internet.nix
   ];
