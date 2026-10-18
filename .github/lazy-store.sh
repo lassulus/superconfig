@@ -69,7 +69,7 @@ sudo mkdir -p /lazy/nix
 sudo mount --bind /nix /lazy/nix || fallback "bind mount of /nix failed"
 sudo mount --make-private /lazy/nix || fallback "making /lazy/nix private failed"
 # shellcheck disable=SC2024 # the log is ours, only the mount needs root
-sudo "$lazy" mount "$L" /lazy/nix/store /nix/store >"$L/fuse.log" 2>&1 &
+sudo "$lazy" mount "$L" /lazy/nix/store /nix/store --no-passthrough >"$L/fuse.log" 2>&1 &
 fuse=$!
 # sudo runs as root (no kill -0) and stays a zombie until waited for
 fuse_alive() {
