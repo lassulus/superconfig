@@ -1,9 +1,9 @@
 name: assist-android
 
 # Builds the Android wrapper of the voice page (packages.hermes-voice-android),
-# signs it and publishes it as assist.apk of the rolling release
-# assist-android:
-# https://github.com/lassulus/superconfig/releases/download/assist-android/assist.apk
+# signs it and publishes it as assist.apk of a new release
+# assist-android-v<run number>, so Obtainium sees every build.
+# Stable URL: https://github.com/lassulus/superconfig/releases/latest/download/assist.apk
 #
 # versionCode is the run number, so every published APK installs over the
 # previous one; versionName is the short commit.
@@ -69,12 +69,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           notes="Built from $GITHUB_SHA by $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID (versionCode $GITHUB_RUN_NUMBER)."
-          if gh release view assist-android >/dev/null 2>&1; then
-            gh release edit assist-android --notes "$notes"
-          else
-            gh release create assist-android --title "Assist (Android)" --target "$GITHUB_SHA" --latest=false --notes "$notes"
-          fi
-          gh release upload assist-android "$RUNNER_TEMP/assist.apk" --clobber
+          gh release create "assist-android-v$GITHUB_RUN_NUMBER" "$RUNNER_TEMP/assist.apk" \
+            --title "Assist v$GITHUB_RUN_NUMBER" --target "$GITHUB_SHA" --latest --notes "$notes"
 
       - if: always()
         run: rm -f "$RUNNER_TEMP/keystore" "$RUNNER_TEMP/password"
