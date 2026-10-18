@@ -6,6 +6,9 @@
   unzip,
   zip,
   icon,
+  # CI sets them per run; Android only installs updates with a higher versionCode.
+  versionCode ? 1,
+  versionName ? "1",
 }:
 let
   sdk = androidenv.composeAndroidPackages {
@@ -28,7 +31,7 @@ in
 # dependencies.
 stdenvNoCC.mkDerivation {
   pname = "hermes-voice-android";
-  version = "1";
+  version = versionName;
   src = ./.;
   nativeBuildInputs = [
     jdk17_headless
@@ -45,7 +48,7 @@ stdenvNoCC.mkDerivation {
     ${buildTools}/aapt2 link -o unsigned.apk -I ${androidJar} \
       --manifest AndroidManifest.xml res.zip \
       --min-sdk-version 29 --target-sdk-version 36 \
-      --version-code 1 --version-name 1
+      --version-code ${toString versionCode} --version-name ${versionName}
 
     javac -source 8 -target 8 -Xlint:-options -encoding UTF-8 \
       -bootclasspath ${androidJar} -cp browser/classes.jar \

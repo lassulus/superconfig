@@ -1,0 +1,80 @@
+name: assist-android
+
+# Builds the Android wrapper of the voice page (packages.hermes-voice-android),
+# signs it and publishes it as assist.apk of the rolling release
+# assist-android:
+# https://github.com/lassulus/superconfig/releases/download/assist-android/assist.apk
+#
+# versionCode is the run number, so every published APK installs over the
+# previous one; versionName is the short commit.
+#
+# Secrets, from the clan var hermes-voice-android-signing on coaxmetal:
+# - ANDROID_KEYSTORE_B64: the keystore, base64
+# - ANDROID_KEYSTORE_PASSWORD: its password
+on:
+  push:
+    branches: [master]
+    paths:
+      - tools/hermes-voice/android/**
+      - tools/hermes-voice/flake-module.nix
+      - flake.lock
+      - .github/workflows/assist-android.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# queued, not cancelled: an older run must not publish after a newer one
+concurrency:
+  group: assist-android
+  cancel-in-progress: false
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # release upload
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: cachix/install-nix-action@v31
+
+      - id: build
+        env:
+          VERSION_CODE: ${{ github.run_number }}
+        run: |
+          unsigned=$(nix build -L --no-link --print-out-paths --impure --expr "
+            (builtins.getFlake \"git+file://$PWD\").packages.x86_64-linux.hermes-voice-android.override {
+              versionCode = $VERSION_CODE;
+              versionName = \"${GITHUB_SHA::8}\";
+            }")
+          echo "apk=$unsigned/hermes-voice-android-unsigned.apk" >> "$GITHUB_OUTPUT"
+
+      - env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          umask 077
+          base64 -d <<<"$KEYSTORE_B64" > "$RUNNER_TEMP/keystore"
+          printf '%s' "$KEYSTORE_PASSWORD" > "$RUNNER_TEMP/password"
+
+      # verifies and prints the certificate as well
+      - env:
+          UNSIGNED: ${{ steps.build.outputs.apk }}
+        run: |
+          nix run .#hermes-voice-android-sign -- \
+            "$RUNNER_TEMP/keystore" "$RUNNER_TEMP/password" "$RUNNER_TEMP/assist.apk" "$UNSIGNED"
+
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes="Built from $GITHUB_SHA by $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID (versionCode $GITHUB_RUN_NUMBER)."
+          if gh release view assist-android >/dev/null 2>&1; then
+            gh release edit assist-android --notes "$notes"
+          else
+            gh release create assist-android --title "Assist (Android)" --target "$GITHUB_SHA" --latest=false --notes "$notes"
+          fi
+          gh release upload assist-android "$RUNNER_TEMP/assist.apk" --clobber
+
+      - if: always()
+        run: rm -f "$RUNNER_TEMP/keystore" "$RUNNER_TEMP/password"
