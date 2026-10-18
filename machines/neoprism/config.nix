@@ -9,7 +9,7 @@
     ../../configs/ssh-redirect.nix
     ../../configs/retiolum.nix
     ../../configs/mailserver.nix
-    ../../configs/snappymail.nix
+    ../../configs/roundcube.nix
     ../../configs/gsm-wiki.nix
     ../../configs/pair-programming.nix
     ../../configs/nginx.nix
