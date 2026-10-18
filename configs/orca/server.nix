@@ -33,7 +33,7 @@ in
     ];
     packages = [
       orca
-      pkgs.omp
+      self.packages.${pkgs.system}.omp
       # GitHub issues/PRs in the work item lists.
       pkgs.gh
     ];
