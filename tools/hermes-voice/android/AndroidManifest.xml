@@ -12,9 +12,14 @@
         android:label="Assist"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="false">
+        <!-- Over the lock screen and waking the display: a headset button
+             (VOICE_COMMAND) usually arrives while the phone is locked; the
+             activity then asks to unlock before it opens the page. -->
         <activity
             android:name=".AssistActivity"
             android:exported="true"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
             android:theme="@android:style/Theme.Translucent.NoTitleBar">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -22,6 +27,11 @@
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.ASSIST" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <!-- Bluetooth headsets: HFP AT+BVRA=1 makes HeadsetService start it. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VOICE_COMMAND" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>

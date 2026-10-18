@@ -1,6 +1,7 @@
 package us.lassul.assist;
 
 import android.app.Activity;
+import android.app.KeyguardManager;
 import android.content.ComponentName;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -14,9 +15,12 @@ import androidx.browser.customtabs.CustomTabsServiceConnection;
 import androidx.browser.customtabs.CustomTabsSession;
 import androidx.browser.trusted.TrustedWebActivityIntentBuilder;
 
-/** Opens the voice page as a Trusted Web Activity, else as a Custom Tab or in the browser. */
+/**
+ * Opens the voice page as a Trusted Web Activity, else as a Custom Tab or in the browser. The
+ * page starts listening at once (?listen).
+ */
 public class AssistActivity extends Activity {
-    private static final Uri URL = Uri.parse("https://assist.lassul.us/");
+    private static final Uri URL = Uri.parse("https://assist.lassul.us/?listen");
 
     private CustomTabsServiceConnection connection;
     private boolean launched;
@@ -24,6 +28,31 @@ public class AssistActivity extends Activity {
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
+        KeyguardManager keyguard = getSystemService(KeyguardManager.class);
+        if (!keyguard.isKeyguardLocked()) {
+            open();
+            return;
+        }
+        // Started over the lock screen (showWhenLocked): the browser cannot show there.
+        keyguard.requestDismissKeyguard(this, new KeyguardManager.KeyguardDismissCallback() {
+            @Override
+            public void onDismissSucceeded() {
+                open();
+            }
+
+            @Override
+            public void onDismissCancelled() {
+                finish();
+            }
+
+            @Override
+            public void onDismissError() {
+                finish();
+            }
+        });
+    }
+
+    private void open() {
         String provider = twaProvider();
         if (provider == null) {
             openCustomTab();
