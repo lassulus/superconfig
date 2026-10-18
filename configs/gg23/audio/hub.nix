@@ -1,9 +1,10 @@
 # Low-latency audio hub on acheron: audio-matrix (./matrix.py) links each
 # received source to the ROC sinks of the rooms switched on for it in Home
-# Assistant (MQTT). Senders: any LAN machine via ROC (while `gg23-audio` from
-# tools/gg23-audio runs), barnacle via AirPlay 2 (shairport-sync + nqptp),
-# phones via Bluetooth A2DP (paired during the window opened by the
-# "Bluetooth pairing" button). Rooms run ./room.nix.
+# Assistant (MQTT), which also sets a volume per room. Sources: any LAN
+# machine via ROC (while `gg23-audio` from tools/gg23-audio runs), barnacle
+# via AirPlay 2 (shairport-sync + nqptp), phones via Bluetooth A2DP (paired
+# during the window opened by the "Bluetooth pairing" button) and
+# radio.lassul.us. Rooms run ./room.nix.
 {
   self,
   config,
@@ -12,9 +13,8 @@
   ...
 }:
 let
-  # shodan and icarus have no stable LAN address (dynamic DHCP leases), so
-  # send to their static retiolum IPs; tinc's LocalDiscovery keeps that on the
-  # LAN.
+  # Rooms are addressed by their static retiolum IPs (shodan and icarus have
+  # dynamic DHCP leases); tinc's LocalDiscovery keeps that on the LAN.
   kartei = import (self.inputs.kartei + "/modules/retiolum/hosts.nix") { inherit lib; };
   ip4 = n: kartei.own.${n}.ip4;
 
@@ -22,12 +22,14 @@ let
   rooms = {
     shodan = "Kitchen";
     icarus = "Bath";
+    styx = "Living room";
   };
 
   mqtt = "-h localhost -u gg23 -P gg23-mqtt";
 
-  # Home Assistant shows a switch per source and room (./matrix.py); the
-  # fixed sources by node name, Bluetooth phones come and go
+  # Home Assistant shows a switch per source and room and a volume per room
+  # (./matrix.py); the fixed sources by node name, Bluetooth phones come and
+  # go. A source starts on all rooms unless it lists `rooms`.
   matrixConfig = pkgs.writeText "audio-matrix.json" (
     builtins.toJSON {
       mqtt = {
@@ -48,8 +50,18 @@ let
           node = "roc-lan";
           label = "LAN";
         };
+        # where Snapcast played it before
+        radio = {
+          node = "radio";
+          label = "Radio";
+          rooms = [
+            "icarus"
+            "shodan"
+          ];
+        };
       };
       state = "/var/lib/audio-matrix/routes.json";
+      volumes = "/var/lib/audio-matrix/volumes.json";
     }
   );
 
@@ -76,8 +88,137 @@ let
       };
     }
   ];
+
+  # "Audio" dashboard in Home Assistant (configs/hass loads /config/packages):
+  # one grid of a column per room (volume, all off) and a row per source
+  # (all on/off), cells toggle the audio_route switches. Rows come from the
+  # switches of the first room via auto-entities (HACS), so Bluetooth phones
+  # appear while connected.
+  roomNames = lib.attrNames rooms;
+  anchor = builtins.head roomNames;
+  # button calling `service` on the route switches in Jinja list `targets`
+  allButton =
+    name: icon: service: targets:
+    ''{"type": "button", "name": "${name}", "icon": "${icon}", "show_name": true, "icon_height": "24px", "tap_action": {"action": "perform-action", "perform_action": "${service}", "target": {"entity_id": ${targets}}}, "hold_action": {"action": "none"}}'';
+  roomHeader =
+    r:
+    ''{% set col = states.switch | selectattr('entity_id', 'search', '^switch\\.audio_route_.*_${r}$') | map(attribute='entity_id') | list %}{% set ns.out = ns.out + [{"type": "vertical-stack", "cards": [{"type": "tile", "entity": "number.audio_volume_${r}", "name": "${rooms.${r}}", "icon": "mdi:speaker", "features": [{"type": "numeric-input", "style": "slider"}]}, ${
+      allButton "All off" "mdi:volume-off" "switch.turn_off" "col"
+    }]}] %}'';
+  routeCell =
+    r:
+    ''{"type": "button", "entity": "switch.audio_route_" ~ k ~ "_${r}", "name": "${rooms.${r}}", "show_name": false, "icon": "mdi:speaker", "icon_height": "64px", "tap_action": {"action": "toggle"}, "hold_action": {"action": "none"}}'';
+  matrix = lib.concatStrings (
+    [
+      "{% set ns = namespace(out=[]) %}"
+      ''{% set ns.out = ns.out + [{"type": "markdown", "content": "### Source / Room"}] %}''
+    ]
+    ++ map roomHeader roomNames
+    ++ [
+      "{% for e in states.switch | selectattr('entity_id', 'search', '^switch\\\\.audio_route_.*_${anchor}$') | sort(attribute='attributes.source') | sort(attribute='attributes.kind') %}"
+      "{% set icon = {'bluetooth': 'mdi:bluetooth', 'airplay': 'mdi:cast-audio', 'lan': 'mdi:lan', 'radio': 'mdi:radio'}.get(e.attributes.kind, 'mdi:music') %}"
+      # switch.audio_route_<key>_<anchor>
+      "{% set k = e.entity_id[${toString (builtins.stringLength "switch.audio_route_")}:-${toString (builtins.stringLength "_${anchor}")}] %}"
+      "{% set row = [${
+        lib.concatMapStringsSep ", " (r: ''"switch.audio_route_" ~ k ~ "_${r}"'') roomNames
+      }] %}"
+      ''{% set ns.out = ns.out + [{"type": "vertical-stack", "cards": [{"type": "button", "name": e.attributes.source, "icon": icon, "show_state": false, "icon_height": "40px", "tap_action": {"action": "none"}, "hold_action": {"action": "none"}}, {"type": "grid", "columns": 2, "square": false, "cards": [${
+        allButton "All on" "mdi:volume-high" "switch.turn_on" "row"
+      }, ${allButton "All off" "mdi:volume-off" "switch.turn_off" "row"}]}]}] %}''
+      "{% set ns.out = ns.out + [${lib.concatMapStringsSep ", " routeCell roomNames}] %}"
+      "{% endfor %}{{ ns.out }}"
+    ]
+  );
+  audioDashboard = {
+    title = "Audio";
+    views = [
+      {
+        title = "Audio";
+        path = "routing";
+        icon = "mdi:speaker-multiple";
+        type = "sections";
+        max_columns = 3;
+        sections = [
+          {
+            type = "grid";
+            column_span = 3;
+            cards = [
+              {
+                type = "heading";
+                heading = "Where does the audio go?";
+                icon = "mdi:speaker-multiple";
+              }
+              {
+                type = "markdown";
+                text_only = true;
+                content = "Tap a speaker to send that source there. Bluetooth `gg23`, AirPlay `gg23`, LAN via `s gg23-audio` and the radio; Bluetooth devices appear while connected.";
+              }
+              {
+                type = "custom:auto-entities";
+                grid_options.columns = "full";
+                card = {
+                  type = "grid";
+                  columns = 1 + builtins.length roomNames;
+                  square = false;
+                };
+                card_param = "cards";
+                filter.template = matrix;
+                show_empty = true;
+              }
+            ];
+          }
+          {
+            type = "grid";
+            column_span = 3;
+            cards = [
+              {
+                type = "heading";
+                heading = "Bluetooth";
+                icon = "mdi:bluetooth";
+                heading_style = "subtitle";
+              }
+              {
+                type = "button";
+                name = "Pair Bluetooth (${toString pairingTimeout} s)";
+                icon = "mdi:bluetooth-connect";
+                show_state = false;
+                grid_options.columns = 6;
+                tap_action = {
+                  action = "perform-action";
+                  perform_action = "button.press";
+                  target.entity_id = "button.bluetooth_pairing";
+                };
+              }
+              {
+                type = "tile";
+                entity = "binary_sensor.bluetooth_pairing";
+                name = "Pairing window";
+                grid_options.columns = 6;
+              }
+            ];
+          }
+        ];
+      }
+    ];
+  };
+  json = name: value: pkgs.writeText name (builtins.toJSON value);
 in
 {
+  virtualisation.oci-containers.containers.homeassistant.volumes = [
+    "${
+      json "audio.yaml" {
+        lovelace.dashboards.audio-routing = {
+          mode = "yaml";
+          title = "Audio";
+          icon = "mdi:speaker-multiple";
+          show_in_sidebar = true;
+          filename = "dashboards/audio.yaml";
+        };
+      }
+    }:/config/packages/audio.yaml:ro"
+    "${json "audio-dashboard.yaml" audioDashboard}:/config/dashboards/audio.yaml:ro"
+  ];
+
   services.pipewire = {
     enable = true;
     systemWide = true;
@@ -199,6 +340,40 @@ in
     environment.PIPEWIRE_AUTOCONNECT = "false";
   };
 
+  # radio.lassul.us as a hub source, playing all the time; audio-matrix
+  # decides where it is heard
+  systemd.services.radio = {
+    wantedBy = [
+      "multi-user.target"
+      "pipewire.service"
+    ];
+    bindsTo = [ "pipewire.service" ];
+    after = [
+      "pipewire.service"
+      "network-online.target"
+    ];
+    wants = [ "network-online.target" ];
+    # linked only by audio-matrix
+    environment.PIPEWIRE_AUTOCONNECT = "false";
+    serviceConfig = {
+      ExecStart = lib.escapeShellArgs [
+        (lib.getExe pkgs.mpv)
+        "--no-video"
+        "--no-terminal"
+        "--ao=pipewire"
+        # node.name, see `sources` in matrixConfig
+        "--audio-client-name=radio"
+        # keep going through stream hiccups and server restarts
+        "--loop-playlist=inf"
+        "http://radio.lassul.us/radio.ogg"
+      ];
+      DynamicUser = true;
+      SupplementaryGroups = [ "pipewire" ];
+      Restart = "always";
+      RestartSec = 5;
+    };
+  };
+
   # mDNS for AirPlay on the LAN only; int0 is trusted, et0 must stay closed
   services.avahi = {
     allowInterfaces = [ "int0" ];
@@ -217,7 +392,10 @@ in
       "pipewire.service"
       "mosquitto.service"
     ];
-    path = [ config.services.pipewire.package ];
+    path = [
+      config.services.pipewire.package
+      config.services.pipewire.wireplumber.package # wpctl, for room volumes
+    ];
     serviceConfig = {
       ExecStart = "${
         pkgs.writers.writePython3 "audio-matrix" {
