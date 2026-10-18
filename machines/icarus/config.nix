@@ -9,7 +9,6 @@
     self.wrapperModules.workspace-manager
     ../../configs/pipewire.nix
     ../../configs/network-manager.nix
-    ../../configs/snapclient.nix
     ../../configs/gg23/audio/room.nix
     ../../configs/autoupdate.nix
     ../../configs/rad.nix
