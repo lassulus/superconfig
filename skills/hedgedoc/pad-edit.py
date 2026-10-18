@@ -6,6 +6,15 @@ import http.cookiejar
 import urllib.request
 import ssl
 
+USAGE = """Usage: pad-edit.py <pad-id> [file|-]
+Replace the pad's content with the file, or stdin when omitted or "-"."""
+
+# Before the bootstrap below, so --help needs no nix build or network.
+if len(sys.argv) < 2 or sys.argv[1].startswith("-"):
+    help_asked = sys.argv[1:2] in (["-h"], ["--help"])
+    print(USAGE, file=sys.stdout if help_asked else sys.stderr)
+    sys.exit(0 if help_asked else 1)
+
 try:
     import websocket
 except ImportError:
@@ -50,11 +59,6 @@ def js_length(s):
 
 
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: pad-edit.py <pad-id> [file]", file=sys.stderr)
-        print("       echo 'content' | pad-edit.py <pad-id>", file=sys.stderr)
-        sys.exit(1)
-
     pad_id = sys.argv[1]
 
     # Read new content
@@ -67,6 +71,11 @@ def main():
     # Strip single trailing newline (added by shell heredoc/echo)
     if new_content.endswith("\n"):
         new_content = new_content[:-1]
+
+    # An empty write would blank the pad.
+    if not new_content:
+        print("ERROR: Refusing to write empty content", file=sys.stderr)
+        sys.exit(1)
 
     # Step 1: Get session cookie
     ctx = ssl.create_default_context()

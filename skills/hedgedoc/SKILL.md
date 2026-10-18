@@ -77,7 +77,7 @@ Prefer Mermaid over ASCII art for architecture diagrams, flowcharts, etc. in pad
 
 - `allowFreeURL = true` — pads can have custom slugs
 - `defaultPermission = "freely"` — all pads are world-editable via URL
-- Edit replaces the entire pad content (full replacement, not partial edit)
+- Edit replaces the entire pad content (full replacement, not partial edit); empty content is refused
 - Active browser sessions will see the change in real-time (pushed via socket.io)
 - Pad IDs are from the URL: `https://pad.lassul.us/{PADID}`
 - Edit uses UTF-16 code unit counting (JavaScript string length) for OT operations
