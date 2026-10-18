@@ -264,7 +264,7 @@ jobs:
         run: |
           dir=$RUNNER_TEMP/lazy-store
           if [ -s "$dir/stats.json" ]; then
-            jq -r '"\(.nar_count // 0) NARs fetched, \((.nar_bytes // 0) / 1048576 | floor) MiB"' "$dir/stats.json"
+            cat "$dir/stats.json"; echo
           fi
           cat "$dir/fuse.log" 2>/dev/null || true
 
