@@ -26,7 +26,7 @@
     self.packages.${pkgs.system}.s
 
     self.packages.${pkgs.system}.secretive
-    pkgs.omp
+    self.packages.${pkgs.system}.omp
     self.packages.${pkgs.system}.browser-mcp
 
     # zsh dependencies
