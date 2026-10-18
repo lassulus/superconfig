@@ -38,6 +38,9 @@
       # WBO boards (paint.lassul.us). DynamicUser + StateDirectory make
       # /var/lib/whitebophir only a symlink, so back up the real directory.
       "/var/lib/private/whitebophir"
+      # paperless (paperless.lassul.us) documents, index and classifier; the
+      # SQLite database is dumped consistently to /var/backup by the preHook.
+      "/var/lib/paperless"
     ];
     exclude = [
       "*.pyc"
@@ -45,6 +48,7 @@
       "/home/bot/.nix-defexpr"
       "/home/bot/.nix-profile"
       "/var/lib/parley/*.db*"
+      "/var/lib/paperless/db.sqlite3*"
     ];
     repo = "u550643@u550643.your-storagebox.de:/./neoprism";
     encryption.mode = "none";
@@ -65,6 +69,7 @@
       "/var/lib/hedgedoc"
       # WAL-mode SQLite readers need to write the -shm file
       "/var/lib/parley"
+      "/var/lib/paperless"
     ];
 
     preHook = ''
@@ -94,6 +99,9 @@
       for db in parley history; do
         ${pkgs.sqlite}/bin/sqlite3 -cmd ".timeout 60000" "/var/lib/parley/$db.db" ".backup /var/backup/parley/$db.db"
       done
+
+      # Dump paperless SQLite database safely
+      ${pkgs.sqlite}/bin/sqlite3 -cmd ".timeout 60000" /var/lib/paperless/db.sqlite3 ".backup /var/backup/paperless.sqlite3"
 
       # Dump timeful polls (when.lassul.us) from MongoDB
       ${pkgs.mongodb-tools}/bin/mongodump --uri=mongodb://127.0.0.1:27017 \
