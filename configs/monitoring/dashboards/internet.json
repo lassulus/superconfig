@@ -1,0 +1,308 @@
+{
+  "uid": "internet",
+  "title": "Internet (gg23)",
+  "schemaVersion": 39,
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "refresh": "1m",
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Latency (avg, 1m)",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "victoriametrics-metrics-datasource",
+        "uid": "victoriametrics"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(smokeping_response_duration_seconds_sum{host=\"acheron\"}[1m]) / rate(smokeping_response_duration_seconds_count{host=\"acheron\"}[1m])",
+          "legendFormat": "{{target_name}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Latency p95 (5m)",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "victoriametrics-metrics-datasource",
+        "uid": "victoriametrics"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum(rate(smokeping_response_duration_seconds_bucket{host=\"acheron\"}[5m])) by (le, target_name))",
+          "legendFormat": "{{target_name}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Packet loss (1m)",
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "victoriametrics-metrics-datasource",
+        "uid": "victoriametrics"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "1 - sum(rate(smokeping_response_duration_seconds_count{host=\"acheron\"}[1m])) by (target_name) / sum(rate(smokeping_requests_total{host=\"acheron\"}[1m])) by (target_name)",
+          "legendFormat": "{{target_name}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "WAN throughput (et0)",
+      "gridPos": {
+        "x": 12,
+        "y": 9,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "victoriametrics-metrics-datasource",
+        "uid": "victoriametrics"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bps"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(host_network_receive_bytes_total{host=\"acheron\",device=\"et0\"}[1m]) * 8",
+          "legendFormat": "down"
+        },
+        {
+          "refId": "B",
+          "expr": "-rate(host_network_transmit_bytes_total{host=\"acheron\",device=\"et0\"}[1m]) * 8",
+          "legendFormat": "up"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Downstream power",
+      "gridPos": {
+        "x": 0,
+        "y": 17,
+        "w": 8,
+        "h": 9
+      },
+      "datasource": {
+        "type": "victoriametrics-metrics-datasource",
+        "uid": "victoriametrics"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: dBmV"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "vodafone_station_docsis_power_dbmv{host=\"acheron\",direction=\"downstream\"}",
+          "legendFormat": "{{channel_type}} {{frequency_mhz}} MHz"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Downstream SNR",
+      "gridPos": {
+        "x": 8,
+        "y": 17,
+        "w": 8,
+        "h": 9
+      },
+      "datasource": {
+        "type": "victoriametrics-metrics-datasource",
+        "uid": "victoriametrics"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: dB"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "vodafone_station_docsis_snr_db{host=\"acheron\",direction=\"downstream\"}",
+          "legendFormat": "{{channel_type}} {{frequency_mhz}} MHz"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Upstream power",
+      "gridPos": {
+        "x": 16,
+        "y": 17,
+        "w": 8,
+        "h": 9
+      },
+      "datasource": {
+        "type": "victoriametrics-metrics-datasource",
+        "uid": "victoriametrics"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: dBmV"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "vodafone_station_docsis_power_dbmv{host=\"acheron\",direction=\"upstream\"}",
+          "legendFormat": "{{channel_type}} {{frequency_mhz}} MHz"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Modulation",
+      "gridPos": {
+        "x": 0,
+        "y": 26,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "victoriametrics-metrics-datasource",
+        "uid": "victoriametrics"
+      },
+      "fieldConfig": {
+        "defaults": {}
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "vodafone_station_docsis_modulation_qam{host=\"acheron\"}",
+          "legendFormat": "{{direction}} {{channel_type}} {{frequency_mhz}} MHz"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Station",
+      "gridPos": {
+        "x": 12,
+        "y": 26,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "victoriametrics-metrics-datasource",
+        "uid": "victoriametrics"
+      },
+      "fieldConfig": {
+        "defaults": {}
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "vodafone_station_up{host=\"acheron\"}",
+          "legendFormat": "scrape ok"
+        },
+        {
+          "refId": "B",
+          "expr": "vodafone_station_docsis_online{host=\"acheron\"}",
+          "legendFormat": "DOCSIS online"
+        },
+        {
+          "refId": "C",
+          "expr": "count(vodafone_station_docsis_locked{host=\"acheron\"} == 0) or vector(0)",
+          "legendFormat": "unlocked channels"
+        },
+        {
+          "refId": "D",
+          "expr": "vodafone_station_uptime_seconds{host=\"acheron\"} / 86400",
+          "legendFormat": "uptime (days)"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Speedtest (hourly)",
+      "gridPos": {
+        "x": 0,
+        "y": 34,
+        "w": 24,
+        "h": 8
+      },
+      "datasource": {
+        "type": "victoriametrics-metrics-datasource",
+        "uid": "victoriametrics"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bps",
+          "custom": {
+            "drawStyle": "points",
+            "pointSize": 6
+          }
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "speedtest_download_bits_per_second{host=\"acheron\"}",
+          "legendFormat": "down {{server}}"
+        },
+        {
+          "refId": "B",
+          "expr": "speedtest_upload_bits_per_second{host=\"acheron\"}",
+          "legendFormat": "up {{server}}"
+        }
+      ]
+    }
+  ]
+}
