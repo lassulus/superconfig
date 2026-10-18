@@ -590,20 +590,15 @@ class Call {
   }
 }
 
-talk.addEventListener("click", async () => {
-  if (call) {
-    talk.disabled = true;
-    setStatus("Hanging up…");
-    call.close();
-    return;
-  }
+async function startCall() {
   call = new Call();
   talk.disabled = true;
   talk.classList.add("live");
   talk.textContent = "Hang up";
   setStatus("Connecting…");
   // Must run inside the click handler: mobile browsers only allow audio
-  // playback started by a user gesture.
+  // playback started by a user gesture. Started without one (?listen), the
+  // track handler's play() runs while the mic records, which Chrome allows.
   voice.play().catch(() => {});
   try {
     await call.start();
@@ -612,6 +607,16 @@ talk.addEventListener("click", async () => {
     addLine("error", String(error.message || error));
     call.finish("failed to start");
   }
+}
+
+talk.addEventListener("click", () => {
+  if (call) {
+    talk.disabled = true;
+    setStatus("Hanging up…");
+    call.close();
+    return;
+  }
+  startCall();
 });
 
 window.addEventListener("pagehide", () => call?.finish("page closed"));
@@ -655,6 +660,12 @@ async function loadConfig() {
     ),
   );
   voiceSelect.value = saved in config.voices ? saved : config.voice;
+  // The Android app (and the headset button) opens /?listen: talk right away.
+  // Dropped from the URL once used, so a reload does not call again.
+  if (new URLSearchParams(location.search).has("listen")) {
+    history.replaceState(null, "", location.pathname);
+    startCall();
+  }
 }
 
 loadConfig();
