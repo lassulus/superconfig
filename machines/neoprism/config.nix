@@ -25,6 +25,7 @@
     ../../configs/services/pad
     ../../configs/services/paint
     ../../configs/services/ntfy
+    ../../configs/services/paperless
 
     ../../configs/hass/proxy.nix
     ../../configs/hermes-proxy.nix

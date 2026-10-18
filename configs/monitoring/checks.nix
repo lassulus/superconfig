@@ -53,6 +53,7 @@ in
       (https "byoidc" "https://byoidc.lassul.us/healthz")
       (https "paint" "https://paint.lassul.us/")
       (https "ntfy" "https://ntfy.lassul.us/v1/health")
+      (https "paperless" "https://paperless.lassul.us/accounts/login/")
       (https "cache" "https://cache.lassul.us/nix-cache-info")
       (https "niks3" "https://niks3.lassul.us/health")
       (soa "ns1" "95.217.192.59")

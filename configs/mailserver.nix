@@ -67,6 +67,10 @@ in
       "hermes@lassul.us" = {
         hashedPasswordFile = config.clan.core.vars.generators.hermes-mail.files."password-hash".path;
       };
+      # Fetched by paperless (configs/services/paperless) via IMAP.
+      "scan@lassul.us" = {
+        hashedPasswordFile = config.clan.core.vars.generators.mailserver-scan.files."password-hash".path;
+      };
     };
 
     # TLS via existing ACME cert
@@ -141,6 +145,21 @@ in
 
   # the plaintext is read by zitadel-reconcile (root)
   clan.core.vars.generators.mailserver-id = {
+    files."password" = { };
+    files."password-hash" = { };
+    runtimeInputs = with pkgs; [
+      coreutils
+      mkpasswd
+      pwgen
+    ];
+    script = ''
+      pwgen -s 32 1 | tr -d '\n' > "$out/password"
+      mkpasswd -sm bcrypt < "$out/password" > "$out/password-hash"
+    '';
+  };
+
+  # the plaintext goes into paperless' mail account (root-only on neoprism)
+  clan.core.vars.generators.mailserver-scan = {
     files."password" = { };
     files."password-hash" = { };
     runtimeInputs = with pkgs; [
