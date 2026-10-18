@@ -21,7 +21,6 @@
     ../../configs/services/matrix/bridges/heisenbridge.nix
     ../../configs/services/matrix/bridges/mautrix-telegram.nix
     ../../configs/services/matrix/bridges/mautrix-discord.nix
-    ../../configs/services/matrix/bridges/matrix-zulip-bridge.nix
 
     ../../configs/services/pad
     ../../configs/services/paint
