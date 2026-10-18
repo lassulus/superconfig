@@ -9,15 +9,15 @@
 
 rustPlatform.buildRustPackage {
   pname = "tincr";
-  version = "0-unstable-2026-10-17";
+  version = "0-unstable-2026-10-18";
 
   # Our fork's integration branch: upstream main + tunnel-address gate + the
   # UDP-blackhole-after-ENETUNREACH fix, until Mic92/tincr#140 lands.
   src = fetchFromGitHub {
     owner = "Lassulus";
     repo = "tincr";
-    rev = "bfcbbc698a95b10843056852f7b1417083906915";
-    hash = "sha256-T5bmAsYcCP06hdmgEE4fFdEH5uvXjAWLijdHNfg0fLw=";
+    rev = "830364917ef24008bed34c838d7796f0c004e577";
+    hash = "sha256-H71omFpIXx/0OeTtjRDam7UVK3JCtHgwFQ/M1VdGCbU=";
   };
 
   cargoHash = "sha256-3kVlB537Oe1yvmMNoCnuNkBgYqxFLvnBbc97uKGmb3g=";
