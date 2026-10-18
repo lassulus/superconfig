@@ -88,10 +88,12 @@ in
 
   # Public door to hermes-voice on coaxmetal (machines/coaxmetal/hermes-voice.nix):
   # the voice page for the phone. Everything but the files Chrome fetches
-  # without cookies to install the page and verify the Android app needs a
-  # login on id.lassul.us (oauth2-proxy below, via auth_request); logged-in
-  # requests get hermes-voice's access token added. /delegate streams NDJSON
-  # for the length of a Hermes turn, so the streaming settings apply.
+  # without cookies to install the page needs a login on id.lassul.us
+  # (oauth2-proxy below, via auth_request); logged-in requests get
+  # hermes-voice's access token added. /app/ is the Android app's door: no
+  # web login, the app's own bearer token goes through to hermes-voice, which
+  # checks it. /delegate streams NDJSON for the length of a Hermes turn, so
+  # the streaming settings apply.
   services.nginx.virtualHosts.${assist} = {
     enableACME = true;
     forceSSL = true;
@@ -103,7 +105,6 @@ in
     locations =
       lib.genAttrs
         [
-          "= /.well-known/assetlinks.json"
           "= /manifest.webmanifest"
           "= /icon-192.png"
           "= /icon-512.png"
@@ -120,6 +121,13 @@ in
           proxyPass = voiceUpstream;
           extraConfig = streamingProxy + ''
             include ${voiceAuthHeader};
+          '';
+        };
+        "/app/" = {
+          recommendedProxySettings = true;
+          proxyPass = "${voiceUpstream}/";
+          extraConfig = streamingProxy + ''
+            auth_request off;
           '';
         };
         "/oauth2/" = {

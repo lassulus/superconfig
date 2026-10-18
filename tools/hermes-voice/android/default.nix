@@ -21,14 +21,15 @@ let
   sdkRoot = "${sdk.androidsdk}/libexec/android-sdk";
   buildTools = "${sdkRoot}/build-tools/36.0.0";
   androidJar = "${sdkRoot}/platforms/android-36/android.jar";
-  browser = fetchurl {
-    url = "https://dl.google.com/android/maven2/androidx/browser/browser/1.10.0/browser-1.10.0.aar";
-    hash = "sha256-+0DR7l/ZEMnREiAIaKlTQVanqZmrwo+7PGgVouOsUVA=";
+  # WebRTC for Android (LiveKit's build of Google's libwebrtc): the Java API
+  # and the native library, which needs none of the AAR's other files.
+  webrtc = fetchurl {
+    url = "https://repo1.maven.org/maven2/io/github/webrtc-sdk/android/150.7871.01/android-150.7871.01.aar";
+    hash = "sha256-ChYnsaSMK8F9mkDWL8R71FFm9EoxHpWRfxR8QC3jebA=";
   };
 in
 # Unsigned release APK; tools/hermes-voice/flake-module.nix has the signer.
-# Only androidx.browser's classes go in: the parts used here need none of its
-# dependencies.
+# arm64 only: the app runs on Pixels.
 stdenvNoCC.mkDerivation {
   pname = "hermes-voice-android";
   version = versionName;
@@ -40,7 +41,7 @@ stdenvNoCC.mkDerivation {
   ];
   buildPhase = ''
     runHook preBuild
-    unzip -q ${browser} classes.jar -d browser
+    unzip -q ${webrtc} classes.jar 'jni/arm64-v8a/*' -d webrtc
 
     mkdir -p res/mipmap-xxxhdpi
     cp ${icon}/icon-192.png res/mipmap-xxxhdpi/ic_launcher.png
@@ -51,13 +52,16 @@ stdenvNoCC.mkDerivation {
       --version-code ${toString versionCode} --version-name ${versionName}
 
     javac -source 8 -target 8 -Xlint:-options -encoding UTF-8 \
-      -bootclasspath ${androidJar} -cp browser/classes.jar \
+      -bootclasspath ${androidJar} -cp webrtc/classes.jar \
       -d classes $(find src -name '*.java')
     ${buildTools}/d8 --release --min-api 34 --lib ${androidJar} --output . \
-      $(find classes -name '*.class') browser/classes.jar
+      $(find classes -name '*.class') webrtc/classes.jar
 
-    touch -d @315532800 classes.dex
-    TZ=UTC zip -X -D unsigned.apk classes.dex
+    mkdir -p lib/arm64-v8a
+    cp webrtc/jni/arm64-v8a/*.so lib/arm64-v8a/
+    touch -d @315532800 classes*.dex lib/arm64-v8a/*.so
+    TZ=UTC zip -X -D unsigned.apk classes*.dex
+    TZ=UTC zip -X -D -0 unsigned.apk lib/arm64-v8a/*.so
     runHook postBuild
   '';
   installPhase = ''

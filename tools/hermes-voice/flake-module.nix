@@ -1,30 +1,7 @@
-{ self, ... }:
 {
   perSystem =
-    { lib, pkgs, ... }:
+    { pkgs, ... }:
     let
-      # The Android wrapper's package name (android/AndroidManifest.xml).
-      androidPackage = "us.lassul.assist";
-      # Written by `clan vars generate coaxmetal` (machines/coaxmetal/hermes-voice.nix);
-      # until then there is no assetlinks.json and Chrome opens the app as a
-      # Custom Tab.
-      fingerprint = self + "/vars/per-machine/coaxmetal/hermes-voice-android-signing/fingerprint/value";
-      assetlinks = pkgs.writeText "assetlinks.json" (
-        builtins.toJSON [
-          {
-            # use_as_origin: the app's postMessages to the page (android/src/…/Link.java).
-            relation = [
-              "delegate_permission/common.handle_all_urls"
-              "delegate_permission/common.use_as_origin"
-            ];
-            target = {
-              namespace = "android_app";
-              package_name = androidPackage;
-              sha256_cert_fingerprints = [ (lib.removeSuffix "\n" (builtins.readFile fingerprint)) ];
-            };
-          }
-        ]
-      );
       icon = pkgs.runCommand "hermes-voice-icon" { nativeBuildInputs = [ pkgs.imagemagick ]; } ''
         mkdir $out
         for size in 192 512; do
@@ -37,10 +14,6 @@
         cp -r ${./static} $out
         chmod u+w $out
         cp ${icon}/*.png $out/
-        ${lib.optionalString (builtins.pathExists fingerprint) ''
-          mkdir $out/.well-known
-          cp ${assetlinks} $out/.well-known/assetlinks.json
-        ''}
       '';
       # The SDK is unfree; it only builds the APK and is not part of any system.
       inherit
@@ -67,8 +40,8 @@
         }).overrideAttrs
           { passthru.usage = builtins.readFile ./usage.kdl; };
 
-      # The voice page as Android app and digital assistant (Trusted Web
-      # Activity), unsigned.
+      # The Android app: holds calls itself (WebRTC) and answers the headset's
+      # voice button, unsigned.
       packages.hermes-voice-android = android;
       checks.hermes-voice-android = android;
 

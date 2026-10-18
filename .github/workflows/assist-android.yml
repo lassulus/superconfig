@@ -1,6 +1,6 @@
 name: assist-android
 
-# Builds the Android wrapper of the voice page (packages.hermes-voice-android),
+# Builds the Android app of hermes-voice (packages.hermes-voice-android),
 # signs it and publishes it as assist.apk of a new release
 # assist-android-v<run number>, so Obtainium sees every build.
 # Stable URL: https://github.com/lassulus/superconfig/releases/latest/download/assist.apk

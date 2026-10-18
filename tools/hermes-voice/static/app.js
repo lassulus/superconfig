@@ -98,6 +98,22 @@ function renderCost() {
     : `conversation ${clock(total)} · ${money(total)}`;
 }
 
+// Only the transcript scrolls (style.css); it follows the newest line unless
+// the user scrolled up. The controls above it change height after a render
+// (cost line, approval box), so a resize re-pins it too. A resize leaves
+// scrollTop alone; only moving up (the user) unpins.
+let logPinned = true;
+let logTop = 0;
+logList.addEventListener("scroll", () => {
+  if (logList.scrollTop + logList.clientHeight >= logList.scrollHeight - 4)
+    logPinned = true;
+  else if (logList.scrollTop < logTop) logPinned = false;
+  logTop = logList.scrollTop;
+});
+new ResizeObserver(() => {
+  if (logPinned) logList.scrollTop = logList.scrollHeight;
+}).observe(logList);
+
 function renderLog() {
   logList.replaceChildren(
     ...state.lines.map((line) => {
@@ -107,7 +123,7 @@ function renderLog() {
       return item;
     }),
   );
-  window.scrollTo(0, document.body.scrollHeight);
+  logList.scrollTop = logList.scrollHeight;
 }
 
 function addLine(speaker, text) {
@@ -581,10 +597,7 @@ class Call {
     voice.srcObject = null;
     state.billedSeconds += this.usageSeconds;
     saveState();
-    if (call === this) {
-      call = null;
-      tellApp("ended");
-    }
+    if (call === this) call = null;
     talk.classList.remove("live", "speaking");
     talk.textContent = "Talk";
     talk.disabled = false;
@@ -595,14 +608,12 @@ class Call {
 
 async function startCall() {
   call = new Call();
-  tellApp("started");
   talk.disabled = true;
   talk.classList.add("live");
   talk.textContent = "Hang up";
   setStatus("Connecting…");
   // Must run inside the click handler: mobile browsers only allow audio
-  // playback started by a user gesture. Started without one (?listen), the
-  // track handler's play() runs while the mic records, which Chrome allows.
+  // playback started by a user gesture.
   voice.play().catch(() => {});
   try {
     await call.start();
@@ -613,40 +624,17 @@ async function startCall() {
   }
 }
 
-function hangUpCall() {
-  talk.disabled = true;
-  setStatus("Hanging up…");
-  call.close();
-}
-
 talk.addEventListener("click", () => {
   if (call) {
-    hangUpCall();
+    talk.disabled = true;
+    setStatus("Hanging up…");
+    call.close();
     return;
   }
   startCall();
 });
 
 window.addEventListener("pagehide", () => call?.finish("page closed"));
-
-// The Android app holds each call in Android's telephony (Telecom), so a
-// headset's hang-up button reaches it; it then sends "hangup". Its first
-// message, as this origin (assetlinks.json: use_as_origin), brings the port.
-let appPort = null;
-
-function tellApp(message) {
-  appPort?.postMessage(message);
-}
-
-window.addEventListener("message", (event) => {
-  if (event.origin !== location.origin || !event.ports[0]) return;
-  appPort = event.ports[0];
-  appPort.onmessage = ({ data }) => {
-    if (data === "hangup" && call) hangUpCall();
-  };
-  // ?listen starts the call before the app's channel is up.
-  if (call) tellApp("started");
-});
 
 document.getElementById("new").addEventListener("click", () => {
   if (call) call.close();
@@ -687,12 +675,6 @@ async function loadConfig() {
     ),
   );
   voiceSelect.value = saved in config.voices ? saved : config.voice;
-  // The Android app (and the headset button) opens /?listen: talk right away.
-  // Dropped from the URL once used, so a reload does not call again.
-  if (new URLSearchParams(location.search).has("listen")) {
-    history.replaceState(null, "", location.pathname);
-    startCall();
-  }
 }
 
 loadConfig();
