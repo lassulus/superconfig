@@ -11,14 +11,17 @@ let
   webhookPort = config.services.hermes-agent.settings.platforms.webhook.extra.port;
 in
 {
+  imports = [ ../../configs/hermes-voice-vars.nix ];
+
   # hermes-voice (tools/hermes-voice): live voice conversations with Hermes
   # through OpenAI's gpt-live-1. Runs next to Hermes so its API key never
   # leaves this host; reachable over retiolum and publicly as
   # https://assist.lassul.us through neoprism (configs/hermes-proxy.nix).
   #
   # SECURITY: the page drives Hermes, which has terminal tools and code
-  # execution as lass (machines/coaxmetal/hermes.nix). The access token below
-  # is the gate on every API route; treat it like the hermes-api key.
+  # execution as lass (machines/coaxmetal/hermes.nix). The access token
+  # (configs/hermes-voice-vars.nix) is the gate on every API route; treat it
+  # like the hermes-api key.
   systemd.services.hermes-voice = {
     description = "hermes-voice: live voice conversations with Hermes";
     wantedBy = [ "multi-user.target" ];
@@ -102,19 +105,6 @@ in
     description = "OpenAI API key for hermes-voice (gpt-live-1)";
     type = "hidden";
     persist = true;
-  };
-
-  # What the page sends as its bearer token. Read it out for the phone with
-  #   clan vars get coaxmetal hermes-voice/access-token
-  clan.core.vars.generators.hermes-voice = {
-    files."access-token" = { };
-    runtimeInputs = [
-      pkgs.coreutils
-      pkgs.openssl
-    ];
-    script = ''
-      openssl rand -hex 32 | tr -d '\n' > "$out/access-token"
-    '';
   };
 
   # Signing key of the Android wrapper (packages.hermes-voice-android); only
