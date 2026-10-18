@@ -1,8 +1,9 @@
 # Audio routing matrix: one Home Assistant switch (MQTT discovery) per
 # source and speaker. While a switch is on, the source's PipeWire node is
 # linked to the speaker's node. Sources are the fixed nodes from the config
-# plus every connected Bluetooth A2DP source (bluez_input.*). A new source
-# starts on the config's `rooms` of it, else on all speakers. Each speaker
+# plus every connected Bluetooth A2DP source (bluez_input.*; phones left on
+# the "off" profile are switched to A2DP). A new source starts on the
+# config's `rooms` of it, else on all speakers. Each speaker
 # also gets a volume (MQTT number), applied to its node with wpctl. Usage:
 # audio-matrix CONFIG.json [--dry-run], --dry-run prints the pw-link and
 # wpctl calls without running them.
@@ -22,9 +23,10 @@ speakers = config["speakers"]
 
 events = queue.Queue()
 
-# PipeWire objects by id: nodes, ports and links
+# PipeWire objects by id: devices, nodes, ports and links
 graph = {}
 interesting = {
+    "PipeWire:Interface:Device",
     "PipeWire:Interface:Node",
     "PipeWire:Interface:Port",
     "PipeWire:Interface:Link",
@@ -92,6 +94,29 @@ def sources():
         )
         src["nodes"].append(i)
     return found
+
+
+# bluez devices whose profile was switched on, so a phone that turns it off
+# again is left alone
+profiled = set()
+
+
+# WirePlumber leaves a newly paired phone on the "off" profile when its A2DP
+# transport is not up yet at connect time, so it gets no bluez_input node.
+# Switch such devices to the A2DP (audio-gateway) profile once.
+def bluetooth_profiles():
+    for i, info in objects("Device"):
+        if info["props"].get("device.api") != "bluez5" or i in profiled:
+            continue
+        params = info.get("params", {})
+        current = (params.get("Profile") or [{}])[0].get("name")
+        gateway = [
+            p for p in params.get("EnumProfile", [])
+            if p.get("name") == "audio-gateway" and p.get("available") != "no"
+        ]
+        if current == "off" and gateway:
+            run("wpctl", "set-profile", i, gateway[0]["index"])
+            profiled.add(i)
 
 
 # whether both nodes have their ports to link yet
@@ -239,6 +264,7 @@ published = {}
 
 
 def sync():
+    bluetooth_profiles()
     found = sources()
     for key in [k for k in published if k not in found]:
         unpublish(key)
