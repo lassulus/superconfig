@@ -66,6 +66,7 @@
       # The voice page as Android app and digital assistant (Trusted Web
       # Activity), unsigned.
       packages.hermes-voice-android = android;
+      checks.hermes-voice-android = android;
 
       # Aligns and signs the APK with the keystore from
       # `clan vars get coaxmetal hermes-voice-android-signing/keystore`.
