@@ -12,7 +12,7 @@
     ../../configs/green-host.nix
     ../../configs/syncthing.nix
     ../../configs/ppp/umts-stick.nix
-    ../../configs/snapclient.nix
+    ../../configs/gg23/audio/room.nix
     ../../configs/monitoring/server.nix
   ];
 

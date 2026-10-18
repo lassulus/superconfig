@@ -1,9 +1,11 @@
 # Audio routing matrix: one Home Assistant switch (MQTT discovery) per
 # source and speaker. While a switch is on, the source's PipeWire node is
 # linked to the speaker's node. Sources are the fixed nodes from the config
-# plus every connected Bluetooth A2DP source (bluez_input.*). Usage:
-# audio-matrix CONFIG.json [--dry-run], --dry-run prints the pw-link calls
-# without running them.
+# plus every connected Bluetooth A2DP source (bluez_input.*). A new source
+# starts on the config's `rooms` of it, else on all speakers. Each speaker
+# also gets a volume (MQTT number), applied to its node with wpctl. Usage:
+# audio-matrix CONFIG.json [--dry-run], --dry-run prints the pw-link and
+# wpctl calls without running them.
 import json
 import os
 import queue
@@ -66,7 +68,12 @@ def nodes_named(name):
 
 def sources():
     found = {
-        key: {"label": s["label"], "kind": key, "nodes": nodes_named(s["node"])}
+        key: {
+            "label": s["label"],
+            "kind": key,
+            "nodes": nodes_named(s["node"]),
+            "rooms": s.get("rooms"),
+        }
         for key, s in config["sources"].items()
     }
     for i, info in objects("Node"):
@@ -103,25 +110,40 @@ def linked(out_node, in_node):
     )
 
 
-def pw_link(*args):
-    cmd = ["pw-link", *map(str, args)]
-    print(" ".join(cmd), flush=True)
+def run(*cmd):
+    print(" ".join(map(str, cmd)), flush=True)
     if not dry_run:
-        subprocess.run(cmd)
+        subprocess.run(list(map(str, cmd)))
+
+
+def pw_link(*args):
+    run("pw-link", *args)
+
+
+def load(path):
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+
+
+def store(path, data):
+    with open(path + ".tmp", "w") as f:
+        json.dump(data, f)
+    os.replace(path + ".tmp", path)
 
 
 # speakers each source plays on, by source key
-try:
-    with open(config["state"]) as f:
-        routes = json.load(f)
-except FileNotFoundError:
-    routes = {}
+routes = load(config["state"])
+# volume in percent by speaker, 100 if never set
+volumes = load(config["volumes"])
+# volume last set on each speaker node, by node id
+applied = {}
 
 
 def save():
-    with open(config["state"] + ".tmp", "w") as f:
-        json.dump(routes, f)
-    os.replace(config["state"] + ".tmp", config["state"])
+    store(config["state"], routes)
 
 
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
@@ -139,6 +161,38 @@ def topic(key, speaker):
 def publish_state(key, speaker):
     state = "ON" if speaker in routes[key] else "OFF"
     client.publish(topic(key, speaker) + "/state", state, retain=True)
+
+
+def volume_topic(speaker):
+    return f"gg23/audio-volume/{speaker}"
+
+
+def publish_volumes():
+    for speaker, sp in speakers.items():
+        base = volume_topic(speaker)
+        client.publish(base + "/state", volumes.get(speaker, 100), retain=True)
+        discovery = {
+            "name": sp["label"],
+            "unique_id": f"acheron_audio_volume_{speaker}",
+            "default_entity_id": f"number.audio_volume_{speaker}",
+            "command_topic": base + "/set",
+            "state_topic": base + "/state",
+            "min": 0,
+            "max": 100,
+            "step": 1,
+            "mode": "slider",
+            "unit_of_measurement": "%",
+            "icon": "mdi:volume-high",
+            "device": {
+                "identifiers": ["acheron_audio_volume"],
+                "name": "Room volume",
+            },
+        }
+        client.publish(
+            f"homeassistant/number/audio_volume_{speaker}/config",
+            json.dumps(discovery),
+            retain=True,
+        )
 
 
 def publish(key, src):
@@ -191,7 +245,8 @@ def sync():
         del published[key]
     for key, src in found.items():
         if key not in routes:
-            routes[key] = list(speakers)
+            rooms = src.get("rooms")
+            routes[key] = list(speakers if rooms is None else rooms)
             save()
         if key not in published or published[key] != src["label"]:
             publish(key, src)
@@ -205,6 +260,12 @@ def sync():
                             pw_link("-d", out_node, in_node)
                     elif want and ports(out_node, in_node):
                         pw_link(out_node, in_node)
+    for speaker, sp in speakers.items():
+        volume = volumes.get(speaker, 100)
+        for node in nodes_named(sp["node"]):
+            if applied.get(node) != volume:
+                run("wpctl", "set-volume", node, volume / 100)
+                applied[node] = volume
 
 
 def command(t, payload):
@@ -219,8 +280,21 @@ def command(t, payload):
     publish_state(key, speaker)
 
 
+def volume_command(t, payload):
+    speaker = t.split("/")[2]
+    if speaker not in speakers:
+        return
+    try:
+        volumes[speaker] = max(0, min(100, round(float(payload))))
+    except ValueError:
+        return
+    store(config["volumes"], volumes)
+    client.publish(volume_topic(speaker) + "/state", volumes[speaker], retain=True)
+
+
 def on_connect(client, userdata, flags, reason_code, properties):
     client.subscribe("gg23/audio-route/+/+/set")
+    client.subscribe("gg23/audio-volume/+/set")
     events.put(("connect",))
 
 
@@ -251,8 +325,12 @@ def handle(event):
         # republish everything, and clear the switches of sources that
         # vanished while nobody was connected
         published = dict.fromkeys(routes)
+        publish_volumes()
     elif event[0] == "command":
-        command(*event[1:])
+        if event[1].startswith("gg23/audio-volume/"):
+            volume_command(*event[1:])
+        else:
+            command(*event[1:])
     elif event[0] == "exit":
         sys.exit(f"pw-dump exited with {event[1]}")
 
