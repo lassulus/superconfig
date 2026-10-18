@@ -1,0 +1,4 @@
+bin "iptv"
+about "Listen to TV channels from the iptv-org playlist, audio only, on this machine (mpv; < and > switch channels)"
+long_about "Runs mpv with --no-video on https://iptv-org.github.io/iptv/index.m3u. Extra arguments go to mpv, e.g. --playlist-start=<n> or --shuffle."
+arg "[mpv_args...]" help="Extra mpv arguments" var=#true
