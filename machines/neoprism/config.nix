@@ -4,7 +4,7 @@
 }:
 
 {
-  environment.etc."ci-lazy-bench".text = "passthrough on 1792345410119724299";
+  environment.etc."ci-lazy-bench".text = "passthrough off 1792345682724806701";
   imports = [
     ../../configs
     ../../configs/ssh-redirect.nix
