@@ -221,7 +221,7 @@ for project_name, project in config["projects"].items():
         oidc_config = {
             "redirectUris": app["redirectUris"],
             "responseTypes": ["OIDC_RESPONSE_TYPE_CODE"],
-            "grantTypes": ["OIDC_GRANT_TYPE_AUTHORIZATION_CODE"],
+            "grantTypes": app["grantTypes"],
             "appType": "OIDC_APP_TYPE_WEB",
             "authMethodType": app["authMethodType"],
         }

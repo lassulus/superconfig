@@ -23,6 +23,10 @@ let
         apps = lib.mapAttrs (_: app: {
           inherit (app) redirectUris envFile;
           authMethodType = "OIDC_AUTH_METHOD_TYPE_${lib.toUpper app.authMethod}";
+          grantTypes = [
+            "OIDC_GRANT_TYPE_AUTHORIZATION_CODE"
+          ]
+          ++ lib.optional app.refreshTokens "OIDC_GRANT_TYPE_REFRESH_TOKEN";
         }) project.apps;
       }) cfg.projects;
     }
@@ -182,6 +186,15 @@ in
                           ];
                           default = "basic";
                           description = "How the app sends its client secret to the token endpoint.";
+                        };
+                        refreshTokens = lib.mkOption {
+                          type = lib.types.bool;
+                          default = false;
+                          description = ''
+                            Allow the refresh_token grant. Zitadel hands out
+                            refresh tokens only when the app requests the
+                            offline_access scope.
+                          '';
                         };
                         envFile = {
                           path = lib.mkOption {
