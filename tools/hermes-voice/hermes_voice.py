@@ -46,6 +46,7 @@ import socket
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -618,10 +619,12 @@ class Handler(BaseHTTPRequestHandler):
             # Missing until the Android signing key exists.
             "/.well-known/assetlinks.json": (".well-known/assetlinks.json", "application/json"),
         }
-        if self.path not in names or not (self.static / names[self.path][0]).is_file():
+        # The page takes query parameters (/?listen from the Android app).
+        path = urllib.parse.urlsplit(self.path).path
+        if path not in names or not (self.static / names[path][0]).is_file():
             self.send_error(HTTPStatus.NOT_FOUND)
             return
-        name, content_type = names[self.path]
+        name, content_type = names[path]
         body = (self.static / name).read_bytes()
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", content_type)
