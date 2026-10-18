@@ -12,7 +12,11 @@
       assetlinks = pkgs.writeText "assetlinks.json" (
         builtins.toJSON [
           {
-            relation = [ "delegate_permission/common.handle_all_urls" ];
+            # use_as_origin: the app's postMessages to the page (android/src/…/Link.java).
+            relation = [
+              "delegate_permission/common.handle_all_urls"
+              "delegate_permission/common.use_as_origin"
+            ];
             target = {
               namespace = "android_app";
               package_name = androidPackage;

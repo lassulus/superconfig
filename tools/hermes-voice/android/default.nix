@@ -47,13 +47,13 @@ stdenvNoCC.mkDerivation {
     ${buildTools}/aapt2 compile --dir res -o res.zip
     ${buildTools}/aapt2 link -o unsigned.apk -I ${androidJar} \
       --manifest AndroidManifest.xml res.zip \
-      --min-sdk-version 29 --target-sdk-version 36 \
+      --min-sdk-version 34 --target-sdk-version 36 \
       --version-code ${toString versionCode} --version-name ${versionName}
 
     javac -source 8 -target 8 -Xlint:-options -encoding UTF-8 \
       -bootclasspath ${androidJar} -cp browser/classes.jar \
       -d classes $(find src -name '*.java')
-    ${buildTools}/d8 --release --min-api 29 --lib ${androidJar} --output . \
+    ${buildTools}/d8 --release --min-api 34 --lib ${androidJar} --output . \
       $(find classes -name '*.class') browser/classes.jar
 
     touch -d @315532800 classes.dex

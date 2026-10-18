@@ -581,7 +581,10 @@ class Call {
     voice.srcObject = null;
     state.billedSeconds += this.usageSeconds;
     saveState();
-    if (call === this) call = null;
+    if (call === this) {
+      call = null;
+      tellApp("ended");
+    }
     talk.classList.remove("live", "speaking");
     talk.textContent = "Talk";
     talk.disabled = false;
@@ -592,6 +595,7 @@ class Call {
 
 async function startCall() {
   call = new Call();
+  tellApp("started");
   talk.disabled = true;
   talk.classList.add("live");
   talk.textContent = "Hang up";
@@ -609,17 +613,40 @@ async function startCall() {
   }
 }
 
+function hangUpCall() {
+  talk.disabled = true;
+  setStatus("Hanging up…");
+  call.close();
+}
+
 talk.addEventListener("click", () => {
   if (call) {
-    talk.disabled = true;
-    setStatus("Hanging up…");
-    call.close();
+    hangUpCall();
     return;
   }
   startCall();
 });
 
 window.addEventListener("pagehide", () => call?.finish("page closed"));
+
+// The Android app holds each call in Android's telephony (Telecom), so a
+// headset's hang-up button reaches it; it then sends "hangup". Its first
+// message, as this origin (assetlinks.json: use_as_origin), brings the port.
+let appPort = null;
+
+function tellApp(message) {
+  appPort?.postMessage(message);
+}
+
+window.addEventListener("message", (event) => {
+  if (event.origin !== location.origin || !event.ports[0]) return;
+  appPort = event.ports[0];
+  appPort.onmessage = ({ data }) => {
+    if (data === "hangup" && call) hangUpCall();
+  };
+  // ?listen starts the call before the app's channel is up.
+  if (call) tellApp("started");
+});
 
 document.getElementById("new").addEventListener("click", () => {
   if (call) call.close();
