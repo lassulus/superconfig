@@ -1,0 +1,16 @@
+bin "vodafone-station-exporter"
+about "Prometheus exporter for the ARRIS TG3442DE Vodafone Station: logs into the web UI per scrape, exports DOCSIS channel and router status"
+
+flag "--router" help="Router base URL (default: http://192.168.0.1)" {
+  arg "<url>"
+}
+flag "--user" help="Web UI user (default: admin)" {
+  arg "<name>"
+}
+flag "--password-file" help="File holding the web UI password" required=#true {
+  arg "<file>"
+}
+flag "--listen" help="host:port serving /metrics (default: 127.0.0.1:9764)" {
+  arg "<host:port>"
+}
+flag "--once" help="Print the metrics once and exit"
