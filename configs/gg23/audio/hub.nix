@@ -105,9 +105,13 @@ let
     ''{% set col = states.switch | selectattr('entity_id', 'search', '^switch\\.audio_route_.*_${r}$') | map(attribute='entity_id') | list %}{% set ns.out = ns.out + [{"type": "vertical-stack", "cards": [{"type": "tile", "entity": "number.audio_volume_${r}", "name": "${rooms.${r}}", "icon": "mdi:speaker", "features": [{"type": "numeric-input", "style": "slider"}]}, ${
       allButton "All off" "mdi:volume-off" "switch.turn_off" "col"
     }]}] %}'';
+  # crossed out speaker when off, so on/off differ in shape too
   routeCell =
     r:
-    ''{"type": "button", "entity": "switch.audio_route_" ~ k ~ "_${r}", "name": "${rooms.${r}}", "show_name": false, "icon": "mdi:speaker", "icon_height": "64px", "tap_action": {"action": "toggle"}, "hold_action": {"action": "none"}}'';
+    let
+      id = ''"switch.audio_route_" ~ k ~ "_${r}"'';
+    in
+    ''{"type": "button", "entity": ${id}, "name": "${rooms.${r}}", "show_name": false, "icon": ("mdi:speaker" if is_state(${id}, "on") else "mdi:speaker-off"), "icon_height": "64px", "tap_action": {"action": "toggle"}, "hold_action": {"action": "none"}}'';
   matrix = lib.concatStrings (
     [
       "{% set ns = namespace(out=[]) %}"
