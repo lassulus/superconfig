@@ -31,6 +31,10 @@ Hermes host, so whoever can use this server can drive the agent: every API
 route requires the page's own access token (--access-token-file), and serving
 beyond loopback without one is refused.
 
+The Android app (android/) is a second client of the same routes: it holds
+the call itself (WebRTC, no page) and presents its own token
+(--app-token-file), which the proxy passes through without the web login.
+
 Vendor contract: https://developers.openai.com/api/docs/guides/live-delegation
 """
 
@@ -558,6 +562,7 @@ class Handler(BaseHTTPRequestHandler):
     config: Config
     static: Path
     access_token: "str | None" = None
+    app_token: "str | None" = None
 
     def authorized(self, also_hermes_key=False):
         """Check the page's bearer token (or, where allowed, the API server key
@@ -568,6 +573,8 @@ class Handler(BaseHTTPRequestHandler):
         header = self.headers.get("Authorization", "")
         scheme, _, token = header.partition(" ")
         accepted = [self.access_token]
+        if self.app_token:
+            accepted.append(self.app_token)
         if also_hermes_key:
             accepted.append(self.config.hermes_key)
         if scheme == "Bearer" and any(
@@ -616,10 +623,8 @@ class Handler(BaseHTTPRequestHandler):
             "/manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json"),
             "/icon-192.png": ("icon-192.png", "image/png"),
             "/icon-512.png": ("icon-512.png", "image/png"),
-            # Missing until the Android signing key exists.
-            "/.well-known/assetlinks.json": (".well-known/assetlinks.json", "application/json"),
         }
-        # The page takes query parameters (/?listen from the Android app).
+        # Query strings do not pick a different file.
         path = urllib.parse.urlsplit(self.path).path
         if path not in names or not (self.static / names[path][0]).is_file():
             self.send_error(HTTPStatus.NOT_FOUND)
@@ -822,6 +827,7 @@ def main():
     parser.add_argument("--hermes-key-file", required=True, help="file holding API_SERVER_KEY")
     parser.add_argument("--openai-key-file", required=True, help="file holding the OpenAI API key")
     parser.add_argument("--access-token-file", help="file holding the token the page must present")
+    parser.add_argument("--app-token-file", help="file holding the token the Android app presents")
     parser.add_argument(
         "--matrix-webhook",
         help="Hermes webhook route (deliver_only to Matrix, signed with API_SERVER_KEY) that "
@@ -853,6 +859,8 @@ def main():
     Handler.static = Path(args.static)
     if args.access_token_file:
         Handler.access_token = Path(args.access_token_file).read_text().strip()
+    if args.app_token_file:
+        Handler.app_token = Path(args.app_token_file).read_text().strip()
     server_class = ThreadingHTTPServer
     if ":" in host:
         # "::" is dual-stack on Linux (bindv6only=0).

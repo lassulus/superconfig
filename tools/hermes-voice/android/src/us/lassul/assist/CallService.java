@@ -1,12 +1,18 @@
 package us.lassul.assist;
 
+import android.Manifest;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.app.Person;
 import android.app.Service;
 import android.content.ComponentName;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
+import android.media.AudioManager;
+import android.media.ToneGenerator;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
@@ -28,55 +34,39 @@ import java.util.List;
 import java.util.function.Consumer;
 
 /**
- * Holds each call of the page as a self-managed call in Telecom, so a Bluetooth headset sees a
- * call and its hang-up (AT+CHUP) reaches this app, which tells the page. In the foreground, as
- * otherwise Android freezes the process once the page is in front. Stops when idle: a call the
- * page starts after that is not held (the app cannot start this service from the background).
+ * One call at a time, without a screen: a VoiceCall held as a self-managed Telecom call, so the
+ * audio goes to the Bluetooth headset and its hang-up button (AT+CHUP) ends the call. In the
+ * foreground with the microphone; stops when the call ends. A tone says the voice listens (or
+ * that the call failed).
  */
 public class CallService extends Service {
+    static final String TAG = "Assist";
+    static final String ACTION_START = "us.lassul.assist.START";
+    static final String ACTION_HANG_UP = "us.lassul.assist.HANG_UP";
     private static final String CHANNEL = "call";
-    private static final long IDLE_MS = 2 * 60 * 1000;
+    private static final int NOTIFICATION = 1;
 
-    private static CallService running;
-
-    private final Handler handler = new Handler(Looper.getMainLooper());
-    private final Runnable idleStop = new Runnable() {
-        @Override
-        public void run() {
-            stopSelf();
-        }
-    };
+    private final Handler main = new Handler(Looper.getMainLooper());
     private PhoneAccountHandle account;
-    private CallControl call;
-    // The page's call runs; false while adding means: disconnect once added.
-    private boolean wanted;
+    private CallControl telecom;
+    private VoiceCall voice;
+    // What the main screen shows (main thread); null without a call.
+    private static String state;
 
-    static void pageStarted() {
-        if (running != null) {
-            running.startCall();
-        }
+    static String state() {
+        return state;
     }
 
-    static void pageEnded() {
-        if (running != null) {
-            running.endCall();
-        }
+    private static void setState(String next) {
+        state = next;
+        Live.changed();
     }
 
     @Override
     public void onCreate() {
         super.onCreate();
-        running = this;
-        NotificationManager notifications = getSystemService(NotificationManager.class);
-        notifications.createNotificationChannel(
+        getSystemService(NotificationManager.class).createNotificationChannel(
                 new NotificationChannel(CHANNEL, "Voice call", NotificationManager.IMPORTANCE_LOW));
-        Notification notification = new Notification.Builder(this, CHANNEL)
-                .setSmallIcon(android.R.drawable.sym_action_call)
-                .setContentTitle("Assist")
-                .setContentText("The headset button hangs up")
-                .setOngoing(true)
-                .build();
-        startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL);
         account = new PhoneAccountHandle(new ComponentName(this, CallService.class), "assist");
         getSystemService(TelecomManager.class).registerPhoneAccount(
                 PhoneAccount.builder(account, "Assist")
@@ -88,19 +78,78 @@ public class CallService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        if (call == null && !wanted) {
-            idle();
+        String action = intent != null ? intent.getAction() : null;
+        if (ACTION_HANG_UP.equals(action)) {
+            if (voice != null) {
+                voice.close();
+            } else {
+                stopSelf();
+            }
+            return START_NOT_STICKY;
         }
+        if (voice != null) {
+            // A call runs already: the button press changes nothing.
+            return START_NOT_STICKY;
+        }
+        Api api = Api.load(this);
+        if (api == null
+                || checkSelfPermission(Manifest.permission.RECORD_AUDIO)
+                        != PackageManager.PERMISSION_GRANTED) {
+            // startForegroundService() needs startForeground(); the microphone type would be
+            // refused without the permission.
+            startForeground(NOTIFICATION, setupNotification(),
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL);
+            Log.w(TAG, "not set up: open Assist");
+            tone(ToneGenerator.TONE_PROP_NACK);
+            main.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    stopSelf();
+                }
+            }, 1000);
+            return START_NOT_STICKY;
+        }
+        startForeground(NOTIFICATION, callNotification(),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL
+                        | ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE);
+        setState("Connecting…");
+        voice = new VoiceCall(this, api, Conversation.load(this), new VoiceCall.Listener() {
+            @Override
+            public void onListening() {
+                setState("Listening");
+                tone(ToneGenerator.TONE_PROP_ACK);
+            }
+
+            @Override
+            public void onFinished(String reason, boolean failed) {
+                voice = null;
+                setState(null);
+                if (failed) {
+                    tone(ToneGenerator.TONE_PROP_NACK);
+                }
+                disconnectTelecom();
+                // Let a failure tone play before the service, and with it the call audio, goes.
+                main.postDelayed(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (voice == null) {
+                            stopSelf();
+                        }
+                    }
+                }, failed ? 1000 : 0);
+            }
+        });
+        addTelecomCall();
         return START_NOT_STICKY;
     }
 
     @Override
     public void onDestroy() {
-        handler.removeCallbacksAndMessages(null);
-        wanted = false;
-        disconnect();
-        Link.close();
-        running = null;
+        main.removeCallbacksAndMessages(null);
+        if (voice != null) {
+            voice.close();
+        }
+        disconnectTelecom();
         super.onDestroy();
     }
 
@@ -109,20 +158,8 @@ public class CallService extends Service {
         return null;
     }
 
-    private void idle() {
-        handler.removeCallbacks(idleStop);
-        handler.postDelayed(idleStop, IDLE_MS);
-    }
-
-    private void startCall() {
-        handler.removeCallbacks(idleStop);
-        if (wanted) {
-            return;
-        }
-        wanted = true;
-        if (call != null) {
-            return;
-        }
+    /** The voice starts once Telecom has the call (audio routed), or without it if refused. */
+    private void addTelecomCall() {
         CallAttributes attributes = new CallAttributes.Builder(
                         account,
                         CallAttributes.DIRECTION_OUTGOING,
@@ -136,48 +173,78 @@ public class CallService extends Service {
                 new OutcomeReceiver<CallControl, CallException>() {
                     @Override
                     public void onResult(CallControl control) {
-                        Log.i(Link.TAG, "telecom call added");
-                        call = control;
-                        if (wanted) {
-                            control.setActive(getMainExecutor(), logged("setActive"));
-                        } else {
-                            disconnect();
+                        if (voice == null) {
+                            control.disconnect(new DisconnectCause(DisconnectCause.LOCAL),
+                                    getMainExecutor(), logged("disconnect"));
+                            return;
                         }
+                        telecom = control;
+                        control.setActive(getMainExecutor(), logged("setActive"));
+                        voice.start();
                     }
 
                     @Override
                     public void onError(CallException error) {
-                        Log.w(Link.TAG, "telecom call refused", error);
-                        wanted = false;
-                        idle();
+                        Log.w(TAG, "telecom refused the call; the headset cannot hang up", error);
+                        if (voice != null) {
+                            voice.start();
+                        }
                     }
                 },
                 new Control(),
                 new Events());
     }
 
-    private void endCall() {
-        wanted = false;
-        disconnect();
-        idle();
-    }
-
-    private void disconnect() {
-        if (call != null) {
-            call.disconnect(
-                    new DisconnectCause(DisconnectCause.LOCAL), getMainExecutor(), logged("disconnect"));
-            call = null;
+    private void disconnectTelecom() {
+        if (telecom != null) {
+            telecom.disconnect(new DisconnectCause(DisconnectCause.LOCAL), getMainExecutor(),
+                    logged("disconnect"));
+            telecom = null;
         }
     }
 
-    private static OutcomeReceiver<Void, CallException> logged(String what) {
+    private void tone(int tone) {
+        final ToneGenerator generator = new ToneGenerator(AudioManager.STREAM_VOICE_CALL, 80);
+        generator.startTone(tone, 300);
+        main.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                generator.release();
+            }
+        }, 500);
+    }
+
+    private Notification callNotification() {
+        PendingIntent hangUp = PendingIntent.getService(this, 0,
+                new Intent(this, CallService.class).setAction(ACTION_HANG_UP),
+                PendingIntent.FLAG_IMMUTABLE);
+        return new Notification.Builder(this, CHANNEL)
+                .setSmallIcon(android.R.drawable.sym_action_call)
+                .setStyle(Notification.CallStyle.forOngoingCall(
+                        new Person.Builder().setName("Hermes").build(), hangUp))
+                .setOngoing(true)
+                .build();
+    }
+
+    private Notification setupNotification() {
+        PendingIntent setup = PendingIntent.getActivity(this, 0,
+                new Intent(this, SettingsActivity.class), PendingIntent.FLAG_IMMUTABLE);
+        return new Notification.Builder(this, CHANNEL)
+                .setSmallIcon(android.R.drawable.stat_notify_error)
+                .setContentTitle("Assist is not set up")
+                .setContentText("Open it to enter the token and allow the microphone")
+                .setContentIntent(setup)
+                .build();
+    }
+
+    private static OutcomeReceiver<Void, CallException> logged(final String what) {
         return new OutcomeReceiver<Void, CallException>() {
             @Override
             public void onResult(Void result) {}
 
             @Override
             public void onError(CallException error) {
-                Log.w(Link.TAG, what + " failed", error);
+                Log.w(TAG, what + " failed", error);
             }
         };
     }
@@ -198,15 +265,15 @@ public class CallService extends Service {
             done.accept(true);
         }
 
-        // Telecom ended the call: the headset hung up (AT+CHUP) or a call took over.
+        // Telecom ended the call: the headset hung up (AT+CHUP) or another call took over.
         @Override
         public void onDisconnect(DisconnectCause cause, Consumer<Boolean> done) {
-            Log.i(Link.TAG, "telecom disconnect: " + cause);
+            Log.i(TAG, "telecom disconnect: " + cause);
             done.accept(true);
-            call = null;
-            wanted = false;
-            Link.hangUp();
-            idle();
+            telecom = null;
+            if (voice != null) {
+                voice.close();
+            }
         }
 
         @Override
@@ -217,7 +284,9 @@ public class CallService extends Service {
 
     private static final class Events implements CallEventCallback {
         @Override
-        public void onCallEndpointChanged(CallEndpoint endpoint) {}
+        public void onCallEndpointChanged(CallEndpoint endpoint) {
+            Log.i(TAG, "audio to " + endpoint);
+        }
 
         @Override
         public void onAvailableCallEndpointsChanged(List<CallEndpoint> endpoints) {}

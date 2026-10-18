@@ -20,8 +20,10 @@ in
   #
   # SECURITY: the page drives Hermes, which has terminal tools and code
   # execution as lass (machines/coaxmetal/hermes.nix). The access token
-  # (configs/hermes-voice-vars.nix) is the gate on every API route; treat it
-  # like the hermes-api key.
+  # (configs/hermes-voice-vars.nix) and the Android app's token
+  # (hermes-voice-app below) are the gates on every API route; treat both
+  # like the hermes-api key. The app takes calls from the headset button with
+  # the phone locked, approvals by voice included.
   systemd.services.hermes-voice = {
     description = "hermes-voice: live voice conversations with Hermes";
     wantedBy = [ "multi-user.target" ];
@@ -45,6 +47,8 @@ in
         "%d/openai-key"
         "--access-token-file"
         "%d/access-token"
+        "--app-token-file"
+        "%d/app-token"
         "--matrix-webhook"
         "http://127.0.0.1:${toString webhookPort}/webhooks/voice-approval"
       ];
@@ -52,6 +56,7 @@ in
         "hermes-key:${config.clan.core.vars.generators.hermes-api.files."api_key".path}"
         "openai-key:${config.clan.core.vars.generators.hermes-voice-openai.files."api-key".path}"
         "access-token:${config.clan.core.vars.generators.hermes-voice.files."access-token".path}"
+        "app-token:${config.clan.core.vars.generators.hermes-voice-app.files.token.path}"
       ];
       DynamicUser = true;
       Restart = "on-failure";
@@ -107,9 +112,24 @@ in
     persist = true;
   };
 
-  # Signing key of the Android wrapper (packages.hermes-voice-android); only
-  # read when signing, so nothing is deployed. The fingerprint goes into the
-  # page's assetlinks.json (tools/hermes-voice/flake-module.nix).
+  # Bearer token of the Android app (tools/hermes-voice/android), checked by
+  # hermes-voice next to the page's access token; the proxy passes it through
+  # on assist.lassul.us/app/ without the web login (configs/hermes-proxy.nix).
+  # Paste it into the app once:
+  #   clan vars get coaxmetal hermes-voice-app/token
+  clan.core.vars.generators.hermes-voice-app = {
+    files.token = { };
+    runtimeInputs = [
+      pkgs.coreutils
+      pkgs.openssl
+    ];
+    script = ''
+      openssl rand -hex 32 | tr -d '\n' > "$out/token"
+    '';
+  };
+
+  # Signing key of the Android app (packages.hermes-voice-android); only read
+  # when signing, so nothing is deployed.
   clan.core.vars.generators.hermes-voice-android-signing = {
     files.keystore.deploy = false;
     files.password.deploy = false;

@@ -2,39 +2,61 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="us.lassul.assist">
 
-    <!-- CallService: each call of the page as a self-managed Telecom call. -->
+    <!-- VoiceCall: WebRTC to gpt-live-1 and the hermes-voice API. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <!-- CallService: the call as a self-managed Telecom call, in the foreground. -->
     <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
-
-    <queries>
-        <intent>
-            <action android:name="android.support.customtabs.action.CustomTabsService" />
-        </intent>
-    </queries>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:label="Assist"
         android:icon="@mipmap/ic_launcher"
-        android:allowBackup="false">
-        <!-- Over the lock screen and waking the display: a headset button
-             (VOICE_COMMAND) usually arrives while the phone is locked; the
-             activity then asks to unlock before it opens the page. -->
+        android:allowBackup="false"
+        android:extractNativeLibs="true"
+        android:theme="@android:style/Theme.DeviceDefault.DayNight">
+        <!-- Launcher: the current conversation and Call / Hang up. -->
         <activity
-            android:name=".AssistActivity"
-            android:exported="true"
-            android:showWhenLocked="true"
-            android:turnScreenOn="true"
-            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            android:name=".MainActivity"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+        </activity>
+        <activity
+            android:name=".SettingsActivity"
+            android:label="Settings"
+            android:exported="false" />
+        <activity
+            android:name=".SessionsActivity"
+            android:label="Sessions"
+            android:exported="false" />
+        <activity
+            android:name=".TranscriptActivity"
+            android:exported="false" />
+        <!-- The headset's voice button (HFP AT+BVRA=1 makes HeadsetService
+             send VOICE_COMMAND) and the assist gesture: start a call and
+             vanish. Over the lock screen and waking the display, so the
+             call starts from the foreground without an unlock. -->
+        <activity
+            android:name=".AssistActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
             <intent-filter>
                 <action android:name="android.intent.action.ASSIST" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
-            <!-- Bluetooth headsets: HFP AT+BVRA=1 makes HeadsetService start it. -->
             <intent-filter>
                 <action android:name="android.intent.action.VOICE_COMMAND" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -43,10 +65,6 @@
         <service
             android:name=".CallService"
             android:exported="false"
-            android:foregroundServiceType="phoneCall" />
-        <!-- The browser binds it to deliver the page's postMessages. -->
-        <service
-            android:name="androidx.browser.customtabs.PostMessageService"
-            android:exported="true" />
+            android:foregroundServiceType="phoneCall|microphone" />
     </application>
 </manifest>
