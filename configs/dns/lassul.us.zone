@@ -73,6 +73,7 @@ pds IN CNAME neoprism
 _acme-challenge.pds IN NS ns1
 git IN CNAME neoprism
 knot IN CNAME neoprism
+mirror IN CNAME neoprism
 when IN CNAME neoprism
 paperless IN CNAME neoprism
 

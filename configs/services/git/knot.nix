@@ -157,6 +157,27 @@ in
 
     networking.firewall.allowedTCPPorts = [ sshPort ];
 
+    # knot 2 doesn't request crawls (no KNOT_MIRRORS), so subscribe our
+    # mirror (knotmirror.nix) to the knot's event stream whenever either
+    # starts; the mirror marks a knot offline after it was unreachable for a
+    # while
+    systemd.services.knotmirror-request-crawl = {
+      wantedBy = [
+        "knot-rs.service"
+        "knotmirror.service"
+      ];
+      after = [
+        "knot-rs.service"
+        "knotmirror.service"
+      ];
+      serviceConfig.Type = "oneshot";
+      script = ''
+        ${pkgs.curl}/bin/curl -fsS --retry 10 --retry-connrefused \
+          -H 'Content-Type: application/json' -d '{"hostname":"${domain}"}' \
+          http://127.0.0.1:7000/xrpc/sh.tangled.sync.requestCrawl
+      '';
+    };
+
     # repos (with the ACL data), sealed keys and ssh host key; the master key
     # is in vars
     lass.backup.state.tangled-knot.folders = [ stateDir ];

@@ -1,7 +1,6 @@
 {
   self,
   config,
-  lib,
   pkgs,
   ...
 }:
@@ -14,10 +13,10 @@ in
 {
   # Tangled appview: the web UI for repos on knot.lassul.us (knot.nix) and
   # other knots. Users log in with their atproto account via OAuth to their
-  # PDS. Records come from Bluesky's jetstream and repo contents from the
-  # public knotmirror (mirror.tangled.network), both upstream defaults.
-  # Follows tangled's nix/modules/appview.nix, without its flake (the module
-  # files are in a fetched source, importing them would be IFD).
+  # PDS. Records come from Bluesky's jetstream (upstream default) and repo
+  # contents from our knotmirror (knotmirror.nix). Follows tangled's
+  # nix/modules/appview.nix, without its flake (the module files are in a
+  # fetched source, importing them would be IFD).
 
   clan.core.vars.generators.tangled-appview = {
     files."appview.env" = { };
@@ -97,21 +96,16 @@ in
       TANGLED_AVATAR_HOST = "https://avatar.tangled.sh";
       TANGLED_PLC_URL = "https://plc.directory";
       TANGLED_PDS_HOST = "https://tngl.sh";
-      TANGLED_LABEL_DEFAULTS =
-        lib.concatMapStringsSep ","
-          (l: "at://did:plc:wshs7t2adsemcrrd4snkeqli/sh.tangled.label.definition/${l}")
-          [
-            "wontfix"
-            "good-first-issue"
-            "duplicate"
-            "documentation"
-            "assignee"
-          ];
+      # records of tangled's account, fetched from its PDS at startup; repos
+      # start without labels
+      TANGLED_LABEL_DEFAULTS = "";
       TANGLED_LABEL_GFI = "at://did:plc:wshs7t2adsemcrrd4snkeqli/sh.tangled.label.definition/good-first-issue";
       # probed at every login, upstream's is knot1.tangled.sh
       TANGLED_KNOT_DEFAULT = "knot.lassul.us";
       # OG images of repos, issues and pulls, rendered by tangled
       TANGLED_OGRE_HOST = "http://127.0.0.1:9";
+      # browsers get raw blob links to it, so not localhost
+      TANGLED_KNOTMIRROR_URL = "https://mirror.lassul.us";
     };
   };
 
