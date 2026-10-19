@@ -89,4 +89,11 @@
       };
     };
   };
+
+  # devices, groups and the coordinator backup; database.db is JSON, not
+  # SQLite, so a plain copy is fine
+  lass.backup.state.zigbee2mqtt = {
+    folders = [ "/var/lib/zigbee2mqtt" ];
+    exclude = [ "/var/lib/zigbee2mqtt/log" ];
+  };
 }

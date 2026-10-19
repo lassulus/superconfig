@@ -1,4 +1,9 @@
-{ config, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 {
   # sabnzbd hard-depends on cheetah3, whose PyPI dist is `ct3` while nixpkgs
   # sets pname="cheetah3". pythonMetadataCheckPhase then looks up metadata for
@@ -465,4 +470,62 @@
   systemd.tmpfiles.rules = [
     "e /var/download/usenet - - - 7d"
   ];
+
+  # Configs without media, downloads, logs and image caches; the SQLite
+  # databases are dumped consistently instead of copied.
+  lass.backup.state.flix =
+    let
+      dbs = {
+        jellyfin = "/var/lib/jellyfin/data/*.db";
+        sonarr = "${config.services.sonarr.dataDir}/sonarr.db";
+        radarr = "${config.services.radarr.dataDir}/radarr.db";
+        prowlarr = "/var/lib/private/prowlarr/prowlarr.db";
+        jellyseerr = "/var/lib/private/jellyseerr/config/db/db.sqlite3";
+        sabnzbd = "/var/lib/sabnzbd/admin/history1.db";
+      };
+      dirs = [
+        "/var/lib/jellyfin"
+        config.services.sonarr.dataDir
+        config.services.radarr.dataDir
+        "/var/lib/private/prowlarr"
+        "/var/lib/private/jellyseerr"
+        "/var/lib/sabnzbd"
+      ];
+    in
+    {
+      folders = dirs;
+      exclude = [
+        "/var/lib/jellyfin/metadata"
+        "/var/lib/jellyfin/log"
+        "/var/lib/jellyfin/transcodes"
+        "${config.services.sonarr.dataDir}/MediaCover"
+        "${config.services.sonarr.dataDir}/logs"
+        "${config.services.radarr.dataDir}/MediaCover"
+        "${config.services.radarr.dataDir}/logs"
+        "/var/lib/private/prowlarr/logs"
+        "/var/lib/private/jellyseerr/config/cache"
+        "/var/lib/private/jellyseerr/config/logs"
+        "/var/lib/private/jellyseerr/config/db/db.sqlite3*"
+        "/var/lib/sabnzbd/Downloads"
+        "/var/lib/sabnzbd/logs"
+      ]
+      # the live databases, also the unneeded servarr logs.db
+      ++ map (dir: "${dir}/*.db") dirs
+      ++ map (dir: "${dir}/*.db-*") dirs;
+      preBackup = ''
+        rm -rf /var/backup/flix
+        ${lib.concatStrings (
+          lib.mapAttrsToList (name: glob: ''
+            mkdir -p /var/backup/flix/${name}
+            for db in ${glob}; do
+              # sqlite3 would create a missing database
+              test -f "$db"
+              ${pkgs.sqlite}/bin/sqlite3 -cmd ".timeout 60000" "$db" ".backup '/var/backup/flix/${name}/$(basename "$db")'"
+            done
+          '') dbs
+        )}
+      '';
+      # WAL-mode SQLite readers need to write the -shm file
+      readWritePaths = map dirOf (lib.attrValues dbs);
+    };
 }

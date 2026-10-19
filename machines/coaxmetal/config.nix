@@ -23,6 +23,7 @@
     ./strom.nix
     ./hermes.nix
     ./hermes-voice.nix
+    ./backup.nix
   ];
 
   system.stateVersion = "24.05";

@@ -639,4 +639,39 @@ in
       EOF
     '';
   };
+
+  # The home without caches, toolchains and git clones; the SQLite databases
+  # under .hermes are dumped consistently instead of copied.
+  lass.backup.state.hermes =
+    let
+      home = config.services.hermes-agent.stateDir;
+    in
+    {
+      folders = [ home ];
+      exclude = [
+        "${home}/.cache"
+        "${home}/.cargo"
+        "${home}/.gradle"
+        "${home}/go"
+        "${home}/.hermes/cache"
+        "${home}/workspace"
+        "${home}/.local/share/Trash"
+        "${home}/*/node_modules"
+        "${home}/*/target"
+        "${home}/.hermes/*.db"
+        "${home}/.hermes/*.db-wal"
+        "${home}/.hermes/*.db-shm"
+      ];
+      preBackup = ''
+        rm -rf /var/backup/hermes
+        cd ${home}/.hermes
+        ${pkgs.findutils}/bin/find . -path ./cache -prune -o -type f -name '*.db' -printf '%P\n' |
+          while read -r db; do
+            mkdir -p "/var/backup/hermes/$(dirname "$db")"
+            ${pkgs.sqlite}/bin/sqlite3 -cmd ".timeout 60000" "$db" ".backup '/var/backup/hermes/$db'"
+          done
+      '';
+      # WAL-mode SQLite readers need to write the -shm file
+      readWritePaths = [ "${home}/.hermes" ];
+    };
 }
