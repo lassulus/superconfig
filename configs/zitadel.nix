@@ -3,6 +3,7 @@ let
   port = 1411;
 in
 {
+  self,
   config,
   lib,
   pkgs,
@@ -81,8 +82,13 @@ in
 
   services.zitadel = {
     enable = true;
+    package = self.packages.${pkgs.stdenv.hostPlatform.system}.zitadel;
     masterKeyFile = vars."masterkey".path;
     settings = {
+      # daily usage report to zitadel.com, on by default
+      ServicePing.Enabled = false;
+      # a new instance would otherwise send logins to the separate Login V2 app, which isn't deployed
+      DefaultInstance.Features.LoginV2.Required = false;
       Port = port;
       ExternalDomain = domain;
       ExternalPort = 443;
