@@ -232,7 +232,7 @@ for project_name, project in config["projects"].items():
             new = {"name": app_name, **oidc_config}
             res = call("POST", f"{base}/oidc", new)
             app_id, client_id = res["appId"], res["clientId"]
-            secret = res["clientSecret"]
+            secret = res.get("clientSecret")
             print(f"app {project_name}/{app_name}: created")
         else:
             app_id = existing["id"]
@@ -246,8 +246,10 @@ for project_name, project in config["projects"].items():
                 if saved["clientId"] == client_id:
                     secret = saved["clientSecret"]
         # Zitadel shows a secret only when it creates it, so without a saved
-        # copy for this client the app gets a new one.
-        if secret is None:
+        # copy for this client the app gets a new one. Public clients have
+        # none.
+        public = app["authMethodType"] == "OIDC_AUTH_METHOD_TYPE_NONE"
+        if secret is None and not public:
             path = f"{base}/{app_id}/oidc_config/_generate_client_secret"
             secret = call("POST", path, {})["clientSecret"]
             print(f"app {project_name}/{app_name}: new client secret")
@@ -257,10 +259,10 @@ for project_name, project in config["projects"].items():
         }))
         env = app["envFile"]
         uid = pwd.getpwnam(env["owner"]).pw_uid
-        write_file(env["path"], uid, (
-            f"{env['clientIdVariable']}={client_id}\n"
-            f"{env['clientSecretVariable']}={secret}\n"
-        ))
+        content = f"{env['clientIdVariable']}={client_id}\n"
+        if not public:
+            content += f"{env['clientSecretVariable']}={secret}\n"
+        write_file(env["path"], uid, content)
 
     if project["access"] != "declarative":
         continue

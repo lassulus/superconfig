@@ -183,9 +183,14 @@ in
                           type = lib.types.enum [
                             "basic"
                             "post"
+                            "none"
                           ];
                           default = "basic";
-                          description = "How the app sends its client secret to the token endpoint.";
+                          description = ''
+                            How the app sends its client secret to the token
+                            endpoint; "none" for a public client without a
+                            secret, which has to use PKCE.
+                          '';
                         };
                         refreshTokens = lib.mkOption {
                           type = lib.types.bool;
@@ -200,7 +205,7 @@ in
                           path = lib.mkOption {
                             type = lib.types.str;
                             default = "${appsDir}/${project}-${name}.env";
-                            description = "Env file with the app's client id and secret.";
+                            description = "Env file with the app's client id and secret (if any).";
                           };
                           owner = lib.mkOption {
                             type = lib.types.str;
