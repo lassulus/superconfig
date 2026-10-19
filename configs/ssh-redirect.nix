@@ -13,10 +13,11 @@
       }
       # Runs before nixos-fw, which accepts 22 everywhere. Connections that
       # came in on 45621 have been redirected to 22 already, so match the
-      # port the client asked for.
+      # port the client asked for. tcp dport 22 spares connections to 22
+      # that got redirected elsewhere (the tangled knot on neoprism).
       chain input {
         type filter hook input priority filter - 1; policy accept;
-        ct state new meta l4proto tcp ct original proto-dst 22 iifname != { "lo", "retiolum", "wiregrill" } reject with tcp reset
+        ct state new tcp dport 22 ct original proto-dst 22 iifname != { "lo", "retiolum", "wiregrill" } reject with tcp reset
       }
     '';
   };
