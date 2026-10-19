@@ -125,6 +125,16 @@ in
     };
   };
 
+  # zitadel-invite (tools/zitadel-invite) as root, with the token of
+  # zitadel-reconcile
+  users.users.root.packages = [
+    (pkgs.writeShellScriptBin "zitadel-invite" ''
+      export ZITADEL_URL=''${ZITADEL_URL:-https://${domain}}
+      export ZITADEL_TOKEN_FILE=''${ZITADEL_TOKEN_FILE:-${cfg.steps.FirstInstance.PatPath}}
+      exec ${lib.getExe self.packages.${pkgs.stdenv.hostPlatform.system}.zitadel-invite} "$@"
+    '')
+  ];
+
   lass.zitadel.loginPolicy = {
     allowRegister = true;
     allowExternalIdp = true;

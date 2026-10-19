@@ -1,0 +1,18 @@
+bin "zitadel-invite"
+about "Invite a person to Zitadel projects: create the user, send the invite mail, add user grants"
+
+arg "<email>" help="Email address, also the username of a new user"
+arg "<project>..." help="Project name"
+flag "--name" help="\"First Last\" of a new user (default: the email's local part)" {
+  arg "<name>"
+}
+flag "--resend" help="Send a new invite code to an existing user without a login"
+flag "--app-name" help="Application name in the invite mail" {
+  arg "<name>"
+}
+flag "--url" help="Zitadel URL (env ZITADEL_URL)" {
+  arg "<url>"
+}
+flag "--token-file" help="File with a personal access token (env ZITADEL_TOKEN_FILE, or the token in ZITADEL_TOKEN)" {
+  arg "<path>"
+}
