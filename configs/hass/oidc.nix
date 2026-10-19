@@ -1,5 +1,5 @@
 # Login via id.lassul.us (Zitadel project hass, configs/hass/proxy.nix) with
-# the auth_oidc custom component. The username/password login stays.
+# the auth_oidc custom component, the only login (auth_providers below).
 { config, pkgs, ... }:
 {
   # Loaded from /config/packages like configs/hass/monitoring.nix.
@@ -18,6 +18,11 @@
             automatic_user_linking: true
             include_groups_scope: false
       ''}:/config/packages/auth_oidc.yaml:ro"
+      # No HA auth provider, so no username/password login. Packages can't set
+      # it, configuration.yaml in the volume has once under homeassistant:
+      #   auth_providers: !include auth_providers.yaml
+      # Long-lived access tokens are not tied to a provider and keep working.
+      "${pkgs.writeText "auth_providers.yaml" (builtins.toJSON [ ])}:/config/auth_providers.yaml:ro"
     ];
     environmentFiles = [ config.clan.core.vars.generators.hass-oidc.files.env.path ];
   };
