@@ -50,7 +50,12 @@ in
         (alert "MemoryPressure" "rate(host_pressure_memory_some_seconds_total[10m]) > 0.1" "5m"
           "{{ $labels.host }}: tasks stalled on memory {{ $value | humanizePercentage }} of the time"
         )
-        (alert "OOMKill" "increase(host_memory_oom_kill_events_total[10m]) > 0" "0m"
+        # Without a sample just before its window (a gap in VictoriaMetrics,
+        # a new series) increase() returns the whole counter, so OOMKill and
+        # NvmeMediaErrors require one via present_over_time.
+        (alert "OOMKill"
+          "increase(host_memory_oom_kill_events_total[10m]) > 0 and present_over_time(host_memory_oom_kill_events_total[1m] offset 10m)"
+          "0m"
           "{{ $labels.host }}: {{ $value }} processes OOM-killed in the last 10 minutes"
         )
         # NVMe drives set critical_warning bit 0x04 (and so fail smart_status)
@@ -64,7 +69,9 @@ in
         (alert "NvmeCriticalWarning" "bitmap_and(smartctl_device_critical_warning, 251) != 0" "5m"
           "{{ $labels.host }}: {{ $labels.device }} reports critical warning {{ $value }}"
         )
-        (alert "NvmeMediaErrors" "increase(smartctl_device_media_errors[1h]) > 0" "0m"
+        (alert "NvmeMediaErrors"
+          "increase(smartctl_device_media_errors[1h]) > 0 and present_over_time(smartctl_device_media_errors[2m] offset 1h)"
+          "0m"
           "{{ $labels.host }}: {{ $labels.device }} had {{ $value }} new media errors in the last hour"
         )
         (alert "NvmeSpareLow" "smartctl_device_available_spare < smartctl_device_available_spare_threshold"
