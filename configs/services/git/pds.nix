@@ -123,6 +123,9 @@ in
   security.acme.certs.${domain} = {
     extraDomainNames = [ "*.${domain}" ];
     dnsProvider = "rfc2136";
+    # recursive resolvers may have cached the *.lassul.us wildcard for
+    # _acme-challenge.pds, which makes lego pick the lassul.us zone
+    dnsResolver = "ns1.lassul.us:53";
     environmentFile = config.clan.core.vars.generators.knot-acme-review.files."lego.env".path;
     group = config.services.nginx.group;
   };
