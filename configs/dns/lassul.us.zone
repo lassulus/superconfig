@@ -71,6 +71,8 @@ pds IN CNAME neoprism
 *.pds IN CNAME neoprism
 ;; DNS-01 for the *.pds wildcard cert (PDS handles), dynamic zone in knot.nix
 _acme-challenge.pds IN NS ns1
+git IN CNAME neoprism
+knot IN CNAME neoprism
 when IN CNAME neoprism
 paperless IN CNAME neoprism
 
