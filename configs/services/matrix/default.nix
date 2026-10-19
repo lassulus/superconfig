@@ -120,4 +120,14 @@
       }
     ];
   };
+
+  lass.backup.state.matrix-synapse = {
+    folders = [ "/var/lib/matrix-synapse/media_store/local_content" ];
+    # 14GB, compresses well
+    preBackup = ''
+      mkdir -p /var/backup/postgresql
+      ${pkgs.sudo}/bin/sudo -u postgres ${config.services.postgresql.package}/bin/pg_dump \
+        matrix-synapse | ${pkgs.gzip}/bin/gzip > /var/backup/postgresql/matrix-synapse.sql.gz
+    '';
+  };
 }

@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ config, pkgs, ... }:
 {
   services.mautrix-whatsapp = {
     enable = true;
@@ -72,4 +72,12 @@
       }
     ];
   };
+
+  # portal mappings, sessions, tokens: losing them means relogin and every
+  # existing Matrix room orphaned
+  lass.backup.state.mautrix-whatsapp.preBackup = ''
+    mkdir -p /var/backup/postgresql
+    ${pkgs.sudo}/bin/sudo -u postgres ${config.services.postgresql.package}/bin/pg_dump \
+      mautrix-whatsapp | ${pkgs.gzip}/bin/gzip > /var/backup/postgresql/mautrix-whatsapp.sql.gz
+  '';
 }

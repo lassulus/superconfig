@@ -39,6 +39,18 @@ in
     };
   };
 
+  # documents, index and classifier; the SQLite database is dumped
+  # consistently instead of copied
+  lass.backup.state.paperless = {
+    folders = [ "/var/lib/paperless" ];
+    exclude = [ "/var/lib/paperless/db.sqlite3*" ];
+    preBackup = ''
+      ${pkgs.sqlite}/bin/sqlite3 -cmd ".timeout 60000" /var/lib/paperless/db.sqlite3 ".backup /var/backup/paperless.sqlite3"
+    '';
+    # WAL-mode SQLite readers need to write the -shm file
+    readWritePaths = [ "/var/lib/paperless" ];
+  };
+
   # Zitadel (id.lassul.us) login, only for users with a grant on the project.
   # zitadel-reconcile writes the client id/secret to zitadelEnv.
   lass.zitadel.projects.paperless = {

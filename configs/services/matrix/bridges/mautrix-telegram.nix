@@ -1,4 +1,9 @@
-{ self, config, ... }:
+{
+  self,
+  config,
+  pkgs,
+  ...
+}:
 {
   # mautrix-telegram is the Python (Telethon) bridge and pulls in python-olm
   # → libolm 3.2.16, which nixpkgs marks insecure. The Go-based v2 bridges
@@ -62,6 +67,14 @@
       }
     ];
   };
+
+  # portal mappings, sessions, tokens: losing them means relogin and every
+  # existing Matrix room orphaned
+  lass.backup.state.mautrix-telegram.preBackup = ''
+    mkdir -p /var/backup/postgresql
+    ${pkgs.sudo}/bin/sudo -u postgres ${config.services.postgresql.package}/bin/pg_dump \
+      mautrix-telegram | ${pkgs.gzip}/bin/gzip > /var/backup/postgresql/mautrix-telegram.sql.gz
+  '';
 
   clan.core.vars.generators.mautrix-telegram = {
     files.env = { };

@@ -147,6 +147,16 @@
     ip saddr 95.217.192.52 accept
   '';
 
+  # not defined by any module
+  lass.backup.state.bot-home = {
+    folders = [ "/home/bot" ];
+    exclude = [
+      "/home/bot/.cache"
+      "/home/bot/.nix-defexpr"
+      "/home/bot/.nix-profile"
+    ];
+  };
+
   # tank/radicle (radicle seed storage) is created by disko at install; on an
   # already-provisioned host it must be created before deploying:
   #   zfs create -o mountpoint=/var/lib/radicle -o quota=80G tank/radicle

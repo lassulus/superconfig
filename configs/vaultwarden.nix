@@ -30,6 +30,9 @@
     };
   };
 
+  # StateDirectory before stateVersion 24.11
+  lass.backup.state.vaultwarden.folders = [ "/var/lib/bitwarden_rs" ];
+
   services.nginx.virtualHosts."vault.lassul.us" = {
     enableACME = true;
     forceSSL = true;

@@ -1,4 +1,4 @@
-{ ... }:
+{ config, pkgs, ... }:
 {
   # The upstream module creates /var/lib/mautrix-discord with mode 0770 owned
   # by mautrix-discord:mautrix-discord, while matrix-synapse only gets the
@@ -62,4 +62,12 @@
       }
     ];
   };
+
+  # portal mappings, sessions, tokens: losing them means relogin and every
+  # existing Matrix room orphaned
+  lass.backup.state.mautrix-discord.preBackup = ''
+    mkdir -p /var/backup/postgresql
+    ${pkgs.sudo}/bin/sudo -u postgres ${config.services.postgresql.package}/bin/pg_dump \
+      mautrix-discord | ${pkgs.gzip}/bin/gzip > /var/backup/postgresql/mautrix-discord.sql.gz
+  '';
 }

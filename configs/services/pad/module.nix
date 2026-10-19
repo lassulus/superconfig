@@ -80,6 +80,16 @@
     systemd.services.hedgedoc.serviceConfig.Restart = "always";
     systemd.services.hedgedoc.environment.NODE_OPTIONS = "--max-old-space-size=512";
 
+    lass.backup.state.hedgedoc = {
+      folders = [ config.services.hedgedoc.settings.uploadsPath ];
+      # The database uses a rollback journal and is written often during the
+      # day, so the dump waits for its locks instead of failing.
+      preBackup = ''
+        ${pkgs.sqlite}/bin/sqlite3 -cmd ".timeout 60000" /var/lib/hedgedoc/db.sqlite ".backup /var/backup/hedgedoc.sqlite"
+      '';
+      readWritePaths = [ "/var/lib/hedgedoc" ];
+    };
+
     systemd.services.hedgedoc.serviceConfig.EnvironmentFile = [
       config.clan.core.vars.generators.hedgedoc.files."hedgedoc.env".path
     ];

@@ -203,6 +203,14 @@ in
     ];
   };
 
+  # users, passkeys, IdP links, OIDC apps; its secrets are encrypted with the
+  # masterkey from clan vars
+  lass.backup.state.zitadel.preBackup = ''
+    mkdir -p /var/backup/postgresql
+    ${pkgs.sudo}/bin/sudo -u postgres ${config.services.postgresql.package}/bin/pg_dump \
+      zitadel | ${pkgs.gzip}/bin/gzip > /var/backup/postgresql/zitadel.sql.gz
+  '';
+
   # Zitadel serves the console, OIDC and its gRPC APIs on one port over h2c.
   services.nginx.virtualHosts.${domain} = {
     enableACME = true;

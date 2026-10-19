@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ config, pkgs, ... }:
 {
   services.mautrix-signal = {
     enable = true;
@@ -65,4 +65,12 @@
       }
     ];
   };
+
+  # portal mappings, sessions, tokens: losing them means relogin and every
+  # existing Matrix room orphaned
+  lass.backup.state.mautrix-signal.preBackup = ''
+    mkdir -p /var/backup/postgresql
+    ${pkgs.sudo}/bin/sudo -u postgres ${config.services.postgresql.package}/bin/pg_dump \
+      mautrix-signal | ${pkgs.gzip}/bin/gzip > /var/backup/postgresql/mautrix-signal.sql.gz
+  '';
 }

@@ -21,6 +21,11 @@ in
     package = pkgs.mongodb-ce;
   };
 
+  lass.backup.state.timeful.preBackup = ''
+    ${pkgs.mongodb-tools}/bin/mongodump --uri=mongodb://127.0.0.1:27017 \
+      --db=schej-it --gzip --archive=/var/backup/timeful.archive.gz
+  '';
+
   clan.core.vars.generators.timeful = {
     files.env = { };
     runtimeInputs = [ pkgs.openssl ];

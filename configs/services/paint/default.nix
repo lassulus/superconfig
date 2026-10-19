@@ -24,6 +24,9 @@ in
     };
   };
 
+  # DynamicUser + StateDirectory make /var/lib/whitebophir only a symlink
+  lass.backup.state.whitebophir.folders = [ "/var/lib/private/whitebophir" ];
+
   services.nginx.virtualHosts.${domain} = {
     enableACME = true;
     forceSSL = true;
