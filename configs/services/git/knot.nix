@@ -7,8 +7,8 @@
 }:
 let
   domain = "knot.lassul.us";
-  # DID of the owner's account on pds.lassul.us; the knot stays off while null
-  ownerDid = null;
+  # DID of the owner's account on pds.lassul.us
+  ownerDid = "did:plc:6nk6tk76up7254wawocoekjr"; # lass.pds.lassul.us
   user = "tangled-knot";
   stateDir = "/var/lib/tangled-knot";
   listenAddr = "127.0.0.1:5555";
@@ -62,140 +62,152 @@ in
   # in a fetched source, importing them would be IFD): plain HTTP behind
   # nginx, unprivileged ports, keys in stateDir. The Go knot's unit and user
   # are both named knot, which the DNS server already uses.
-  # Knot 2 serves ssh itself, on port 2222 since sshd keeps 22, so clone URLs
-  # need ssh://git@knot.lassul.us:2222/... or a Port line in ~/.ssh/config.
+  # Knot 2 serves ssh itself on [::]:2222 (it binds a single address, and
+  # sshd keeps 22). Port 22 on the public addresses is redirected to it, so
+  # git@knot.lassul.us:<owner>/<repo> works as the appview shows it. Admin
+  # ssh stays on 22 via retiolum/wiregrill and on public 45621
+  # (ssh-redirect.nix).
 
-  config = lib.mkIf (ownerDid != null) {
-    clan.core.vars.generators.tangled-knot = {
-      files."knot.env" = { };
-      runtimeInputs = [ pkgs.openssl ];
-      script = ''
-        echo "KNOT_MASTER_KEY=$(openssl rand -base64 32)" > "$out/knot.env"
-      '';
-    };
+  clan.core.vars.generators.tangled-knot = {
+    files."knot.env" = { };
+    runtimeInputs = [ pkgs.openssl ];
+    script = ''
+      echo "KNOT_MASTER_KEY=$(openssl rand -base64 32)" > "$out/knot.env"
+    '';
+  };
 
-    environment.systemPackages = [ package ];
-    environment.etc."knot/config.toml".source = configFile;
+  environment.systemPackages = [ package ];
+  environment.etc."knot/config.toml".source = configFile;
 
-    users.users.${user} = {
-      isSystemUser = true;
-      home = stateDir;
+  users.users.${user} = {
+    isSystemUser = true;
+    home = stateDir;
+    group = user;
+  };
+  users.groups.${user} = { };
+
+  systemd.tmpfiles.settings."10-knot-rs" = {
+    ${stateDir}.d = {
+      mode = "0750";
+      inherit user;
       group = user;
     };
-    users.groups.${user} = { };
-
-    systemd.tmpfiles.settings."10-knot-rs" = {
-      ${stateDir}.d = {
-        mode = "0750";
-        inherit user;
-        group = user;
-      };
-      "${stateDir}/repos".d = {
-        mode = "0750";
-        inherit user;
-        group = user;
-      };
+    "${stateDir}/repos".d = {
+      mode = "0750";
+      inherit user;
+      group = user;
     };
+  };
 
-    systemd.services.knot-rs = {
-      description = "knot git server";
-      after = [ "network-online.target" ];
-      wants = [ "network-online.target" ];
-      wantedBy = [ "multi-user.target" ];
-      restartTriggers = [ configFile ];
-      startLimitIntervalSec = 60;
-      startLimitBurst = 5;
-      serviceConfig = {
-        User = user;
-        Group = user;
-        UMask = "0077";
-        WorkingDirectory = stateDir;
-        EnvironmentFile = config.clan.core.vars.generators.tangled-knot.files."knot.env".path;
-        ExecStart = "${lib.getExe package} /etc/knot/config.toml";
-        Restart = "on-failure";
-        RestartSec = 5;
-        TimeoutStopSec = 120;
-        LimitNOFILE = 65536;
-        CapabilityBoundingSet = [ ];
-        ReadWritePaths = [
-          stateDir
-          "${stateDir}/repos"
-        ];
-        NoNewPrivileges = true;
-        ProtectProc = "invisible";
-        ProtectSystem = "strict";
-        ProtectHome = true;
-        PrivateTmp = true;
-        PrivateDevices = true;
-        PrivateUsers = true;
-        ProtectHostname = true;
-        ProtectClock = true;
-        ProtectKernelTunables = true;
-        ProtectKernelModules = true;
-        ProtectKernelLogs = true;
-        ProtectControlGroups = true;
-        RestrictAddressFamilies = [
-          "AF_INET"
-          "AF_INET6"
-          "AF_NETLINK"
-          "AF_UNIX"
-        ];
-        RestrictNamespaces = true;
-        LockPersonality = true;
-        MemoryDenyWriteExecute = true;
-        RestrictRealtime = true;
-        RestrictSUIDSGID = true;
-        RemoveIPC = true;
-        PrivateMounts = true;
-        SystemCallFilter = [
-          "@system-service"
-          "~@privileged @resources"
-        ];
-        SystemCallArchitectures = "native";
-      };
+  systemd.services.knot-rs = {
+    description = "knot git server";
+    after = [ "network-online.target" ];
+    wants = [ "network-online.target" ];
+    wantedBy = [ "multi-user.target" ];
+    restartTriggers = [ configFile ];
+    startLimitIntervalSec = 60;
+    startLimitBurst = 5;
+    serviceConfig = {
+      User = user;
+      Group = user;
+      UMask = "0077";
+      WorkingDirectory = stateDir;
+      EnvironmentFile = config.clan.core.vars.generators.tangled-knot.files."knot.env".path;
+      ExecStart = "${lib.getExe package} /etc/knot/config.toml";
+      Restart = "on-failure";
+      RestartSec = 5;
+      TimeoutStopSec = 120;
+      LimitNOFILE = 65536;
+      CapabilityBoundingSet = [ ];
+      ReadWritePaths = [
+        stateDir
+        "${stateDir}/repos"
+      ];
+      NoNewPrivileges = true;
+      ProtectProc = "invisible";
+      ProtectSystem = "strict";
+      ProtectHome = true;
+      PrivateTmp = true;
+      PrivateDevices = true;
+      PrivateUsers = true;
+      ProtectHostname = true;
+      ProtectClock = true;
+      ProtectKernelTunables = true;
+      ProtectKernelModules = true;
+      ProtectKernelLogs = true;
+      ProtectControlGroups = true;
+      RestrictAddressFamilies = [
+        "AF_INET"
+        "AF_INET6"
+        "AF_NETLINK"
+        "AF_UNIX"
+      ];
+      RestrictNamespaces = true;
+      LockPersonality = true;
+      MemoryDenyWriteExecute = true;
+      RestrictRealtime = true;
+      RestrictSUIDSGID = true;
+      RemoveIPC = true;
+      PrivateMounts = true;
+      SystemCallFilter = [
+        "@system-service"
+        "~@privileged @resources"
+      ];
+      SystemCallArchitectures = "native";
     };
+  };
 
-    networking.firewall.allowedTCPPorts = [ sshPort ];
+  networking.firewall.allowedTCPPorts = [ sshPort ];
 
-    # knot 2 doesn't request crawls (no KNOT_MIRRORS), so subscribe our
-    # mirror (knotmirror.nix) to the knot's event stream whenever either
-    # starts; the mirror marks a knot offline after it was unreachable for a
-    # while
-    systemd.services.knotmirror-request-crawl = {
-      wantedBy = [
-        "knot-rs.service"
-        "knotmirror.service"
-      ];
-      after = [
-        "knot-rs.service"
-        "knotmirror.service"
-      ];
-      serviceConfig.Type = "oneshot";
-      script = ''
-        ${pkgs.curl}/bin/curl -fsS --retry 10 --retry-connrefused \
-          -H 'Content-Type: application/json' -d '{"hostname":"${domain}"}' \
-          http://127.0.0.1:7000/xrpc/sh.tangled.sync.requestCrawl
+  # knot 2 doesn't request crawls (no KNOT_MIRRORS), so subscribe our
+  # mirror (knotmirror.nix) to the knot's event stream whenever either
+  # starts; the mirror marks a knot offline after it was unreachable for a
+  # while
+  systemd.services.knotmirror-request-crawl = {
+    wantedBy = [
+      "knot-rs.service"
+      "knotmirror.service"
+    ];
+    after = [
+      "knot-rs.service"
+      "knotmirror.service"
+    ];
+    serviceConfig.Type = "oneshot";
+    script = ''
+      ${pkgs.curl}/bin/curl -fsS --retry 10 --retry-connrefused \
+        -H 'Content-Type: application/json' -d '{"hostname":"${domain}"}' \
+        http://127.0.0.1:7000/xrpc/sh.tangled.sync.requestCrawl
+    '';
+  };
+
+  networking.nftables.tables.knot-ssh = {
+    family = "inet";
+    content = ''
+      chain prerouting {
+        type nat hook prerouting priority dstnat; policy accept;
+        ip daddr 95.217.192.59 tcp dport 22 redirect to :${toString sshPort}
+        ip6 daddr 2a01:4f9:4a:4f1a::2 tcp dport 22 redirect to :${toString sshPort}
+      }
+    '';
+  };
+
+  # repos (with the ACL data), sealed keys and ssh host key; the master key
+  # is in vars
+  lass.backup.state.tangled-knot.folders = [ stateDir ];
+
+  services.nginx.virtualHosts.${domain} = {
+    enableACME = true;
+    forceSSL = true;
+    locations."/" = {
+      proxyPass = "http://${listenAddr}";
+      recommendedProxySettings = true;
+      # /events
+      proxyWebsockets = true;
+      extraConfig = ''
+        proxy_read_timeout 1d;
+        client_max_body_size 0;
+        proxy_request_buffering off;
       '';
-    };
-
-    # repos (with the ACL data), sealed keys and ssh host key; the master key
-    # is in vars
-    lass.backup.state.tangled-knot.folders = [ stateDir ];
-
-    services.nginx.virtualHosts.${domain} = {
-      enableACME = true;
-      forceSSL = true;
-      locations."/" = {
-        proxyPass = "http://${listenAddr}";
-        recommendedProxySettings = true;
-        # /events
-        proxyWebsockets = true;
-        extraConfig = ''
-          proxy_read_timeout 1d;
-          client_max_body_size 0;
-          proxy_request_buffering off;
-        '';
-      };
     };
   };
 }
