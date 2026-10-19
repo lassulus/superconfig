@@ -106,6 +106,9 @@
     # "Your own provider" logins for zitadel (byoidc.lassul.us)
     ../../configs/byoidc.nix
 
+    # ATProto PDS (pds.lassul.us)
+    ../../configs/services/git
+
     # radicle public seed (radicle.lassul.us)
     ../../configs/radicle.lassul.us.nix
     # radicle identity + node for this machine (/var/lib/rad)
