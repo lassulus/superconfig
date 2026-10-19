@@ -116,6 +116,8 @@ in
       };
   };
 
+  lass.backup.state.radicale.folders = [ "/var/lib/radicale" ];
+
   systemd.services.radicale.serviceConfig = {
     RuntimeDirectory = "radicale";
     LoadCredential = loadCredentials;

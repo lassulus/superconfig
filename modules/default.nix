@@ -1,5 +1,6 @@
 _: {
   imports = [
+    ./backup.nix
     ./screenlock.nix
     ./fetchWallpaper.nix
     ./sync-containers3.nix

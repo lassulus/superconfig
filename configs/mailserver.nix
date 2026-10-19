@@ -99,6 +99,13 @@ in
     imapMemoryLimit = 1024;
   };
 
+  lass.backup.state.mailserver.folders = [
+    "/var/vmail"
+    "/var/dkim"
+    # global sieve dir from before stateVersion 5
+    "/var/sieve"
+  ];
+
   # nixos-mailserver mkForces virtualMail without homeMode; match its priority
   users.users.virtualMail = lib.mkOverride 50 { homeMode = "2770"; };
 

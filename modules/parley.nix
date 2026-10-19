@@ -137,5 +137,20 @@ in
         PrivateDevices = true;
       };
     };
+
+    # identity.key also lives in clan vars; the SQLite databases are dumped
+    # consistently instead of copied.
+    lass.backup.state.parley = {
+      folders = [ "/var/lib/parley" ];
+      exclude = [ "/var/lib/parley/*.db*" ];
+      preBackup = ''
+        mkdir -p /var/backup/parley
+        for db in parley history; do
+          ${pkgs.sqlite}/bin/sqlite3 -cmd ".timeout 60000" "/var/lib/parley/$db.db" ".backup /var/backup/parley/$db.db"
+        done
+      '';
+      # WAL-mode SQLite readers need to write the -shm file
+      readWritePaths = [ "/var/lib/parley" ];
+    };
   };
 }

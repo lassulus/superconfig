@@ -50,6 +50,8 @@ let
   '';
 in
 {
+  # back up the state dirs of all items
+  lass.backup.state.paste.folders = map dirOf (lib.attrValues items);
 
   services.nginx.virtualHosts.cyberlocker = {
     serverAliases = [ "c.r" ];

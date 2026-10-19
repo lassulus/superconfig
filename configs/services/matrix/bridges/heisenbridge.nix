@@ -21,4 +21,6 @@
   services.matrix-synapse.settings.app_service_config_files = [
     "/var/lib/heisenbridge/registration.yml"
   ];
+
+  lass.backup.state.heisenbridge.folders = [ "/var/lib/heisenbridge" ];
 }
