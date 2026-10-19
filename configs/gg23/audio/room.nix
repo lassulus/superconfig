@@ -26,6 +26,10 @@ in
     }
   ];
 
+  # system-wide pipewire is only socket-activated; a room has no local client
+  # after boot, so start it or the ROC source above never listens
+  systemd.services.pipewire.wantedBy = [ "multi-user.target" ];
+
   # the hub sends over retiolum (see ./hub.nix), accept only acheron
   networking.firewall.extraInputRules = ''
     iifname "retiolum" ip saddr ${acheron} udp dport 10001-10003 accept
