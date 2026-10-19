@@ -16,6 +16,7 @@ in
     ../../configs/services/flix
     ../../configs/autoupdate.nix
     ../../configs/services/archiver-bot.nix
+    ./backup.nix
   ];
 
   services.transmission.settings.peer-port = torrentport;

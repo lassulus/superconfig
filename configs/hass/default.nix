@@ -51,4 +51,7 @@
   };
 
   environment.systemPackages = [ pkgs.mosquitto ];
+
+  # retained messages; mosquitto.db is replaced atomically on every save
+  lass.backup.state.mosquitto.folders = [ config.services.mosquitto.dataDir ];
 }
