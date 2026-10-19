@@ -67,6 +67,10 @@ review IN CNAME neoprism
 *.review IN CNAME neoprism
 ;; DNS-01 for the *.review wildcard cert, dynamic zone in knot.nix
 _acme-challenge.review IN NS ns1
+pds IN CNAME neoprism
+*.pds IN CNAME neoprism
+;; DNS-01 for the *.pds wildcard cert (PDS handles), dynamic zone in knot.nix
+_acme-challenge.pds IN NS ns1
 when IN CNAME neoprism
 paperless IN CNAME neoprism
 

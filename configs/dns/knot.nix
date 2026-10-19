@@ -8,12 +8,20 @@ let
   ip4 = "95.217.192.59";
   ip6 = "2a01:4f9:4a:4f1a::2";
   # Delegated from lassul.us (NS ns1 only, the Hetzner secondaries never see
-  # it) so lego can do DNS-01 for *.review.lassul.us (configs/crit-proxy.nix)
-  # with RFC2136 updates, without touching the signed main zone.
-  acmeReviewZone = pkgs.writeText "_acme-challenge.review.lassul.us.zone" ''
-    @ 3600 IN SOA ns1.lassul.us. acme.lassul.us. 1 7200 3600 86400 60
-    @ 3600 IN NS ns1.lassul.us.
-  '';
+  # them) so lego can do DNS-01 for *.review.lassul.us (configs/crit-proxy.nix)
+  # and *.pds.lassul.us (configs/services/git/pds.nix) with RFC2136 updates,
+  # without touching the signed main zone.
+  acmeZone = domain: {
+    inherit domain;
+    file = "${pkgs.writeText "${domain}.zone" ''
+      @ 3600 IN SOA ns1.lassul.us. acme.lassul.us. 1 7200 3600 86400 60
+      @ 3600 IN NS ns1.lassul.us.
+    ''}";
+    acl = [ "acme_review" ];
+    zonefile-sync = "-1";
+    zonefile-load = "difference-no-serial";
+    journal-content = "all";
+  };
   # dyndns = domain:
   #   pkgs.writeText "${domain}.zone" ''
   #     @ 3600 IN SOA ${domain}. ns1.lassul.us. 2023101213 7200 3600 86400 3600
@@ -205,14 +213,8 @@ in
           serial-policy = "dateserial";
           journal-content = "all";
         }
-        {
-          domain = "_acme-challenge.review.lassul.us";
-          file = "${acmeReviewZone}";
-          acl = [ "acme_review" ];
-          zonefile-sync = "-1";
-          zonefile-load = "difference-no-serial";
-          journal-content = "all";
-        }
+        (acmeZone "_acme-challenge.review.lassul.us")
+        (acmeZone "_acme-challenge.pds.lassul.us")
       ];
     };
   };
