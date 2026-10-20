@@ -5,6 +5,7 @@
   config,
   lib,
   pkgs,
+  self,
   ...
 }:
 let
@@ -67,6 +68,7 @@ in
   config.services.vector = {
     enable = true;
     journaldAccess = true;
+    package = self.packages.${pkgs.stdenv.hostPlatform.system}.vector;
     settings = {
       data_dir = "/var/lib/vector";
 
