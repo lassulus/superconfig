@@ -116,6 +116,8 @@ let
   '';
 
   appview = buildTangledGo "appview" {
+    # knot2 wants the knot's did:web as listMembers subject, not its hostname
+    patches = [ ./appview-knot-members-did-web.patch ];
     postUnpack = ''
       mkdir -p $sourceRoot/appview/pages/static
       cp -fr ${static-files}/* $sourceRoot/appview/pages/static
