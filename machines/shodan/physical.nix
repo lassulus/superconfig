@@ -1,9 +1,25 @@
-{ self, ... }:
+{
+  self,
+  config,
+  lib,
+  ...
+}:
 {
   imports = [
     ./config.nix
     ./disk.nix
     self.inputs.nixos-hardware.nixosModules.lenovo-thinkpad-x220
+  ];
+
+  # nixos-hardware's tp_smapi lacks the module certificate the module
+  # aggregator needs, see configs/hw/signed-kmods.nix.
+  disabledModules = [ "${self.inputs.nixos-hardware}/lenovo/thinkpad/tp-smapi.nix" ];
+  boot.kernelModules = [ "tp_smapi" ];
+  boot.extraModulePackages = [
+    (import ../../configs/hw/signed-kmods.nix {
+      inherit lib;
+      inherit (config.boot) kernelPackages;
+    }).tp_smapi
   ];
 
   # Disable hdapsd - not needed for SSD, and the package is broken with newer GCC

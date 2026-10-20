@@ -4,6 +4,12 @@
   pkgs,
   ...
 }:
+let
+  kmods = import ./signed-kmods.nix {
+    inherit lib;
+    inherit (config.boot) kernelPackages;
+  };
+in
 {
   # Hardware configuration from krebs/stockholm x220.nix, with updated package names
   networking.wireless.enable = lib.mkDefault true;
@@ -30,8 +36,8 @@
       "usb_storage"
     ];
     extraModulePackages = [
-      config.boot.kernelPackages.tp_smapi
-      config.boot.kernelPackages.acpi_call
+      kmods.tp_smapi
+      kmods.acpi_call
     ];
     kernelModules = [
       "kvm-intel"

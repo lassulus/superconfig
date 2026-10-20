@@ -1,5 +1,7 @@
 {
   self,
+  config,
+  lib,
   modulesPath,
   pkgs,
   ...
@@ -41,8 +43,23 @@
 
   hardware.graphics.enable = true;
   hardware.acpilight.enable = true;
-  # DDC/CI: expose /dev/i2c-* so ddcutil can drive external monitor brightness
-  boot.kernelModules = [ "i2c-dev" ];
+  boot.kernelModules = [
+    # DDC/CI: expose /dev/i2c-* so ddcutil can drive external monitor brightness
+    "i2c-dev"
+    # what hardware.framework.enableKmod loads, see below
+    "cros_ec"
+    "cros_ec_lpcs"
+  ];
+
+  # nixos-hardware's framework-laptop-kmod lacks the module certificate the
+  # module aggregator needs, see configs/hw/signed-kmods.nix.
+  hardware.framework.enableKmod = false;
+  boot.extraModulePackages = [
+    (import ../../configs/hw/signed-kmods.nix {
+      inherit lib;
+      inherit (config.boot) kernelPackages;
+    }).framework-laptop-kmod
+  ];
 
   # Use latest kernel for better Strix Point GPU support. The MT7925 BT init
   # regression fix (e3ac0d9f1a20) landed upstream in 7.0.10.
