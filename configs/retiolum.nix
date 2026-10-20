@@ -29,6 +29,7 @@ let
 in
 
 {
+  imports = [ ./monitoring/retiolum-ping.nix ];
 
   networking.firewall.allowedTCPPorts = [ 655 ];
   networking.firewall.allowedUDPPorts = [ 655 ];

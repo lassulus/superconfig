@@ -88,6 +88,15 @@ in
         )
       ];
     }
+    {
+      name = "retiolum";
+      rules = [
+        # configs/monitoring/retiolum-ping.nix, per (host, to, size)
+        (alert "RetiolumPathLoss" "retiolum_ping_loss_ratio > 0.5" "5m"
+          "{{ $labels.host }} → {{ $labels.to }} ({{ $labels.size }} B) loses packets over retiolum"
+        )
+      ];
+    }
   ];
 
   logs.groups = [

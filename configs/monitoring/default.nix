@@ -1,5 +1,5 @@
 # Shared facts of the monitoring stack, imported (not as a module) by
-# agent.nix, server.nix, alerts.nix and checks.nix.
+# agent.nix, server.nix, alerts.nix, checks.nix and retiolum-ping.nix.
 {
   # Every machine writes metrics and logs to all of these (via <name>.r).
   servers = [
