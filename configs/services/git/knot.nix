@@ -118,6 +118,9 @@ in
       RestartSec = 5;
       TimeoutStopSec = 120;
       LimitNOFILE = 65536;
+      # without a cgroup limit the knot budgets for MemTotal and refuses
+      # pushes whose base cache (40% of it) exceeds MemAvailable
+      MemoryMax = "4G";
       CapabilityBoundingSet = [ ];
       ReadWritePaths = [
         stateDir
