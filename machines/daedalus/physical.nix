@@ -1,4 +1,10 @@
-{ config, ... }:
+{ config, lib, ... }:
+let
+  kmods = import ../../configs/hw/signed-kmods.nix {
+    inherit lib;
+    inherit (config.boot) kernelPackages;
+  };
+in
 {
   imports = [
     ./config.nix
@@ -48,8 +54,8 @@
       "usb_storage"
     ];
     extraModulePackages = [
-      config.boot.kernelPackages.tp_smapi
-      config.boot.kernelPackages.acpi_call
+      kmods.tp_smapi
+      kmods.acpi_call
     ];
     kernelModules = [
       "acpi_call"
