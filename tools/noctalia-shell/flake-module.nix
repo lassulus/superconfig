@@ -1,11 +1,12 @@
 { self, inputs, ... }:
 {
   perSystem =
-    { pkgs, ... }:
+    { pkgs, self', ... }:
     let
       noctalia = inputs.wrappers.lib.wrapModule {
         imports = [ self.wrapperModules.noctalia-shell ];
         inherit pkgs;
+        inherit (self'.packages) noctalia-qs;
 
         # Declarative settings merged into ~/.config/noctalia/settings.json
         # on every start. Anything not listed here remains user-mutable.
