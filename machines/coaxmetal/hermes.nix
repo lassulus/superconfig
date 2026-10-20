@@ -36,7 +36,7 @@ let
   # Contract: hermes writes the reply text to $1 and expects audio at $2.
   hermes-tts = pkgs.writeShellApplication {
     name = "hermes-tts";
-    runtimeInputs = [ pkgs.piper-tts ];
+    runtimeInputs = [ self.packages.${pkgs.stdenv.hostPlatform.system}.piper-tts ];
     text = ''
       piper --model ${piperVoice}/model.onnx --output-file "$2" < "$1"
     '';
