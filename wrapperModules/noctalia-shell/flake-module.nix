@@ -18,6 +18,8 @@
         ${pkgs.sway}/bin/swaymsg "workspace $ws, move workspace to output $current_output"
       '';
 
+      noctalia-shell = pkgs.noctalia-shell.override { inherit (config) noctalia-qs; };
+
       # Patch noctalia-shell for sway:
       # - Use workspace name instead of number (activate() sends
       #   "workspace number <num>" which fails for named workspaces)
@@ -29,7 +31,7 @@
       #   logs "Workspace <name> doesn't exist"). A renamed workspace thus
       #   lingers as a stale pill until a full refresh; clicking that ghost
       #   pill then re-creates the old name as a real workspace.
-      swayPatched = pkgs.noctalia-shell.overrideAttrs (old: {
+      swayPatched = noctalia-shell.overrideAttrs (old: {
         postInstall = (old.postInstall or "") + ''
               substituteInPlace $out/share/noctalia-shell/Services/Compositor/SwayService.qml \
                 --replace-fail 'workspace.handle.activate();' \
@@ -100,6 +102,16 @@
           '';
         };
 
+        noctalia-qs = lib.mkOption {
+          type = lib.types.package;
+          default = pkgs.noctalia-qs;
+          defaultText = lib.literalExpression "pkgs.noctalia-qs";
+          description = ''
+            The quickshell fork the default package runs on. Ignored if you
+            override `package`.
+          '';
+        };
+
         swayWorkspaceFix = lib.mkOption {
           type = lib.types.bool;
           default = true;
@@ -111,9 +123,7 @@
         };
       };
 
-      config.package = lib.mkDefault (
-        if config.swayWorkspaceFix then swayPatched else pkgs.noctalia-shell
-      );
+      config.package = lib.mkDefault (if config.swayWorkspaceFix then swayPatched else noctalia-shell);
 
       config.extraPackages = [
         pkgs.jq
