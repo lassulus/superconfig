@@ -1,4 +1,5 @@
 {
+  self,
   lib,
   pkgs,
   ...
@@ -43,7 +44,7 @@
         chromium
         networkmanagerapplet
         libreoffice
-        audacity
+        self.packages.${pkgs.stdenv.hostPlatform.system}.audacity
         zathura
         wine
         vlc
