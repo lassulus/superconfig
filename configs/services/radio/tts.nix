@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ pkgs, self, ... }:
 let
   model = pkgs.runCommand "model" { } ''
     mkdir -p $out
@@ -31,7 +31,7 @@ let
       fi
       filename=$(printf '%04d' $offset).wav
       echo "$line" |
-        ${pkgs.piper-tts}/bin/piper \
+        ${self.packages.${pkgs.stdenv.hostPlatform.system}.piper-tts}/bin/piper \
           --model ${model}/model.onnx \
           -s "$SPEAKER" \
           -f "$OUTPUT"/"$filename" >/dev/null
