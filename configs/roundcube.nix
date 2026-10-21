@@ -11,7 +11,9 @@ in
   # hands the access token to dovecot (IMAP, ManageSieve) and postfix (SMTP via
   # dovecot SASL) with OAUTHBEARER/XOAUTH2, so no mail password is stored.
   services.roundcube = {
-    enable = true;
+    # Disabled until PHP ships fixes for CVE-2026-109618/CVE-2026-109619
+    # (PHP core RCE, PHP 8.4.26 affected).
+    enable = false;
     hostName = domain;
     maxAttachmentSize = 25;
     plugins = [
