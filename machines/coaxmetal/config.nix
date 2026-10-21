@@ -32,6 +32,8 @@
     "root"
     "lass"
   ];
+  # 32 GB RAM: parallel rustc/ld builds (~10 GB each) OOM'd with max-jobs=16
+  nix.settings.max-jobs = 4;
 
   services.tor = {
     enable = true;
