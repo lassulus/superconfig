@@ -180,6 +180,39 @@ in
     '';
   };
 
+  # 40c3@ list; recipients stay out of the repo and the nix store
+  clan.core.vars.generators.mailserver-40c3 = {
+    prompts.recipients = {
+      description = "40c3@lassul.us recipients, one per line";
+      type = "multiline";
+    };
+    files."virtual" = {
+      owner = "root";
+      group = "postfix";
+      mode = "0440";
+    };
+    # random, changes on every generate; reloads postfix (restartUnits is sops-only)
+    files."revision".secret = false;
+    runtimeInputs = with pkgs; [
+      coreutils
+      gnused
+      util-linux
+    ];
+    script = ''
+      printf '40c3@lassul.us %s\n' \
+        "$(sed 's/[[:space:]]//g; /^$/d' "$prompts/recipients" | paste -sd,)" > "$out/virtual"
+      uuidgen > "$out/revision"
+    '';
+  };
+  services.postfix.settings.main.virtual_alias_maps = lib.mkBefore [
+    "texthash:${config.clan.core.vars.generators.mailserver-40c3.files."virtual".path}"
+  ];
+  systemd.services.postfix.reloadTriggers =
+    let
+      rev = config.clan.core.vars.generators.mailserver-40c3.files."revision";
+    in
+    lib.optional rev.exists rev.value;
+
   # Retiolum relay: allow krebs hosts to relay through postfix
   services.postfix.settings.main.mynetworks = lib.mkForce (
     [
