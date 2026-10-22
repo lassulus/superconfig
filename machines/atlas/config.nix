@@ -62,7 +62,7 @@
     };
     script = ''
       count=$(cat /run/idle-shutdown/count 2>/dev/null || echo 0)
-      if compgen -G '/run/user/*/idle' >/dev/null &&
+      if ls /run/user/*/idle >/dev/null 2>&1 &&
         awk '{ exit !($2 < 0.5) }' /proc/loadavg &&
         ! pgrep -G nixbld >/dev/null; then
         count=$((count + 1))
