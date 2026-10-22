@@ -11,6 +11,7 @@
     ../../configs/desktops/sway/default.nix
     ../../configs/pipewire.nix
     ../../configs/network-manager.nix
+    ../../configs/retiolum.nix
     self.wrapperModules.workspace-manager
   ];
 
