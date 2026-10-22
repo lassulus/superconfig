@@ -16,9 +16,11 @@ Usage: $PROG [OPTIONS] <flake>#<machine> [interface]
 Netboot a machine straight from its flake: builds the machine's netboot image
 variant, serves it, and points PXE clients at it.
 
-  $PROG .#atlas
+  $PROG .#<machine>
 
-The machine needs a \`netboot\` entry in image.modules (see machines/atlas).
+The machine needs a \`netboot\` entry in image.modules whose stage 1 fetches
+the squashfs from store.url= (see e334411d, machines/atlas before it was
+installed).
 Everything is derived, so nothing has to be kept in sync by hand:
 
   * kernel, initrd and kernel command line come from the machine's netboot
@@ -85,7 +87,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z $TARGET ]]; then
-  echo "$PROG: need a machine, e.g. $PROG .#atlas" >&2
+  echo "$PROG: need a machine, e.g. $PROG .#<machine>" >&2
   usage
   exit 1
 fi
