@@ -178,5 +178,11 @@
   # just re-pull the same broken config on the next run (a rollback loop).
   systemd.enableEmergencyMode = false;
 
+  # cache.lassul.us is served by this box's own nginx (configs/nix-cache.nix).
+  # Without fallback nix aborts a build on an unreachable substituter, so a
+  # broken nginx here also blocks the deploy that would fix it. With it, nix
+  # skips the dead cache for 60s and builds what it can't substitute.
+  nix.settings.fallback = true;
+
   system.stateVersion = "24.05";
 }
