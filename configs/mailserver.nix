@@ -97,6 +97,9 @@ in
 
     # virtual.All mailbox needs more memory to sync all folders
     imapMemoryLimit = 1024;
+
+    # rewrite envelope senders of forwarded mail so it passes SPF at the targets
+    srs.enable = true;
   };
 
   lass.backup.state.mailserver.folders = [
