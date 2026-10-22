@@ -15,7 +15,6 @@ in
     ../modules
 
     # Import individual configurations
-    ./security-workarounds.nix
     ./security-fixes
     ./gc.nix
     ./mc.nix
