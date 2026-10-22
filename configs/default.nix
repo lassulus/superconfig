@@ -16,6 +16,7 @@ in
 
     # Import individual configurations
     ./security-workarounds.nix
+    ./security-fixes
     ./gc.nix
     ./mc.nix
     ./zsh.nix
