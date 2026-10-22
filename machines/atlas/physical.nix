@@ -41,8 +41,14 @@
   hardware.enableRedistributableFirmware = true;
   services.xserver.videoDrivers = [ "amdgpu" ];
 
-  # Name the onboard Intel NIC deterministically.
-  services.udev.extraRules = ''
-    SUBSYSTEM=="net", ATTR{address}=="70:85:c2:0e:ea:3c", NAME="et0"
-  '';
+  # Name the onboard Intel NIC deterministically and arm Wake-on-LAN (woken
+  # by wake-atlas on coaxmetal). Not networking.interfaces.et0.wakeOnLan:
+  # its .link matches OriginalName=et0, the kernel name is a different one.
+  systemd.network.links."10-et0" = {
+    matchConfig.PermanentMACAddress = "70:85:c2:0e:ea:3c";
+    linkConfig = {
+      Name = "et0";
+      WakeOnLan = "magic";
+    };
+  };
 }
