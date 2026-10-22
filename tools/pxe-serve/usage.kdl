@@ -6,5 +6,5 @@ flag "--http-port <port>" help="Port to serve kernel/initrd on (default: 8079)"
 flag "-i --interface <iface>" help="Interface to serve on (default: the one carrying the default route)"
 flag "-h --help" help="Show help message"
 
-arg "<flake#machine>" help="Machine to netboot, e.g. .#atlas"
+arg "<flake#machine>" help="Machine to netboot, e.g. .#<machine>"
 arg "[interface]" help="Interface to serve on"
