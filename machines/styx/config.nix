@@ -24,58 +24,6 @@
     '')
   ];
 
-  networking.firewall.allowedTCPPorts = [ 80 ];
-  services.smokeping = {
-    enable = true;
-    host = null;
-    targetConfig = ''
-      probe = FPing
-      menu = top
-      title = top
-
-      + Local
-      menu = Local
-      title = Local Network
-      ++ LocalMachine
-      menu = Local Machine
-      title = This host
-      host = localhost
-
-      + Internet
-      menu = internet
-      title = internet
-
-      ++ CloudflareDNS
-      menu = Cloudflare DNS
-      title = Cloudflare DNS server
-      host = 1.1.1.1
-
-      ++ GoogleDNS
-      menu = Google DNS
-      title = Google DNS server
-      host = 8.8.8.8
-
-      + retiolum
-      menu = retiolum
-      title = retiolum
-
-      ++ gum
-      menu = gum.r
-      title = gum.r
-      host = gum.r
-
-      ++ ni
-      menu = ni.r
-      title = ni.r
-      host = ni.r
-
-      ++ neoprism
-      menu = neoprism.r
-      title = neoprism.r
-      host = neoprism.r
-    '';
-  };
-
   # for usb internet
   hardware.usbWwan.enable = true;
 
