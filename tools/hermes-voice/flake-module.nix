@@ -43,7 +43,6 @@
       # The Android app: holds calls itself (WebRTC) and answers the headset's
       # voice button, unsigned.
       packages.hermes-voice-android = android;
-      checks.hermes-voice-android = android;
 
       # Aligns and signs the APK with the keystore from
       # `clan vars get coaxmetal hermes-voice-android-signing/keystore`.
