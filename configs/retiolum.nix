@@ -25,7 +25,13 @@ let
   kartei = import (self.inputs.kartei + "/modules/retiolum/hosts.nix") { inherit lib; };
 
   name = config.networking.hostName;
-  own = kartei.own.${name};
+  # No addresses until the host is in kartei: a new machine evaluates and
+  # can generate its retiolum var (the keys for the kartei PR) first.
+  own =
+    kartei.own.${name} or {
+      ip4 = null;
+      ip6 = null;
+    };
 in
 
 {
@@ -104,7 +110,8 @@ in
 
   systemd.network.networks.retiolum = {
     matchConfig.Name = "retiolum";
-    address = lib.optional (own.ip4 != null) "${own.ip4}/16" ++ [ "${own.ip6}/16" ];
+    address =
+      lib.optional (own.ip4 != null) "${own.ip4}/16" ++ lib.optional (own.ip6 != null) "${own.ip6}/16";
     linkConfig = {
       MTUBytes = "1377";
       RequiredForOnline = "no";
