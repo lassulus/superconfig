@@ -1,4 +1,4 @@
-{ self, inputs, ... }:
+{ self, ... }:
 {
   perSystem =
     {
@@ -23,7 +23,7 @@
           name = "deploy";
           runtimeInputs = [
             self.packages.${system}.pass
-            inputs.clan-core.packages.${system}.clan-cli
+            self.packages.${system}.clan-cli
             pkgs.gnutar
             pkgs.jq
             pkgs.less
