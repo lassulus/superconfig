@@ -76,6 +76,7 @@ knot IN CNAME neoprism
 mirror IN CNAME neoprism
 when IN CNAME neoprism
 paperless IN CNAME neoprism
+nixcontalks IN CNAME neoprism
 
 ;; Mail
 @ IN MX 3 mail

@@ -92,6 +92,9 @@
     # request-and-approve booking page (book.lassul.us)
     ../../configs/book.nix
 
+    # NixCon talk video license consent links (nixcontalks.lassul.us)
+    ../../configs/nixcontalks.nix
+
     # backups
     ./backup.nix
 
