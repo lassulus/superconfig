@@ -44,12 +44,14 @@
 
   environment.systemPackages = [
     pkgs.android-tools
-    # atlas' et0, via the directed LAN broadcast: routed out of whichever
-    # interface is on 10.79.128.0/21 (wlp3s0), the AP bridges it to the wire
+    # atlas' et0, via the limited broadcast (wol's default): it follows the
+    # default route, i.e. the wired NIC if connected (metric 100 < wifi 600).
+    # Not the directed 10.79.135.255: that goes out of wlp3s0 and the AP
+    # does not forward it to the wired LAN
     (pkgs.writeShellApplication {
       name = "wake-atlas";
       runtimeInputs = [ pkgs.wol ];
-      text = "wol -h 10.79.135.255 70:85:c2:0e:ea:3c";
+      text = "wol 70:85:c2:0e:ea:3c";
     })
   ];
 }
