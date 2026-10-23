@@ -1,0 +1,20 @@
+bin "nixcontalks"
+about "Collect NixCon speakers' consent to release their talk videos under CC BY-SA 4.0 (nixcontalks.lassul.us)"
+
+cmd "serve" help="Serve /<proposal_code>/yes and /<proposal_code>/no (the answer is recorded on the page's button press, never on GET) and the answers on /results, which the reverse proxy must put behind a login" {
+  flag "--host" help="Listen address (default 127.0.0.1)" {
+    arg "<host>"
+  }
+  flag "--port" help="Listen port" required=#true {
+    arg "<port>"
+  }
+}
+
+cmd "results" help="Print code, latest answer, its time, the answer history and all comments per proposal code as CSV"
+
+flag "--database" help="SQLite database file (default /var/lib/nixcontalks/answers.db)" {
+  arg "<file>"
+}
+flag "--talks" help="JSON list of {\"code\", \"title\", \"type\", \"recorded\"}: the talks that may answer; the results list the recorded lightning, short and long talks" required=#true {
+  arg "<file>"
+}
