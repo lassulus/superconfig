@@ -1,0 +1,380 @@
+[
+  {
+    "code": "3A9NNU",
+    "title": "Lightning Talk: Flox",
+    "type": "Lightning talk",
+    "recorded": true
+  },
+  {
+    "code": "3AGQJD",
+    "title": "Trampolining Nix, or how I nearly lost my mind fighting the Nix evaluator",
+    "type": "Long talk",
+    "recorded": true
+  },
+  {
+    "code": "3GB87D",
+    "title": "Mainstream Nix – Native Windows Nix, Language PM Nix Backends",
+    "type": "Short talk",
+    "recorded": true
+  },
+  {
+    "code": "3LDLLY",
+    "title": "NixOS in the Corporate Trenches: Cuts and Bruises",
+    "type": "Long talk",
+    "recorded": true
+  },
+  {
+    "code": "3SFNY8",
+    "title": "Spontaneous lightning talks",
+    "type": "Long talk",
+    "recorded": true
+  },
+  {
+    "code": "7ED9HM",
+    "title": "Declarative Hardware Architectures using Nix",
+    "type": "Short talk",
+    "recorded": true
+  },
+  {
+    "code": "7VCF7M",
+    "title": "the future of code collaboration",
+    "type": "Lightning talk",
+    "recorded": true
+  },
+  {
+    "code": "9MR9R3",
+    "title": "Beyond Push-vs-Pull Deployments: We deserve a Control Plane",
+    "type": "Lightning talk",
+    "recorded": true
+  },
+  {
+    "code": "9N7QKH",
+    "title": "Implementing the NixOS STIG",
+    "type": "Short talk",
+    "recorded": true
+  },
+  {
+    "code": "9TL88V",
+    "title": "Biting your own tail off",
+    "type": "Lightning talk",
+    "recorded": true
+  },
+  {
+    "code": "9VYLTB",
+    "title": "Opening ceremony",
+    "type": "Short talk",
+    "recorded": true
+  },
+  {
+    "code": "AJB7DM",
+    "title": "Lightning Talk: PDT Partners",
+    "type": "Lightning talk",
+    "recorded": true
+  },
+  {
+    "code": "APSGL9",
+    "title": "Advanced NixOS Integration Test Scenarios: USB Passthrough, Xen, and FDO",
+    "type": "Long talk",
+    "recorded": true
+  },
+  {
+    "code": "AUMD3Y",
+    "title": "Nix State of the Union 2026",
+    "type": "Long talk",
+    "recorded": true
+  },
+  {
+    "code": "AWWCUK",
+    "title": "From zero to product: Let’s build an embedded CUDA computer-vision project",
+    "type": "Long workshop",
+    "recorded": true
+  },
+  {
+    "code": "AYCEH8",
+    "title": "Nixing Artificial Intelligence",
+    "type": "Short talk",
+    "recorded": true
+  },
+  {
+    "code": "B7HA7F",
+    "title": "Nix for Cloud Native Platform Engineering: From Imperative Templating to Functional Derivation",
+    "type": "Short talk",
+    "recorded": true
+  },
+  {
+    "code": "C3CD3Y",
+    "title": "Untangling the undead spaghetti: life with scripted networking in 2026",
+    "type": "Long talk",
+    "recorded": true
+  },
+  {
+    "code": "CHK97H",
+    "title": "The ministry of silly builds: a Bazel 9 derivation builder",
+    "type": "Short talk",
+    "recorded": true
+  },
+  {
+    "code": "CRK3WW",
+    "title": "Automated function/package/scope creation + override, and modules without `specialArgs`",
+    "type": "Lightning talk",
+    "recorded": true
+  },
+  {
+    "code": "DBPWBZ",
+    "title": "Lazy Nix Store: Serving Nix Artifacts Lazily at Scale",
+    "type": "Short talk",
+    "recorded": true
+  },
+  {
+    "code": "DC8XBR",
+    "title": "Unprivileged Privileged Nix: An Exercise in Linux Sandboxing",
+    "type": "Long talk",
+    "recorded": true
+  },
+  {
+    "code": "E9P9Y7",
+    "title": "Lightning Talk: Jane Street",
+    "type": "Lightning talk",
+    "recorded": true
+  },
+  {
+    "code": "EDKLQM",
+    "title": "Peering Declaratively: Running a small Autonomous System on NixOS",
+    "type": "Short talk",
+    "recorded": true
+  },
+  {
+    "code": "FCAMUG",
+    "title": "Declarative Frontiers: Running Kubernetes on RISC-V with NixOS",
+    "type": "Short talk",
+    "recorded": true
+  },
+  {
+    "code": "GMPZQM",
+    "title": "Nix panel",
+    "type": "Long talk",
+    "recorded": true
+  },
+  {
+    "code": "GQFKXA",
+    "title": "finix – making space for multiple nix operating systems",
+    "type": "Short talk",
+    "recorded": true
+  },
+  {
+    "code": "GWK3ZW",
+    "title": "DeltaNAR - Space efficient Nix deployments for space",
+    "type": "Short talk",
+    "recorded": true
+  },
+  {
+    "code": "HDKDCQ",
+    "title": "Nix Foundation and Steering Committee Panel",
+    "type": "Short talk",
+    "recorded": true
+  },
+  {
+    "code": "J3RMT8",
+    "title": "NixNet: Declare Your Network Experiments as a Nix Flake",
+    "type": "Short talk",
+    "recorded": true
+  },
+  {
+    "code": "JM9XSR",
+    "title": "Official Documentation workshop",
+    "type": "Long workshop",
+    "recorded": true
+  },
+  {
+    "code": "KNRVXR",
+    "title": "How Long Until It's Done? Techniques for Build Farm Dashboards",
+    "type": "Lightning talk",
+    "recorded": true
+  },
+  {
+    "code": "KPW7AW",
+    "title": "stop playing telephone and start distributing trust with laut",
+    "type": "Short talk",
+    "recorded": true
+  },
+  {
+    "code": "KXHR33",
+    "title": "NixOS test driver: Faster tests, CUDA in the sandbox, and better debugging",
+    "type": "Long workshop",
+    "recorded": true
+  },
+  {
+    "code": "LH9YU3",
+    "title": "server apps commodified: digital autonomy for the masses",
+    "type": "Short talk",
+    "recorded": true
+  },
+  {
+    "code": "LN8PXG",
+    "title": "Two architectures, twice the fun: Wearable silicon necromancy with the Nix Badge",
+    "type": "Long talk",
+    "recorded": true
+  },
+  {
+    "code": "LQNN3Q",
+    "title": "netbox-nixos: automatically turning NetBox devices into NixOS configurations",
+    "type": "Short talk",
+    "recorded": true
+  },
+  {
+    "code": "NJD9GN",
+    "title": "Serving /nix/store at Scale with CVMFS and mergerfs",
+    "type": "Short talk",
+    "recorded": false
+  },
+  {
+    "code": "NVUYGU",
+    "title": "Running NixOS Integration Tests on Real Hardware",
+    "type": "Short talk",
+    "recorded": true
+  },
+  {
+    "code": "NZCBNT",
+    "title": "nix-singularity: bringing Nix to the High Performance Computing world",
+    "type": "Lightning talk",
+    "recorded": true
+  },
+  {
+    "code": "PS9TK9",
+    "title": "nixos-secrets: manage secrets with nixos (experimental)",
+    "type": "Short workshop",
+    "recorded": true
+  },
+  {
+    "code": "PWVQFK",
+    "title": "Lightning Talk: Clan",
+    "type": null,
+    "recorded": false
+  },
+  {
+    "code": "QWPDHJ",
+    "title": "Joining the Tangled network",
+    "type": "Short workshop",
+    "recorded": true
+  },
+  {
+    "code": "R7FSSH",
+    "title": "Statix: stratified module configuration for humans",
+    "type": "Short talk",
+    "recorded": true
+  },
+  {
+    "code": "S9BFP7",
+    "title": "The State NixOS Won't Manage",
+    "type": "Short talk",
+    "recorded": true
+  },
+  {
+    "code": "SYDEZB",
+    "title": "NixOS on RISCV",
+    "type": "Lightning talk",
+    "recorded": false
+  },
+  {
+    "code": "TRWZVV",
+    "title": "Nix & the EU Cyber Resilience Act: What the Ecosystem Still Needs to Build",
+    "type": "Short talk",
+    "recorded": true
+  },
+  {
+    "code": "UNQZSX",
+    "title": "When the Honeymoon Ends: Supporting NixOS based Products for the Next Five Years",
+    "type": "Short talk",
+    "recorded": true
+  },
+  {
+    "code": "UQ9HVT",
+    "title": "Nixception: Uncompromising incremental builds inside the sandbox… and outside!",
+    "type": "Long talk",
+    "recorded": true
+  },
+  {
+    "code": "UTYUY9",
+    "title": "speed-dating (in the exhibition hall / food room)",
+    "type": "Short workshop",
+    "recorded": true
+  },
+  {
+    "code": "VQXBLD",
+    "title": "Lightning Talk: Determinate Systems",
+    "type": "Lightning talk",
+    "recorded": true
+  },
+  {
+    "code": "VSKERY",
+    "title": "The thunk trap, why your Nix loop crashes after it finishes",
+    "type": "Lightning talk",
+    "recorded": true
+  },
+  {
+    "code": "W7YLBZ",
+    "title": "Lightning Talk: Cyberus",
+    "type": "Lightning talk",
+    "recorded": true
+  },
+  {
+    "code": "WEADU3",
+    "title": "Why I changed my mind about flakes",
+    "type": "Long talk",
+    "recorded": true
+  },
+  {
+    "code": "WQK7QC",
+    "title": "Adding to the pile, or how to extend nixpkgs.",
+    "type": "Short talk",
+    "recorded": true
+  },
+  {
+    "code": "XJWUVA",
+    "title": "NGI Forge — Software Distribution Platform for NGI projects",
+    "type": "Short talk",
+    "recorded": true
+  },
+  {
+    "code": "XMAYHH",
+    "title": "Nix store is my favorite database",
+    "type": "Short talk",
+    "recorded": true
+  },
+  {
+    "code": "XRNDVL",
+    "title": "Closing ceremony",
+    "type": "Short talk",
+    "recorded": true
+  },
+  {
+    "code": "XTGEMY",
+    "title": "Scaling Nix",
+    "type": "Short talk",
+    "recorded": true
+  },
+  {
+    "code": "YEF3TC",
+    "title": "Staging Ground: Building for Upstream in clan.lol",
+    "type": "Long talk",
+    "recorded": true
+  },
+  {
+    "code": "YP8SH3",
+    "title": "You don't need a staging environment to integration-test microservices",
+    "type": "Lightning talk",
+    "recorded": true
+  },
+  {
+    "code": "YVDHDB",
+    "title": "The new `.devShell` interface for `nix develop`",
+    "type": "Short talk",
+    "recorded": true
+  },
+  {
+    "code": "YWPHWG",
+    "title": "Build It All Yourself (And Prove It): Air-Gapped Nixpkgs with Hydra",
+    "type": "Short talk",
+    "recorded": true
+  }
+]
