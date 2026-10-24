@@ -45,17 +45,19 @@
 
   # Power off after 10 minutes without keyboard/mouse input, load or nix
   # builds; ssh sessions don't keep it on. swayidle marks input idle after
-  # a minute in %t/idle and doesn't suspend (that would beat the poweroff).
+  # a minute in %t/idle and neither locks (home gaming/build box) nor suspends
+  # (that would beat the poweroff).
   systemd.user.services.swayidle.serviceConfig = {
     ExecStart = lib.mkForce ''
       ${pkgs.swayidle}/bin/swayidle -w \
-        timeout 60 '${pkgs.coreutils}/bin/touch %t/idle' resume '${pkgs.coreutils}/bin/rm -f %t/idle' \
-        timeout 120 '${lib.getExe' pkgs.systemd "systemctl"} --user start lock.target' \
-        before-sleep '${lib.getExe' pkgs.systemd "systemctl"} --user start lock.target'
+        timeout 60 '${pkgs.coreutils}/bin/touch %t/idle' resume '${pkgs.coreutils}/bin/rm -f %t/idle'
     '';
     # no stale mark when swayidle dies while idle
     ExecStopPost = "${pkgs.coreutils}/bin/rm -f %t/idle";
   };
+  # no screen lock either when systemd-lock-handler starts lock.target (sleep,
+  # loginctl lock-session) or via the sway lock keybindings
+  systemd.user.services.swaylock.wantedBy = lib.mkForce [ ];
   systemd.services.idle-shutdown = {
     startAt = "minutely";
     path = [
