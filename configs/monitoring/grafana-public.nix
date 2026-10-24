@@ -30,8 +30,11 @@
       login_attribute_path = "preferred_username";
       email_attribute_path = "email";
       allow_sign_up = true;
-      # Only the users listed on the Zitadel project get here.
-      role_attribute_path = "'GrafanaAdmin'";
+      # Only the users listed on the Zitadel project get here. Not the bare
+      # literal 'GrafanaAdmin': go-ini strips quotes surrounding a whole
+      # value, leaving the identifier GrafanaAdmin (null -> Viewer). Every
+      # OIDC userinfo has a sub, so this always yields GrafanaAdmin.
+      role_attribute_path = "sub && 'GrafanaAdmin'";
       allow_assign_grafana_admin = true;
     };
   };
