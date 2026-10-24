@@ -56,6 +56,7 @@ in
       (https "paperless" "https://paperless.lassul.us/accounts/login/")
       (https "cache" "https://cache.lassul.us/nix-cache-info")
       (https "niks3" "https://niks3.lassul.us/health")
+      (https "grafana" "https://grafana.lassul.us/api/health")
       (soa "ns1" "95.217.192.59")
       (soa "ns1.first-ns.de" "213.239.242.238")
       (soa "robotns2.second-ns.de" "213.133.100.103")

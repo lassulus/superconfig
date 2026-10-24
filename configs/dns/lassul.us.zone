@@ -53,6 +53,7 @@ mergebot IN CNAME neoprism
 cdio IN CNAME neoprism
 c IN CNAME neoprism
 hass IN CNAME neoprism
+grafana IN CNAME neoprism
 hermes IN CNAME neoprism
 assist IN CNAME neoprism
 vault IN CNAME neoprism
