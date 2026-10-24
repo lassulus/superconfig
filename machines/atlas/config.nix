@@ -25,6 +25,11 @@
     "lass"
   ];
 
+  # Hermes on coaxmetal manages atlas; merges with the keys from configs/default.nix
+  users.users.root.openssh.authorizedKeys.keys = [
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOdxrE1taDjoPXX5aoz63u9vy48avCmniEmGnkpb0y3C hermes@coaxmetal"
+  ];
+
   # Autostart straight into sway: greetd logs the main user in on boot with no
   # prompt and execs sway (a login shell so the wrapped sway + session env from
   # programs.sway are on PATH). default_session with a real user means every
