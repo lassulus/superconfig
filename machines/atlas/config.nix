@@ -12,6 +12,7 @@
     ../../configs/pipewire.nix
     ../../configs/network-manager.nix
     ../../configs/retiolum.nix
+    ../../configs/steam.nix
     self.wrapperModules.workspace-manager
   ];
 
