@@ -10,18 +10,18 @@
 (buildGoModule.override { go = go_1_27; }) (
   finalAttrs:
   let
-    rev = "d6f2505b0d84e3feb5d4ef8d12d3ded45c178f62";
+    rev = "d0088021d001cd5c0b01350f29c58f9247e11aeb";
   in
   {
     pname = "parley";
-    version = "0.5.0-unstable-2026-10-11";
+    version = "0.6.0-unstable-2026-10-22";
 
     src = fetchFromGitea {
       domain = "git.mills.io";
       owner = "prologic";
       repo = "parley";
       inherit rev;
-      hash = "sha256-QDFhmP25pACb9gGic7QpwX0FzRoh2Tdsn7U7M8LPbag=";
+      hash = "sha256-zp7oPpDIx9k/ZN19SfGc7XS0Iwnq688L7bSHRt3Rn4o=";
     };
 
     vendorHash = "sha256-siSavE8i/Rh6LfI+HXhyKsPrbfyncJCcEYJsA4KZ378=";
