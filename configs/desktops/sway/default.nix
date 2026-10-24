@@ -387,6 +387,7 @@ in
       }
       input "2362:628:PIXA3854:00_093A:0274_Touchpad" {
           tap enabled
+          click_method clickfinger
       }
     #
     # You can get the names of your inputs by running: swaymsg -t get_inputs
