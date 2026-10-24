@@ -28,6 +28,7 @@
     ../../configs/services/paperless
 
     ../../configs/hass/proxy.nix
+    ../../configs/monitoring/grafana-proxy.nix
     ../../configs/hermes-proxy.nix
     ../../configs/crit-proxy.nix
 
