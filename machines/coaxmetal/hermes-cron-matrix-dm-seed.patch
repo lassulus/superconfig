@@ -1,0 +1,131 @@
+From b534d36d9a5390dfdbac3cc75679091dca7df380 Mon Sep 17 00:00:00 2001
+From: Hermes <hermes@lassul.us>
+Date: Sat, 24 Oct 2026 13:18:48 +0200
+Subject: [PATCH] fix(cron): detect Matrix DM targets via the adapter when the
+ origin has no chat_type
+
+A continuable cron job whose origin carries no chat_type decided DM-ness
+from a Slack-only id heuristic (DM ids start with "D"). Matrix room ids
+start with "!", so a brief threaded into a Matrix DM was seeded under a
+group key while the in-thread reply resolves to the dm key, and the reply
+never saw the brief.
+
+The per-target prologue now asks the live adapter's get_chat_info (the
+probe _is_channel_dm_topic already uses, extracted as _probe_chat_type)
+when the origin has no chat_type, the target is mirror-eligible and the
+gateway loop is running. An origin chat_type still wins; the "D" prefix
+stays the fallback when there is no probe or it yields nothing/"unknown".
+is_dm_target and the in_channel gate are computed after transport
+resolution so the seed and the flatten gate see the same value.
+
+Fixes #141429
+---
+ cron/scheduler_delivery.py | 65 ++++++++++++++++++++-----------------
+ 1 file changed, 36 insertions(+), 29 deletions(-)
+
+diff --git a/cron/scheduler_delivery.py b/cron/scheduler_delivery.py
+index 80f5d029f1..b615ce47cb 100644
+--- a/cron/scheduler_delivery.py
++++ b/cron/scheduler_delivery.py
+@@ -1025,37 +1025,41 @@ def _confirm_adapter_delivery(
+     return True
+
+
+-def _is_channel_dm_topic(runtime_adapter: Any, chat_id: Any, loop: Any, job_id: str) -> bool:
+-    """Is an ambiguous ``telegram:<positive_chat_id>:<numeric_thread_id>`` target a channel
+-    Direct-Messages topic (``direct_messages_topic_id``) rather than a private-chat forum topic
+-    (``message_thread_id``)? Shape cannot decide; signal is ``get_chat_info`` type == ``channel``.
+-    Fails SAFE to False (thread routing) without a probe or on any probe error/timeout.
+-
+-    Callers gate this on the ambiguous shape first (``telegram:<positive_chat_id>:<numeric_thread_id>``) —
+-    that shape is identical for both cases, so shape alone cannot decide (this was the #52060 regression).
+-    Probe the live adapter's ``get_chat_info`` once and only return True when the chat is a channel.
+-    See #22773.
+-    """
++def _probe_chat_type(runtime_adapter: Any, chat_id: Any, loop: Any, job_id: str) -> str:
++    """The live adapter's ``get_chat_info`` type for ``chat_id``, lowercased; "" without a probe
++    or on any probe error/timeout."""
+     # Resolve on the CLASS, not the instance: a MagicMock instance auto-creates a truthy
+     # ``get_chat_info``, so an instance-level probe would misclassify test doubles.
+     get_chat_info = getattr(type(runtime_adapter), "get_chat_info", None)
+     if not callable(get_chat_info):
+-        return False
++        return ""
+     try:
+         from agent.async_utils import safe_schedule_threadsafe
+         coro = get_chat_info(runtime_adapter, str(chat_id))
+         future = safe_schedule_threadsafe(coro, loop)  # type: ignore[arg-type]
+         if future is None:
+-            return False
++            return ""
+         # Metadata-only call, so a shorter bound than the send waits is intentional.
+         info = future.result(timeout=10)
+     except Exception:
+         logger.debug(
+-            "Job '%s': get_chat_info probe failed for chat=%s — "
+-            "defaulting to message_thread_id routing",
+-            job_id, chat_id, exc_info=True)
+-        return False
+-    is_channel = isinstance(info, dict) and str(info.get("type") or "").lower() == "channel"
++            "Job '%s': get_chat_info probe failed for chat=%s", job_id, chat_id, exc_info=True)
++        return ""
++    return str(info.get("type") or "").lower() if isinstance(info, dict) else ""
++
++
++def _is_channel_dm_topic(runtime_adapter: Any, chat_id: Any, loop: Any, job_id: str) -> bool:
++    """Is an ambiguous ``telegram:<positive_chat_id>:<numeric_thread_id>`` target a channel
++    Direct-Messages topic (``direct_messages_topic_id``) rather than a private-chat forum topic
++    (``message_thread_id``)? Shape cannot decide; signal is ``get_chat_info`` type == ``channel``.
++    Fails SAFE to False (thread routing) without a probe or on any probe error/timeout.
++
++    Callers gate this on the ambiguous shape first (``telegram:<positive_chat_id>:<numeric_thread_id>``) —
++    that shape is identical for both cases, so shape alone cannot decide (this was the #52060 regression).
++    Probe the live adapter's ``get_chat_info`` once and only return True when the chat is a channel.
++    See #22773.
++    """
++    is_channel = _probe_chat_type(runtime_adapter, chat_id, loop, job_id) == "channel"
+     if is_channel:
+         logger.info(
+             "Job '%s': chat=%s is a channel — routing via direct_messages_topic_id",
+@@ -1666,17 +1670,6 @@ def _prepare_target_delivery(
+     # Resolved for ANY origin match (not just mirror-enabled): the in_channel seed needs it too.
+     origin_user_id = origin.get("user_id") if origin_target else None
+
+-    # DM shape for BOTH the flatten gate and seed chat_type (Slack DM ids start with "D").
+-    origin_chat_type = str(origin.get("chat_type") or "").lower()
+-    is_dm_target = origin_chat_type == "dm" or (
+-        not origin_chat_type and str(chat_id).startswith("D"))
+-
+-    # in_channel gate shared by thread-flatten and flat seed — they MUST match or brief and
+-    # session land in different places. Origin qualifies unconditionally; others only when the
+-    # seed can create a resolvable session (_inchannel_seed_allowed).
+-    inchannel_continuable = origin_target or (
+-        mirror_this_target and _inchannel_seed_allowed(is_dm=is_dm_target, user_id=origin_user_id))
+-
+     # Plugin platform names create dynamic members via Platform._missing_().
+     try:
+         platform = Platform(platform_name.lower())
+@@ -1699,6 +1692,20 @@ def _prepare_target_delivery(
+         and getattr(loop, "is_running", lambda: False)()
+     )
+
++    # DM shape for BOTH the flatten gate and seed chat_type. Origins without chat_type ask the
++    # live adapter (room ids carry no DM marker); Slack DM ids start with "D" as the fallback.
++    chat_type = str(origin.get("chat_type") or "").lower()
++    if not chat_type and mirror_this_target and live_adapter_ready:
++        probed = _probe_chat_type(runtime_adapter, chat_id, loop, job["id"])
++        chat_type = "" if probed == "unknown" else probed
++    is_dm_target = chat_type == "dm" if chat_type else str(chat_id).startswith("D")
++
++    # in_channel gate shared by thread-flatten and flat seed — they MUST match or brief and
++    # session land in different places. Origin qualifies unconditionally; others only when the
++    # seed can create a resolvable session (_inchannel_seed_allowed).
++    inchannel_continuable = origin_target or (
++        mirror_this_target and _inchannel_seed_allowed(is_dm=is_dm_target, user_id=origin_user_id))
++
+     # Continuable surface (D1/D2/D6) from platform config ``extra``; default "thread".
+     # ``in_channel`` delivers FLAT so a plain channel reply continues via the shared session
+     # ``(platform, chat_id, None)``. Unsupported adapters fail SAFE to thread.
+--
+2.56.0
+
