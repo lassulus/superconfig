@@ -1,7 +1,12 @@
 { self, inputs, ... }:
 {
   perSystem =
-    { pkgs, self', ... }:
+    {
+      lib,
+      pkgs,
+      self',
+      ...
+    }:
     let
       noctalia = inputs.wrappers.lib.wrapModule {
         imports = [ self.wrapperModules.noctalia-shell ];
@@ -45,6 +50,10 @@
       };
     in
     {
-      packages.noctalia-shell = noctalia.wrapper;
+      # noctalia-qs is linux-only and left out of packages elsewhere (same
+      # availableOn check as pkgs/flake-module.nix).
+      packages = lib.optionalAttrs (lib.meta.availableOn pkgs.stdenv.hostPlatform pkgs.noctalia-qs) {
+        noctalia-shell = noctalia.wrapper;
+      };
     };
 }
