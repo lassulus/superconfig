@@ -185,11 +185,12 @@ def answered(code: str, title: str, answer: str, comment: str) -> bytes:
 
 
 def results_page(rows: list[tuple[str, str, str, str, str, str]]) -> bytes:
-    """Every talk: no answers first, then unanswered, then yes. Only behind
-    the SSO (nginx)."""
-    order = {"no": 0, "": 1, "yes": 2}
-    rows = sorted(rows, key=lambda r: (order[r[2]], r[0]))
-    count = {a: sum(r[2] == a for r in rows) for a in order}
+    """Every talk, latest answer first; unanswered talks last, by code. Only
+    behind the SSO (nginx)."""
+    # answered_at is ISO 8601 UTC, so it sorts as a string; "" (unanswered)
+    # sorts last in reverse, and the stable sort keeps those in code order.
+    rows = sorted(sorted(rows), key=lambda r: r[3], reverse=True)
+    count = {a: sum(r[2] == a for r in rows) for a in ("yes", "no", "")}
     text = (
         f"<p><b class=yes>{count['yes']} yes</b>, <b class=no>{count['no']} no</b>,"
         f" {count['']} not answered yet, of {len(rows)} talks</p>"
