@@ -54,4 +54,12 @@
       text = "wol 70:85:c2:0e:ea:3c";
     })
   ];
+
+  # adb/fastboot for the hermes service user, which uaccess (seat only)
+  # skips. ID_DEBUG_APPLIANCE is set by systemd's 70-uaccess.rules.
+  services.udev.extraRules = ''
+    SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ENV{ID_DEBUG_APPLIANCE}=="android", MODE="0660", GROUP="adbusers"
+  '';
+  users.groups.adbusers = { };
+  users.users.hermes.extraGroups = [ "adbusers" ];
 }
