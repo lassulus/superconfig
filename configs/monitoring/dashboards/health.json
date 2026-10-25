@@ -1,0 +1,884 @@
+{
+  "uid": "health",
+  "title": "Health",
+  "description": "Garmin data from the hourly Gadgetbridge export (tools/gadgetbridge-import, up to 1 h late) plus a live row from Home Assistant (Pixel 9a, every ~15 min).",
+  "schemaVersion": 39,
+  "timezone": "browser",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "refresh": "5m",
+  "panels": [
+    {
+      "id": 100,
+      "type": "row",
+      "title": "Now (Home Assistant, ~15 min)",
+      "collapsed": false,
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 1 },
+      "panels": []
+    },
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Heart rate",
+      "gridPos": { "x": 0, "y": 1, "w": 6, "h": 5 },
+      "datasource": { "type": "victoriametrics-metrics-datasource", "uid": "victoriametrics" },
+      "timeFrom": "2h",
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: bpm",
+          "noValue": "No data",
+          "color": { "mode": "fixed", "fixedColor": "red" }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byFrameRefID", "options": "B" },
+            "properties": [
+              { "id": "unit", "value": "dateTimeFromNow" },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "text" } }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "value_and_name",
+        "justifyMode": "center"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(last_over_time({__name__=~\"homeassistant_sensor_.*\", __name__!=\"homeassistant_sensor_state\", entity=\"sensor.pixel_9a_heart_rate\"}[$__interval]))",
+          "legendFormat": "Heart rate"
+        },
+        {
+          "refId": "B",
+          "expr": "max(last_over_time(homeassistant_last_updated_time_seconds{entity=\"sensor.pixel_9a_heart_rate\"}[1d])) * 1000",
+          "instant": true,
+          "range": false,
+          "legendFormat": "updated"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Resting heart rate",
+      "gridPos": { "x": 6, "y": 1, "w": 6, "h": 5 },
+      "datasource": { "type": "victoriametrics-metrics-datasource", "uid": "victoriametrics" },
+      "timeFrom": "2h",
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: bpm",
+          "noValue": "No data",
+          "color": { "mode": "fixed", "fixedColor": "purple" }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byFrameRefID", "options": "B" },
+            "properties": [
+              { "id": "unit", "value": "dateTimeFromNow" },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "text" } }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "value_and_name",
+        "justifyMode": "center"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(last_over_time({__name__=~\"homeassistant_sensor_.*\", __name__!=\"homeassistant_sensor_state\", entity=\"sensor.pixel_9a_resting_heart_rate\"}[$__interval]))",
+          "legendFormat": "Resting HR"
+        },
+        {
+          "refId": "B",
+          "expr": "max(last_over_time(homeassistant_last_updated_time_seconds{entity=\"sensor.pixel_9a_resting_heart_rate\"}[1d])) * 1000",
+          "instant": true,
+          "range": false,
+          "legendFormat": "updated"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Respiratory rate",
+      "gridPos": { "x": 12, "y": 1, "w": 6, "h": 5 },
+      "datasource": { "type": "victoriametrics-metrics-datasource", "uid": "victoriametrics" },
+      "timeFrom": "2h",
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: brpm",
+          "decimals": 1,
+          "noValue": "No data",
+          "color": { "mode": "fixed", "fixedColor": "green" }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byFrameRefID", "options": "B" },
+            "properties": [
+              { "id": "unit", "value": "dateTimeFromNow" },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "text" } }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "value_and_name",
+        "justifyMode": "center"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(last_over_time({__name__=~\"homeassistant_sensor_.*\", __name__!=\"homeassistant_sensor_state\", entity=\"sensor.pixel_9a_respiratory_rate\"}[$__interval]))",
+          "legendFormat": "Respiratory rate"
+        },
+        {
+          "refId": "B",
+          "expr": "max(last_over_time(homeassistant_last_updated_time_seconds{entity=\"sensor.pixel_9a_respiratory_rate\"}[1d])) * 1000",
+          "instant": true,
+          "range": false,
+          "legendFormat": "updated"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Steps today",
+      "gridPos": { "x": 18, "y": 1, "w": 6, "h": 5 },
+      "datasource": { "type": "victoriametrics-metrics-datasource", "uid": "victoriametrics" },
+      "timeFrom": "2h",
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "No data",
+          "color": { "mode": "fixed", "fixedColor": "blue" }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byFrameRefID", "options": "B" },
+            "properties": [
+              { "id": "unit", "value": "dateTimeFromNow" },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "text" } }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "value_and_name",
+        "justifyMode": "center"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(last_over_time({__name__=~\"homeassistant_sensor_.*\", __name__!=\"homeassistant_sensor_state\", entity=\"sensor.pixel_9a_daily_steps\"}[$__interval]))",
+          "legendFormat": "Steps"
+        },
+        {
+          "refId": "B",
+          "expr": "max(last_over_time(homeassistant_last_updated_time_seconds{entity=\"sensor.pixel_9a_daily_steps\"}[1d])) * 1000",
+          "instant": true,
+          "range": false,
+          "legendFormat": "updated"
+        }
+      ]
+    },
+    {
+      "id": 101,
+      "type": "row",
+      "title": "Heart, stress, body battery",
+      "collapsed": false,
+      "gridPos": { "x": 0, "y": 6, "w": 24, "h": 1 },
+      "panels": []
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Heart rate",
+      "gridPos": { "x": 0, "y": 7, "w": 24, "h": 8 },
+      "datasource": { "type": "victoriametrics-metrics-datasource", "uid": "victoriametrics" },
+      "interval": "1m",
+      "maxDataPoints": 1500,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: bpm",
+          "noValue": "No data",
+          "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "spanNulls": 600000, "showPoints": "never" }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byFrameRefID", "options": "A" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }]
+          },
+          {
+            "matcher": { "id": "byFrameRefID", "options": "B" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "purple" } },
+              { "id": "custom.fillOpacity", "value": 0 },
+              { "id": "custom.lineWidth", "value": 2 },
+              { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 10] } }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "calcs": ["min", "mean", "max"] },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "avg_over_time(gadgetbridge_heart_rate[$__interval])",
+          "legendFormat": "Heart rate"
+        },
+        {
+          "refId": "B",
+          "expr": "last_over_time(gadgetbridge_resting_heart_rate[1d])",
+          "legendFormat": "Resting HR"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Stress",
+      "description": "Garmin stress level: rest 0-25, low 26-50, medium 51-75, high 76-100.",
+      "gridPos": { "x": 0, "y": 15, "w": 12, "h": 8 },
+      "datasource": { "type": "victoriametrics-metrics-datasource", "uid": "victoriametrics" },
+      "interval": "1m",
+      "maxDataPoints": 1500,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "max": 100,
+          "noValue": "No data",
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null },
+              { "color": "yellow", "value": 26 },
+              { "color": "orange", "value": 51 },
+              { "color": "red", "value": 76 }
+            ]
+          },
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "gradientMode": "scheme",
+            "lineWidth": 1,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "calcs": ["mean", "max"] },
+        "tooltip": { "mode": "single" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "avg_over_time(gadgetbridge_stress[$__interval])",
+          "legendFormat": "Stress"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Body Battery",
+      "gridPos": { "x": 12, "y": 15, "w": 12, "h": 8 },
+      "datasource": { "type": "victoriametrics-metrics-datasource", "uid": "victoriametrics" },
+      "interval": "1m",
+      "maxDataPoints": 1500,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "max": 100,
+          "noValue": "No data",
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 26 },
+              { "color": "green", "value": 51 },
+              { "color": "blue", "value": 76 }
+            ]
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 30,
+            "gradientMode": "scheme",
+            "lineWidth": 2,
+            "spanNulls": 600000,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "calcs": ["lastNotNull", "min", "max"] },
+        "tooltip": { "mode": "single" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "last_over_time(gadgetbridge_body_energy[$__interval])",
+          "legendFormat": "Body Battery"
+        }
+      ]
+    },
+    {
+      "id": 102,
+      "type": "row",
+      "title": "Sleep",
+      "collapsed": false,
+      "gridPos": { "x": 0, "y": 23, "w": 24, "h": 1 },
+      "panels": []
+    },
+    {
+      "id": 20,
+      "type": "state-timeline",
+      "title": "Sleep stages",
+      "description": "Each sample starts a stage (FIT sleep_level). The sample at the time of the sleep score marks the end of the night, so the stage is hidden from there on; otherwise a stage is held for at most 1 h.",
+      "gridPos": { "x": 0, "y": 24, "w": 24, "h": 5 },
+      "datasource": { "type": "victoriametrics-metrics-datasource", "uid": "victoriametrics" },
+      "interval": "1m",
+      "maxDataPoints": 1500,
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "No data",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "text", "value": null }] },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": { "text": "Unmeasurable", "color": "#808080", "index": 0 },
+                "1": { "text": "Awake", "color": "#F2495C", "index": 1 },
+                "2": { "text": "Light", "color": "#5794F2", "index": 2 },
+                "3": { "text": "Deep", "color": "#1F60C4", "index": 3 },
+                "4": { "text": "REM", "color": "#B877D9", "index": 4 }
+              }
+            }
+          ],
+          "custom": { "fillOpacity": 90, "lineWidth": 0 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "mergeValues": true,
+        "showValue": "never",
+        "alignValue": "left",
+        "rowHeight": 0.9,
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "single" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "last_over_time(gadgetbridge_sleep_stage[1h]) unless on() last_over_time(gadgetbridge_sleep_score[1h])",
+          "legendFormat": "Sleep"
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "type": "stat",
+      "title": "Sleep score",
+      "gridPos": { "x": 0, "y": 29, "w": 4, "h": 8 },
+      "datasource": { "type": "victoriametrics-metrics-datasource", "uid": "victoriametrics" },
+      "interval": "1h",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "max": 100,
+          "noValue": "No data",
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 60 },
+              { "color": "green", "value": 80 },
+              { "color": "blue", "value": 90 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "last_over_time(gadgetbridge_sleep_score[1d])",
+          "legendFormat": "Sleep score"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "type": "timeseries",
+      "title": "HRV per night",
+      "description": "Last-night average HRV with Garmin's balanced baseline band; below \"low\" is the unbalanced/low range.",
+      "gridPos": { "x": 4, "y": 29, "w": 10, "h": 8 },
+      "datasource": { "type": "victoriametrics-metrics-datasource", "uid": "victoriametrics" },
+      "timeFrom": "14d",
+      "interval": "1d",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "noValue": "No data",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 0, "showPoints": "always", "pointSize": 6, "spanNulls": true }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byFrameRefID", "options": "A" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }]
+          },
+          {
+            "matcher": { "id": "byFrameRefID", "options": "B" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "#73BF6940" } },
+              { "id": "custom.lineWidth", "value": 0 },
+              { "id": "custom.showPoints", "value": "never" },
+              { "id": "custom.hideFrom", "value": { "legend": true, "tooltip": false, "viz": false } }
+            ]
+          },
+          {
+            "matcher": { "id": "byFrameRefID", "options": "C" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "#73BF6940" } },
+              { "id": "custom.lineWidth", "value": 0 },
+              { "id": "custom.showPoints", "value": "never" },
+              { "id": "custom.fillBelowTo", "value": "Balanced lower" },
+              { "id": "custom.fillOpacity", "value": 25 }
+            ]
+          },
+          {
+            "matcher": { "id": "byFrameRefID", "options": "D" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } },
+              { "id": "custom.lineWidth", "value": 1 },
+              { "id": "custom.showPoints", "value": "never" },
+              { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 10] } }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max_over_time(gadgetbridge_hrv_last_night_average[1d] offset -25h)",
+          "legendFormat": "Last night average"
+        },
+        {
+          "refId": "B",
+          "expr": "max_over_time(gadgetbridge_hrv_baseline_balanced_lower[1d] offset -25h)",
+          "legendFormat": "Balanced lower"
+        },
+        {
+          "refId": "C",
+          "expr": "max_over_time(gadgetbridge_hrv_baseline_balanced_upper[1d] offset -25h)",
+          "legendFormat": "Balanced range"
+        },
+        {
+          "refId": "D",
+          "expr": "max_over_time(gadgetbridge_hrv_baseline_low_upper[1d] offset -25h)",
+          "legendFormat": "Low"
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "type": "timeseries",
+      "title": "Respiratory rate",
+      "gridPos": { "x": 14, "y": 29, "w": 10, "h": 8 },
+      "datasource": { "type": "victoriametrics-metrics-datasource", "uid": "victoriametrics" },
+      "interval": "1m",
+      "maxDataPoints": 1500,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: brpm",
+          "decimals": 1,
+          "noValue": "No data",
+          "color": { "mode": "fixed", "fixedColor": "green" },
+          "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "spanNulls": 600000, "showPoints": "never" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "calcs": ["min", "mean", "max"] },
+        "tooltip": { "mode": "single" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "avg_over_time(gadgetbridge_respiratory_rate[$__interval])",
+          "legendFormat": "Respiratory rate"
+        }
+      ]
+    },
+    {
+      "id": 103,
+      "type": "row",
+      "title": "Activity",
+      "collapsed": false,
+      "gridPos": { "x": 0, "y": 37, "w": 24, "h": 1 },
+      "panels": []
+    },
+    {
+      "id": 30,
+      "type": "timeseries",
+      "title": "Steps per hour",
+      "description": "Steps, active calories and distance are daily counters on the watch (reset at local midnight); per-hour values are their increase.",
+      "gridPos": { "x": 0, "y": 38, "w": 12, "h": 8 },
+      "datasource": { "type": "victoriametrics-metrics-datasource", "uid": "victoriametrics" },
+      "interval": "1h",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "noValue": "No data",
+          "color": { "mode": "fixed", "fixedColor": "blue" },
+          "custom": { "drawStyle": "bars", "fillOpacity": 80, "lineWidth": 1, "showPoints": "never" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "calcs": ["sum", "max"] },
+        "tooltip": { "mode": "single" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "increase(gadgetbridge_steps[1h] offset -1h)",
+          "legendFormat": "Steps"
+        }
+      ]
+    },
+    {
+      "id": 31,
+      "type": "timeseries",
+      "title": "Steps per day",
+      "description": "Daily maximum of the watch's daily step counter.",
+      "gridPos": { "x": 12, "y": 38, "w": 12, "h": 8 },
+      "datasource": { "type": "victoriametrics-metrics-datasource", "uid": "victoriametrics" },
+      "timeFrom": "14d",
+      "interval": "1d",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "noValue": "No data",
+          "color": { "mode": "fixed", "fixedColor": "blue" },
+          "custom": { "drawStyle": "bars", "fillOpacity": 80, "lineWidth": 1, "showPoints": "never" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "calcs": ["mean", "max"] },
+        "tooltip": { "mode": "single" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max_over_time(gadgetbridge_steps[1d] offset -25h)",
+          "legendFormat": "Steps"
+        }
+      ]
+    },
+    {
+      "id": 32,
+      "type": "timeseries",
+      "title": "Active calories per day",
+      "gridPos": { "x": 0, "y": 46, "w": 8, "h": 8 },
+      "datasource": { "type": "victoriametrics-metrics-datasource", "uid": "victoriametrics" },
+      "timeFrom": "14d",
+      "interval": "1d",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: kcal",
+          "min": 0,
+          "noValue": "No data",
+          "color": { "mode": "fixed", "fixedColor": "orange" },
+          "custom": { "drawStyle": "bars", "fillOpacity": 80, "lineWidth": 1, "showPoints": "never" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "calcs": ["mean", "max"] },
+        "tooltip": { "mode": "single" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max_over_time(gadgetbridge_active_calories[1d] offset -25h)",
+          "legendFormat": "Active calories"
+        }
+      ]
+    },
+    {
+      "id": 33,
+      "type": "timeseries",
+      "title": "Intensity minutes (rolling 7 days)",
+      "description": "Moderate + 2 x vigorous minutes over the past 7 days against the WHO/Garmin target of 150 per week.",
+      "gridPos": { "x": 8, "y": 46, "w": 8, "h": 8 },
+      "datasource": { "type": "victoriametrics-metrics-datasource", "uid": "victoriametrics" },
+      "timeFrom": "28d",
+      "interval": "1h",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "m",
+          "min": 0,
+          "noValue": "No data",
+          "color": { "mode": "fixed", "fixedColor": "orange" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "transparent", "value": null },
+              { "color": "green", "value": 150 }
+            ]
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "showPoints": "never",
+            "thresholdsStyle": { "mode": "dashed" }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "calcs": ["lastNotNull"] },
+        "tooltip": { "mode": "single" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum(sum_over_time(gadgetbridge_intensity_minutes_moderate[7d])) or vector(0)) + 2 * (sum(sum_over_time(gadgetbridge_intensity_minutes_vigorous[7d])) or vector(0))",
+          "legendFormat": "Intensity minutes"
+        }
+      ]
+    },
+    {
+      "id": 34,
+      "type": "timeseries",
+      "title": "Distance per day",
+      "gridPos": { "x": 16, "y": 46, "w": 8, "h": 8 },
+      "datasource": { "type": "victoriametrics-metrics-datasource", "uid": "victoriametrics" },
+      "timeFrom": "14d",
+      "interval": "1d",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "lengthkm",
+          "decimals": 1,
+          "min": 0,
+          "noValue": "No data",
+          "color": { "mode": "fixed", "fixedColor": "green" },
+          "custom": { "drawStyle": "bars", "fillOpacity": 80, "lineWidth": 1, "showPoints": "never" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "calcs": ["mean", "max"] },
+        "tooltip": { "mode": "single" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max_over_time(gadgetbridge_distance_cm[1d] offset -25h) / 100000",
+          "legendFormat": "Distance"
+        }
+      ]
+    },
+    {
+      "id": 104,
+      "type": "row",
+      "title": "Other",
+      "collapsed": true,
+      "gridPos": { "x": 0, "y": 54, "w": 24, "h": 1 },
+      "panels": [
+        {
+          "id": 40,
+          "type": "timeseries",
+          "title": "Resting metabolic rate",
+          "gridPos": { "x": 0, "y": 55, "w": 12, "h": 8 },
+          "datasource": { "type": "victoriametrics-metrics-datasource", "uid": "victoriametrics" },
+          "interval": "1h",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "suffix: kcal/day",
+              "noValue": "No data",
+              "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 0, "showPoints": "never" }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": { "displayMode": "list", "placement": "bottom", "calcs": ["lastNotNull"] },
+            "tooltip": { "mode": "single" }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "last_over_time(gadgetbridge_resting_metabolic_rate[1d])",
+              "legendFormat": "Resting metabolic rate"
+            }
+          ]
+        },
+        {
+          "id": 41,
+          "type": "timeseries",
+          "title": "Activity kind (raw)",
+          "gridPos": { "x": 12, "y": 55, "w": 12, "h": 8 },
+          "datasource": { "type": "victoriametrics-metrics-datasource", "uid": "victoriametrics" },
+          "interval": "1m",
+          "maxDataPoints": 1500,
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "decimals": 0,
+              "noValue": "No data",
+              "custom": { "drawStyle": "line", "lineInterpolation": "stepAfter", "lineWidth": 1, "fillOpacity": 0, "showPoints": "never" }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": { "displayMode": "list", "placement": "bottom" },
+            "tooltip": { "mode": "single" }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "last_over_time(gadgetbridge_activity_kind[$__interval])",
+              "legendFormat": "Activity kind"
+            }
+          ]
+        },
+        {
+          "id": 42,
+          "type": "timeseries",
+          "title": "Intensity (raw)",
+          "gridPos": { "x": 0, "y": 63, "w": 12, "h": 8 },
+          "datasource": { "type": "victoriametrics-metrics-datasource", "uid": "victoriametrics" },
+          "interval": "1m",
+          "maxDataPoints": 1500,
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "min": 0,
+              "noValue": "No data",
+              "custom": { "drawStyle": "bars", "fillOpacity": 80, "lineWidth": 1, "showPoints": "never" }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": { "displayMode": "list", "placement": "bottom" },
+            "tooltip": { "mode": "single" }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "max_over_time(gadgetbridge_intensity[$__interval])",
+              "legendFormat": "Intensity"
+            }
+          ]
+        },
+        {
+          "id": 43,
+          "type": "timeseries",
+          "title": "HRV (overnight, 5 min)",
+          "gridPos": { "x": 12, "y": 63, "w": 6, "h": 8 },
+          "datasource": { "type": "victoriametrics-metrics-datasource", "uid": "victoriametrics" },
+          "interval": "5m",
+          "maxDataPoints": 1500,
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ms",
+              "noValue": "No data",
+              "color": { "mode": "fixed", "fixedColor": "green" },
+              "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "showPoints": "never" }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": { "displayMode": "list", "placement": "bottom", "calcs": ["mean"] },
+            "tooltip": { "mode": "single" }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "max_over_time(gadgetbridge_hrv[$__interval])",
+              "legendFormat": "HRV"
+            }
+          ]
+        },
+        {
+          "id": 44,
+          "type": "timeseries",
+          "title": "SpO2",
+          "description": "Needs Pulse Ox enabled on the watch.",
+          "gridPos": { "x": 18, "y": 63, "w": 6, "h": 8 },
+          "datasource": { "type": "victoriametrics-metrics-datasource", "uid": "victoriametrics" },
+          "interval": "1m",
+          "maxDataPoints": 1500,
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "noValue": "No data",
+              "color": { "mode": "fixed", "fixedColor": "blue" },
+              "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "showPoints": "never" }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": { "displayMode": "list", "placement": "bottom", "calcs": ["min", "mean"] },
+            "tooltip": { "mode": "single" }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "avg_over_time(gadgetbridge_spo2[$__interval])",
+              "legendFormat": "SpO2"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
