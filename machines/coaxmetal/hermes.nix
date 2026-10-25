@@ -445,6 +445,8 @@ in
       # hermes-voice.nix). Without it cron delivery fails with "no delivery
       # target resolved for deliver=matrix".
       MATRIX_HOME_ROOM = "!QSmQTYGdeExThpCqNh:lassul.us";
+      # Each top-level DM message starts a thread; each thread is its own session.
+      MATRIX_DM_AUTO_THREAD = "true";
 
       # The shared calendar (calendar skill above); CALDAV_PASSWORD comes from
       # hermes-env.
