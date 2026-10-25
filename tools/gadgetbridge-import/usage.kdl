@@ -1,0 +1,10 @@
+bin "gadgetbridge-import"
+about "Push the Garmin samples of the newest Gadgetbridge database export in a directory to VictoriaMetrics, only those newer than the last run"
+
+arg "<directory>" help="Directory with the exported database"
+flag "--url" help="VictoriaMetrics base URL" required=#true {
+  arg "<url>"
+}
+flag "--state-dir" help="Directory for the last imported timestamps and the working copy" required=#true {
+  arg "<dir>"
+}

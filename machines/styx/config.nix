@@ -15,6 +15,7 @@
     ../../configs/gg23/audio/room.nix
     ../../configs/monitoring/server.nix
     ../../configs/monitoring/grafana-public.nix
+    ../../configs/health-dav.nix
     ./backup.nix
   ];
 
