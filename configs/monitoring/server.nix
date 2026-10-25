@@ -48,6 +48,9 @@ in
     enable = true;
     listenAddress = ":${toString ports.victoriametrics}";
     retentionPeriod = "90d";
+    # Merge samples of the same series at the same timestamp, so re-imported
+    # Gadgetbridge exports don't duplicate. 1ms leaves scraped data alone.
+    extraOptions = [ "-dedup.minScrapeInterval=1ms" ];
     # Gatus results; the vantage label tells which server saw a failure.
     prometheusConfig.scrape_configs = [
       {
