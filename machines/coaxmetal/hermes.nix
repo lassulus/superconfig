@@ -47,9 +47,10 @@ let
   # loopback only.
   webhookPort = 8644;
 
-  # Post a message to the Matrix home room through the running gateway: the
+  # Post a message to Matrix through the running gateway: the
   # "notify" webhook route below hands it to the gateway's own Matrix adapter.
   # For the agent's shell scripts (phonetpm heads-ups, background deploys).
+  # Posts into the calling session's room/thread, the home room otherwise.
   # `hermes send -t matrix` is no substitute: outside the gateway it opens a
   # second Matrix client on the gateway's device and crypto store, and the two
   # desync the Olm sessions until no client can decrypt Hermes any more.
@@ -68,7 +69,10 @@ let
         exit 2
       fi
       secret=$(sed -n 's/^WEBHOOK_SECRET=//p' "''${HERMES_HOME:-/var/lib/hermes/.hermes}/.env")
-      body=$(jq -cn --arg text "$*" '{text: $text}')
+      body=$(jq -cn --arg text "$*" \
+        --arg chat_id "''${HERMES_SESSION_CHAT_ID:-}" \
+        --arg thread_id "''${HERMES_SESSION_THREAD_ID:-}" \
+        '{text: $text, chat_id: $chat_id, thread_id: $thread_id}')
       stamp=$(date +%s)
       signature=$(printf '%s.%s' "$stamp" "$body" | openssl dgst -sha256 -hmac "$secret" -r | cut -d' ' -f1)
       curl -fsS --max-time 30 -o /dev/null \
@@ -312,6 +316,10 @@ in
           deliver = "matrix";
           deliver_only = true;
           prompt = "{text}";
+          deliver_extra = {
+            chat_id = "{chat_id}";
+            thread_id = "{thread_id}";
+          };
         };
       };
     };
