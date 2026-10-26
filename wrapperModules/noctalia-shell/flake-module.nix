@@ -18,7 +18,7 @@
         ${pkgs.sway}/bin/swaymsg "workspace $ws, move workspace to output $current_output"
       '';
 
-      noctalia-shell = pkgs.noctalia-shell.override { inherit (config) noctalia-qs; };
+      noctalia-shell = pkgs.callPackage ./noctalia-shell.nix { inherit (config) noctalia-qs; };
 
       # Patch noctalia-shell for sway:
       # - Use workspace name instead of number (activate() sends
@@ -104,8 +104,8 @@
 
         noctalia-qs = lib.mkOption {
           type = lib.types.package;
-          default = pkgs.noctalia-qs;
-          defaultText = lib.literalExpression "pkgs.noctalia-qs";
+          default = pkgs.callPackage ../../pkgs/noctalia-qs/package.nix { };
+          defaultText = lib.literalExpression "pkgs.callPackage ../../pkgs/noctalia-qs/package.nix { }";
           description = ''
             The quickshell fork the default package runs on. Ignored if you
             override `package`.
