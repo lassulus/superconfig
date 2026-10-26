@@ -50,9 +50,8 @@
       };
     in
     {
-      # noctalia-qs is linux-only and left out of packages elsewhere (same
-      # availableOn check as pkgs/flake-module.nix).
-      packages = lib.optionalAttrs (lib.meta.availableOn pkgs.stdenv.hostPlatform pkgs.noctalia-qs) {
+      # noctalia-qs is linux-only and left out of packages elsewhere.
+      packages = lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
         noctalia-shell = noctalia.wrapper;
       };
     };
