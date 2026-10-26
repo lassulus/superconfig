@@ -251,12 +251,18 @@
           ...
         }:
         {
-          # drop once clan-core splits its makeWrapperArgs
-          packages.clan-cli = clan-core.packages.${system}.clan-cli.overridePythonAttrs (o: {
-            makeWrapperArgs = lib.concatMap (
-              a: if lib.hasPrefix "--unset " a then lib.splitString " " a else [ a ]
-            ) o.makeWrapperArgs;
-          });
+          # drop the override once clan-core stops pinning nixVersions.nix_2_31
+          # (removed from nixpkgs), the overridePythonAttrs once it splits its
+          # makeWrapperArgs
+          packages.clan-cli =
+            (clan-core.packages.${system}.clan-cli.override {
+              nix = pkgs.nixVersions.nix_2_34;
+            }).overridePythonAttrs
+              (o: {
+                makeWrapperArgs = lib.concatMap (
+                  a: if lib.hasPrefix "--unset " a then lib.splitString " " a else [ a ]
+                ) o.makeWrapperArgs;
+              });
           # CI pushes its builds to cache.lassul.us with it (.github/niks3-push.sh)
           packages.niks3 = inputs.niks3.packages.${system}.niks3;
           # CI's eval job evaluates ciToplevels with it
