@@ -126,7 +126,7 @@
           # Radicle seed storage on the tank pool, hard-capped at 80G (allow-all
           # seeding has no built-in byte quota; the ZFS quota bounds it). Create
           # on an existing host with:
-          #   zfs create -o mountpoint=/var/lib/radicle -o quota=80G tank/radicle
+          #   zfs create -o mountpoint=/var/lib/radicle -o canmount=noauto -o quota=80G tank/radicle
           radicle = {
             type = "zfs_fs";
             mountpoint = "/var/lib/radicle";
