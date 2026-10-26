@@ -167,7 +167,7 @@ index ae42da8..a09b7dd 100644
      </PowerLevelsContextProvider>
    );
 diff --git a/src/app/features/room/RoomInput.tsx b/src/app/features/room/RoomInput.tsx
-index f88ccf9..75417c4 100644
+index 4667542..652e64b 100644
 --- a/src/app/features/room/RoomInput.tsx
 +++ b/src/app/features/room/RoomInput.tsx
 @@ -68,6 +68,7 @@ import { useFilePicker } from '../../hooks/useFilePicker';
@@ -1643,12 +1643,13 @@ index 0000000..b579e74
 +});
 diff --git a/src/app/features/room/ThreadDrawer.tsx b/src/app/features/room/ThreadDrawer.tsx
 new file mode 100644
-index 0000000..d3c98ba
+index 0000000..107ae5b
 --- /dev/null
 +++ b/src/app/features/room/ThreadDrawer.tsx
-@@ -0,0 +1,751 @@
+@@ -0,0 +1,788 @@
 +import React, { MouseEventHandler, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 +import { Box, Header, Icon, IconButton, Icons, Scroll, Text, config } from 'folds';
++import { Direction } from 'matrix-js-sdk/lib/models/event-timeline';
 +import { RelationType } from 'matrix-js-sdk/lib/@types/event';
 +import { ReceiptType } from 'matrix-js-sdk/lib/@types/read_receipts';
 +import { MatrixEvent } from 'matrix-js-sdk/lib/models/event';
@@ -1658,7 +1659,13 @@ index 0000000..d3c98ba
 +import { ReactEditor } from 'slate-react';
 +import { HTMLReactParserOptions } from 'html-react-parser';
 +import { Opts as LinkifyOpts } from 'linkifyjs';
-+import { ImageContent, MSticker, RedactedContent, Reply } from '../../components/message';
++import {
++  ImageContent,
++  MessageNotDecryptedContent,
++  MSticker,
++  RedactedContent,
++  Reply,
++} from '../../components/message';
 +import { RenderMessageContent } from '../../components/RenderMessageContent';
 +import { Image } from '../../components/media';
 +import { ImageViewer } from '../../components/image-viewer';
@@ -1763,13 +1770,6 @@ index 0000000..d3c98ba
 +  const [encUrlPreview] = useSetting(settingsAtom, 'encUrlPreview');
 +  const showUrlPreview = room.hasEncryptionStateEvent() ? encUrlPreview : urlPreview;
 +
-+  const editedEvent = getEditedEvent(mEventId, mEvent, timelineSet);
-+  const editedNewContent = editedEvent?.getContent()['m.new_content'];
-+  const baseContent = mEvent.getContent();
-+  const safeContent =
-+    Object.keys(baseContent).length > 0 ? baseContent : mEvent.getOriginalContent();
-+  const getContent = (() => editedNewContent ?? safeContent) as GetContentCallback;
-+
 +  const reactionRelations = getEventReactions(timelineSet, mEventId);
 +  const reactions = reactionRelations?.getSortedAnnotationsByKey();
 +  const hasReactions = reactions && reactions.length > 0;
@@ -1851,22 +1851,21 @@ index 0000000..d3c98ba
 +                />
 +              );
 +
-+            if (mEvent.getType() === MessageEvent.RoomMessage) {
++            if (mEvent.getType() === MessageEvent.RoomMessageEncrypted)
 +              return (
-+                <RenderMessageContent
-+                  displayName={senderDisplayName}
-+                  msgType={(editedNewContent ?? safeContent).msgtype ?? ''}
-+                  ts={mEvent.getTs()}
-+                  edited={!!editedEvent}
-+                  getContent={getContent}
-+                  mediaAutoLoad={mediaAutoLoad}
-+                  urlPreview={showUrlPreview}
-+                  htmlReactParserOptions={htmlReactParserOptions}
-+                  linkifyOpts={linkifyOpts}
-+                  outlineAttachment={messageLayout === MessageLayout.Bubble}
-+                />
++                <Text>
++                  <MessageNotDecryptedContent />
++                </Text>
 +              );
-+            }
++
++            // Read the content here, not at render time of ThreadMessage: this
++            // callback re-runs once EncryptedContent sees the event decrypted.
++            const editedEvent = getEditedEvent(mEventId, mEvent, timelineSet);
++            const editedNewContent = editedEvent?.getContent()['m.new_content'];
++            const baseContent = mEvent.getContent();
++            const safeContent =
++              Object.keys(baseContent).length > 0 ? baseContent : mEvent.getOriginalContent();
++            const getContent = (() => editedNewContent ?? safeContent) as GetContentCallback;
 +
 +            return (
 +              <RenderMessageContent
@@ -2009,6 +2008,44 @@ index 0000000..d3c98ba
 +      room.removeListener(RoomEvent.Redaction, onRedaction);
 +      (room as any).removeListener(ThreadEvent.Update, onThreadUpdate);
 +      (room as any).removeListener(ThreadEvent.NewReply, onThreadUpdate);
++    };
++  }, [mx, room, threadRootId]);
++
++  // Load the full thread history. Thread replies are not in the main timeline,
++  // and on creating a Thread the SDK only fetches the newest /relations page
++  // (server default size, which can be nothing but reactions/edits). Wait
++  // until that initial fetch has reset and filled the thread timeline, then
++  // paginate it backwards until the SDK clears the backwards token (start of
++  // the thread reached). Re-run when the SDK resets the thread timeline.
++  useEffect(() => {
++    const thread =
++      room.getThread(threadRootId) ??
++      room.createThread(threadRootId, room.findEventById(threadRootId), [], true);
++    let disposed = false;
++    let loading = false;
++    const loadHistory = async () => {
++      if (loading || !thread.initialEventsFetched) return;
++      loading = true;
++      try {
++        while (!disposed && thread.liveTimeline.getPaginationToken(Direction.Backward) !== null) {
++          // eslint-disable-next-line no-await-in-loop
++          await mx.paginateEventTimeline(thread.liveTimeline, { backwards: true });
++        }
++      } catch (err) {
++        // eslint-disable-next-line no-console
++        console.warn('Failed to load thread history:', err);
++      } finally {
++        loading = false;
++      }
++      if (!disposed) forceUpdate((n) => n + 1);
++    };
++    thread.on(ThreadEvent.Update, loadHistory);
++    thread.on(RoomEvent.TimelineReset, loadHistory);
++    loadHistory();
++    return () => {
++      disposed = true;
++      thread.removeListener(ThreadEvent.Update, loadHistory);
++      thread.removeListener(RoomEvent.TimelineReset, loadHistory);
 +    };
 +  }, [mx, room, threadRootId]);
 +
