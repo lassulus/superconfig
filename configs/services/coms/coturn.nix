@@ -3,6 +3,8 @@ let
   domain = "turn.lassul.us";
   minPort = 49152;
   maxPort = 49999;
+  ip4 = "95.217.192.59";
+  ip6 = "2a01:4f9:4a:4f1a::2";
 in
 {
   # STUN/TURN for jitsi.lassul.us. Clients get the servers and short-lived
@@ -28,6 +30,16 @@ in
     min-port = minPort;
     max-port = maxPort;
     no-cli = true;
+    # Only the public addresses, otherwise coturn hands out relay candidates
+    # on internal ones (10.233.x.1, retiolum).
+    listening-ips = [
+      ip4
+      ip6
+    ];
+    relay-ips = [
+      ip4
+      ip6
+    ];
     # Never relay into local or overlay networks (retiolum 10.243.0.0/16 and
     # 42::/16, yggdrasil 200::/7).
     extraConfig = ''
