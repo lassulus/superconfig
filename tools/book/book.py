@@ -614,12 +614,18 @@ class App:
         ev.add("dtend", from_epoch(b["end"]))
         if owner_copy:
             pending = b["status"] == "pending"
-            ev.add("summary", f"{'? ' if pending else ''}{b['name']}: {b['title']}")
+            summary = f"{'? ' if pending else ''}{b['name']}: {b['title']}"
+            ev.add("summary", summary)
             ev.add("status", "TENTATIVE" if pending else "CONFIRMED")
             ev.add(
                 "description",
                 f"{b['name']} <{b['email']}>\n\n{b['note']}\n\n{cfg.base_url}/a/{b['admin_token']}",
             )
+            alarm = icalendar.Alarm()
+            alarm.add("action", "DISPLAY")
+            alarm.add("trigger", timedelta(minutes=-10))
+            alarm.add("description", summary)
+            ev.add_component(alarm)
         else:
             ev.add("summary", f"{b['title']} with {cfg.owner}")
             ev.add("status", "CANCELLED" if method == "CANCEL" else "CONFIRMED")
