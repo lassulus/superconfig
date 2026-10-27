@@ -72,6 +72,7 @@ in
       (soa "robotns3.second-ns.com" "193.47.99.3")
       (tls "smtps" "tls://mail.lassul.us:465")
       (tls "imaps" "tls://mail.lassul.us:993")
+      (tls "turns" "tls://turn.lassul.us:5349" // { group = "jitsi"; })
       {
         name = "federation";
         group = "matrix";
