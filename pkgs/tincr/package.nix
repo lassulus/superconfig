@@ -16,11 +16,11 @@ rustPlatform.buildRustPackage {
   src = fetchFromGitHub {
     owner = "Lassulus";
     repo = "tincr";
-    rev = "685fbb90b59f416021366c892bd74ee7165c5b91";
-    hash = "sha256-FUU1WTe/OAl0kngfllwifF9IB6W6NqSmi9qBwBUhguQ=";
+    rev = "4c71ed6d1bb39fdc2220fa130f4cebb33a200cb6";
+    hash = "sha256-tmPUIp7iDhDy5qAk1TBiGrOG539kDbsjF/5GymQU5j4=";
   };
 
-  cargoHash = "sha256-3kVlB537Oe1yvmMNoCnuNkBgYqxFLvnBbc97uKGmb3g=";
+  cargoHash = "sha256-hylHwBXehw2OSoMFCL0x6I5jDSOmeabtBqWezCqtDFo=";
 
   # Just the deployable bin crates; --workspace would pull tinc-ffi's cc.
   cargoBuildFlags = [
