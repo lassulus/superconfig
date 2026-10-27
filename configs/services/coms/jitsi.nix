@@ -39,6 +39,12 @@
     "org.ice4j.ice.harvest.NAT_HARVESTER_PUBLIC_ADDRESS" = "95.217.192.59";
   };
 
+  # The bridge otherwise suspends forwarded video (incl. screen shares not on
+  # stage) when its bandwidth estimate for a receiver is low; with
+  # trust-bwe=false it forwards everything selected and never pauses an
+  # active screen share.
+  services.jitsi-videobridge.config.videobridge.cc.trust-bwe = false;
+
   services.prosody.checkConfig = false;
 
   services.nginx.virtualHosts."meet.lassul.us" = {
