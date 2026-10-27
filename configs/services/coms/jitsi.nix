@@ -1,5 +1,6 @@
 { self, ... }:
 {
+  imports = [ ./coturn.nix ];
 
   # jitsi-meet 1.0.8792 is marked insecure in nixpkgs; secureify via overlay
   # rather than nixpkgs.config.permittedInsecurePackages (which doesn't
@@ -16,11 +17,6 @@
       enableWelcomePage = true;
       requireDisplayName = true;
       analytics.disabled = true;
-      stunServers = [
-        # - https://www.kuketz-blog.de/jitsi-meet-server-einstellungen-fuer-einen-datenschutzfreundlichen-betrieb/
-        { urls = "turn:turn.matrix.org:3478?transport=udp"; }
-        { urls = "turn:turn.matrix.org:3478?transport=tcp"; }
-      ];
     };
     interfaceConfig = {
       SHOW_JITSI_WATERMARK = false;
@@ -31,13 +27,10 @@
     };
   };
 
-  # Disable AWS harvester (not needed) and configure NAT harvester
-  # so clients can establish media connections through NAT
-  services.jitsi-videobridge.extraProperties = {
-    "org.ice4j.ice.harvest.DISABLE_AWS_HARVESTER" = "true";
-    "org.ice4j.ice.harvest.NAT_HARVESTER_LOCAL_ADDRESS" = "0.0.0.0";
-    "org.ice4j.ice.harvest.NAT_HARVESTER_PUBLIC_ADDRESS" = "95.217.192.59";
-  };
+  # The public IP sits directly on the interface, so the bridge needs neither
+  # the AWS nor a STUN mapping harvester (the default STUN host is dead).
+  services.jitsi-videobridge.extraProperties."org.ice4j.ice.harvest.DISABLE_AWS_HARVESTER" = "true";
+  services.jitsi-videobridge.nat.harvesterAddresses = [ ];
 
   # The bridge otherwise suspends forwarded video (incl. screen shares not on
   # stage) when its bandwidth estimate for a receiver is low; with

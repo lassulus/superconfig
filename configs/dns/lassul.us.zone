@@ -43,6 +43,7 @@ paste IN CNAME neoprism
 radio IN CNAME neoprism
 jitsi IN CNAME neoprism
 meet IN CNAME neoprism
+turn IN CNAME neoprism
 streaming IN CNAME neoprism
 flix IN CNAME neoprism
 flex IN CNAME neoprism
