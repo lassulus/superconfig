@@ -89,6 +89,10 @@
     iets.url = "github:numtide/iets";
     iets.inputs.nixpkgs.follows = "nixpkgs";
 
+    # Nix on Android, the phone massulus (machines/massulus/droid-nix.nix)
+    droid-nix.url = "github:lassulus/droid-nix";
+    droid-nix.inputs.nixpkgs.follows = "nixpkgs";
+
   };
 
   outputs =
@@ -101,6 +105,16 @@
     let
       clan = clan-core.lib.clan {
         self = self;
+        # clan-core makes every directory under machines/ an inventory machine
+        # (modules/clan/module.nix), with no option to exclude one. The
+        # droid-nix phone massulus (droidNixConfigurations.massulus below) is
+        # not a clan machine, so clan reads the flake without its directory.
+        directory = toString (
+          nixpkgs.lib.fileset.toSource {
+            root = ./.;
+            fileset = nixpkgs.lib.fileset.difference ./. ./machines/massulus;
+          }
+        );
         specialArgs.self = self;
         modules = import ./clan_modules { inherit nixpkgs; };
         vars.settings.secretStore = "password-store";
@@ -236,6 +250,12 @@
       flake.ciToplevels = nixpkgs.lib.mapAttrs (
         _: c: c.config.system.build.toplevel
       ) clan.config.nixosConfigurations;
+      # The phone, CI builds it on aarch64 (.github/workflows/ci.yml)
+      flake.droidNixConfigurations.massulus = inputs.droid-nix.lib.droidNixConfiguration {
+        pkgs = import nixpkgs { system = "aarch64-linux"; };
+        modules = [ ./machines/massulus/droid-nix.nix ];
+        extraSpecialArgs.self = self;
+      };
       flake.clanInternals = clan.config.clanInternals;
       flake.darwinConfigurations = clan.config.darwinConfigurations;
       flake.clan = clan.config;

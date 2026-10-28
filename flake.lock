@@ -153,6 +153,26 @@
         "type": "github"
       }
     },
+    "droid-nix": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1793230098,
+        "narHash": "sha256-B2aGjmpk3FC7dIEvyYoRzqTcn3UyUiL+IOeUqVB2LE8=",
+        "owner": "lassulus",
+        "repo": "droid-nix",
+        "rev": "274046364491d3f8455ac3218ce43743126c3c7c",
+        "type": "github"
+      },
+      "original": {
+        "owner": "lassulus",
+        "repo": "droid-nix",
+        "type": "github"
+      }
+    },
     "fenix": {
       "inputs": {
         "nixpkgs": [
@@ -711,6 +731,7 @@
         "byoidc": "byoidc",
         "clan-core": "clan-core",
         "disko": "disko",
+        "droid-nix": "droid-nix",
         "hermes-agent": "hermes-agent",
         "iets": "iets",
         "kartei": "kartei",
