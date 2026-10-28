@@ -268,11 +268,33 @@ jobs:
           fi
           cat "$dir/fuse.log" 2>/dev/null || true
 
+  # The phone massulus (droid-nix, machines/massulus/droid-nix.nix), built
+  # natively on an arm runner and pushed to cache.lassul.us for the phone to
+  # substitute. Its own niks3, the eval job's is x86_64.
+  massulus:
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      id-token: write # niks3 push
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            trusted-users = root runner
+            extra-substituters = https://cache.lassul.us
+            extra-trusted-public-keys = cache.lassul.us-1:aOMEO5TU6eLvhyPi0jmgjR2sVlGjMq3rK0MeACjTcQ0=
+      - run: |
+          niks3=$(nix build --no-link --print-out-paths .#niks3)
+          echo "$niks3/bin" >> "$GITHUB_PATH"
+          PATH=$niks3/bin:$PATH .github/niks3-push.sh "$niks3"
+      - run: .github/ci-build.sh .#droidNixConfigurations.massulus.activationPackage
+
   # Fixed-name summary of the jobs above, the required status check for
   # merging into master (the matrix job names change with the hosts).
   # Skipped: no machine to build, or a job it needs failed.
   ci:
-    needs: [list, check, outputs, eval, shared, build]
+    needs: [list, check, outputs, eval, shared, build, massulus]
     if: always()
     runs-on: ubuntu-latest
     steps:
