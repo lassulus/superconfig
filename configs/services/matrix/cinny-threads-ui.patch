@@ -426,7 +426,7 @@ index 4667542..652e64b 100644
                      size="300"
                      radii="300"
 diff --git a/src/app/features/room/RoomTimeline.tsx b/src/app/features/room/RoomTimeline.tsx
-index c533528..6975088 100644
+index c533528..9170852 100644
 --- a/src/app/features/room/RoomTimeline.tsx
 +++ b/src/app/features/room/RoomTimeline.tsx
 @@ -19,10 +19,12 @@ import {
@@ -658,6 +658,15 @@ index c533528..6975088 100644
          // if user is at bottom of timeline
          // keep paginating timeline and conditionally mark as read
          // otherwise we update timeline without paginating
+@@ -616,7 +773,7 @@ export function RoomTimeline({ room, eventId, roomInputRef, editor }: RoomTimeli
+             // Check if the document is in focus (user is actively viewing the app),
+             // and either there are no unread messages or the latest message is from the current user.
+             // If either condition is met, trigger the markAsRead function to send a read receipt.
+-            requestAnimationFrame(() => markAsRead(mx, mEvt.getRoomId()!, hideActivity));
++            requestAnimationFrame(() => markAsRead(mx, mEvt.getRoomId()!, hideActivity, true));
+           }
+ 
+           if (!document.hasFocus() && !unreadInfo) {
 @@ -644,6 +801,13 @@ export function RoomTimeline({ room, eventId, roomInputRef, editor }: RoomTimeli
      )
    );
@@ -672,6 +681,22 @@ index c533528..6975088 100644
    const handleOpenEvent = useCallback(
      async (
        evtId: string,
+@@ -709,13 +873,13 @@ export function RoomTimeline({ room, eventId, roomInputRef, editor }: RoomTimeli
+   const tryAutoMarkAsRead = useCallback(() => {
+     const readUptoEventId = readUptoEventIdRef.current;
+     if (!readUptoEventId) {
+-      requestAnimationFrame(() => markAsRead(mx, room.roomId, hideActivity));
++      requestAnimationFrame(() => markAsRead(mx, room.roomId, hideActivity, true));
+       return;
+     }
+     const evtTimeline = getEventTimeline(room, readUptoEventId);
+     const latestTimeline = evtTimeline && getFirstLinkedTimeline(evtTimeline, Direction.Forward);
+     if (latestTimeline === room.getLiveTimeline()) {
+-      requestAnimationFrame(() => markAsRead(mx, room.roomId, hideActivity));
++      requestAnimationFrame(() => markAsRead(mx, room.roomId, hideActivity, true));
+     }
+   }, [mx, room, hideActivity]);
+ 
 @@ -958,6 +1122,16 @@ export function RoomTimeline({ room, eventId, roomInputRef, editor }: RoomTimeli
          console.warn('Button should have "data-event-id" attribute!');
          return;
@@ -1192,10 +1217,10 @@ index 8089b5e..754d44a 100644
              </TooltipProvider>
 diff --git a/src/app/features/room/ThreadBrowser.tsx b/src/app/features/room/ThreadBrowser.tsx
 new file mode 100644
-index 0000000..8deb54a
+index 0000000..7a50495
 --- /dev/null
 +++ b/src/app/features/room/ThreadBrowser.tsx
-@@ -0,0 +1,372 @@
+@@ -0,0 +1,396 @@
 +import React, {
 +  ChangeEventHandler,
 +  MouseEventHandler,
@@ -1217,8 +1242,10 @@ index 0000000..8deb54a
 +  Avatar,
 +  config,
 +  Chip,
++  Badge,
 +} from 'folds';
 +import { MatrixEvent, Room } from 'matrix-js-sdk';
++import { NotificationCountType, RoomEvent } from 'matrix-js-sdk/lib/models/room';
 +import { Thread, ThreadEvent } from 'matrix-js-sdk/lib/models/thread';
 +import { HTMLReactParserOptions } from 'html-react-parser';
 +import { Opts as LinkifyOpts } from 'linkifyjs';
@@ -1252,6 +1279,11 @@ index 0000000..8deb54a
 +} from '../../plugins/react-custom-html-parser';
 +import { EncryptedContent } from './message';
 +import * as css from './ThreadDrawer.css';
++
++// Time of the thread's latest reply (the SDK's replyToEvent: the server's
++// bundled latest_event until the thread timeline is loaded), else the root.
++const getThreadActivityTs = (thread: Thread): number =>
++  (thread.replyToEvent ?? thread.rootEvent)?.getTs() ?? 0;
 +
 +type ThreadPreviewProps = {
 +  room: Room;
@@ -1313,14 +1345,17 @@ index 0000000..8deb54a
 +    (ev: MatrixEvent) => ev.getId() !== thread.id && !reactionOrEditEvent(ev)
 +  ).length;
 +
-+  const lastReply = thread.events
-+    .filter((ev: MatrixEvent) => ev.getId() !== thread.id && !reactionOrEditEvent(ev))
-+    .at(-1);
++  const lastReply = thread.replyToEvent;
 +  const lastSenderId = lastReply?.getSender() ?? '';
 +  const lastDisplayName =
 +    getMemberDisplayName(room, lastSenderId) ?? getMxIdLocalPart(lastSenderId) ?? lastSenderId;
 +  const lastContent = lastReply?.getContent();
 +  const lastBody: string = typeof lastContent?.body === 'string' ? lastContent.body : '';
++  const unreadTotal = room.getThreadUnreadNotificationCount(thread.id, NotificationCountType.Total);
++  const unreadHighlight = room.getThreadUnreadNotificationCount(
++    thread.id,
++    NotificationCountType.Highlight
++  );
 +
 +  return (
 +    <Box
@@ -1357,12 +1392,24 @@ index 0000000..8deb54a
 +              </Text>
 +            </Username>
 +            <Time
-+              ts={rootEvent.getTs()}
++              ts={getThreadActivityTs(thread)}
 +              hour24Clock={hour24Clock}
 +              dateFormatString={dateFormatString}
 +            />
 +          </Box>
-+          <Box shrink="No">
++          <Box shrink="No" alignItems="Center" gap="200">
++            {unreadTotal > 0 && (
++              <Badge
++                variant={unreadHighlight > 0 ? 'Critical' : 'Secondary'}
++                size="400"
++                fill="Solid"
++                radii="Pill"
++              >
++                <Text as="span" size="L400">
++                  {unreadTotal}
++                </Text>
++              </Badge>
++            )}
 +            <Chip data-event-id={thread.id} onClick={handleJumpClick} radii="Pill">
 +              <Text size="T200">Jump</Text>
 +            </Chip>
@@ -1445,24 +1492,26 @@ index 0000000..8deb54a
 +  const [query, setQuery] = useState('');
 +  const searchRef = useRef<HTMLInputElement>(null);
 +
-+  // Re-render when threads change.
++  // Re-render when threads or their unread counts change.
 +  useEffect(() => {
 +    const onUpdate = () => forceUpdate((n) => n + 1);
 +    room.on(ThreadEvent.New as any, onUpdate);
 +    room.on(ThreadEvent.Update as any, onUpdate);
 +    room.on(ThreadEvent.NewReply as any, onUpdate);
++    room.on(RoomEvent.UnreadNotifications, onUpdate);
++    room.on(RoomEvent.Receipt, onUpdate);
 +    return () => {
 +      room.off(ThreadEvent.New as any, onUpdate);
 +      room.off(ThreadEvent.Update as any, onUpdate);
 +      room.off(ThreadEvent.NewReply as any, onUpdate);
++      room.off(RoomEvent.UnreadNotifications, onUpdate);
++      room.off(RoomEvent.Receipt, onUpdate);
 +    };
 +  }, [room]);
 +
-+  const allThreads = room.getThreads().sort((a: Thread, b: Thread) => {
-+    const aTs = a.events.at(-1)?.getTs() ?? a.rootEvent?.getTs() ?? 0;
-+    const bTs = b.events.at(-1)?.getTs() ?? b.rootEvent?.getTs() ?? 0;
-+    return bTs - aTs;
-+  });
++  const allThreads = room
++    .getThreads()
++    .sort((a: Thread, b: Thread) => getThreadActivityTs(b) - getThreadActivityTs(a));
 +
 +  const lowerQuery = query.trim().toLowerCase();
 +  const threads = lowerQuery
@@ -1643,18 +1692,18 @@ index 0000000..b579e74
 +});
 diff --git a/src/app/features/room/ThreadDrawer.tsx b/src/app/features/room/ThreadDrawer.tsx
 new file mode 100644
-index 0000000..107ae5b
+index 0000000..7f649da
 --- /dev/null
 +++ b/src/app/features/room/ThreadDrawer.tsx
-@@ -0,0 +1,788 @@
+@@ -0,0 +1,811 @@
 +import React, { MouseEventHandler, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 +import { Box, Header, Icon, IconButton, Icons, Scroll, Text, config } from 'folds';
-+import { Direction } from 'matrix-js-sdk/lib/models/event-timeline';
++import { Direction, EventTimeline } from 'matrix-js-sdk/lib/models/event-timeline';
 +import { RelationType } from 'matrix-js-sdk/lib/@types/event';
 +import { ReceiptType } from 'matrix-js-sdk/lib/@types/read_receipts';
 +import { MatrixEvent } from 'matrix-js-sdk/lib/models/event';
 +import { Room, RoomEvent, RoomEventHandlerMap } from 'matrix-js-sdk/lib/models/room';
-+import { ThreadEvent } from 'matrix-js-sdk/lib/models/thread';
++import { Thread, ThreadEvent } from 'matrix-js-sdk/lib/models/thread';
 +import { useAtomValue, useSetAtom } from 'jotai';
 +import { ReactEditor } from 'slate-react';
 +import { HTMLReactParserOptions } from 'html-react-parser';
@@ -1703,6 +1752,20 @@ index 0000000..107ae5b
 +import { RoomInput } from './RoomInput';
 +import { RoomViewFollowing, RoomViewFollowingPlaceholder } from './RoomViewFollowing';
 +import * as css from './ThreadDrawer.css';
++
++// The thread's timelines, oldest first. thread.events only reads the live
++// timeline, but a gappy sync resets it (Room.resetLiveTimeline resets every
++// thread) and keeps the known events in the old timeline; back-paginating the
++// new live timeline links it to the old one instead of moving them over.
++const getThreadTimelines = (thread: Thread): EventTimeline[] => {
++  const timelines: EventTimeline[] = [];
++  let timeline: EventTimeline | null = thread.liveTimeline;
++  while (timeline) {
++    timelines.unshift(timeline);
++    timeline = timeline.getNeighbouringTimeline(Direction.Backward);
++  }
++  return timelines;
++};
 +
 +type ThreadMessageProps = {
 +  room: Room;
@@ -2017,6 +2080,8 @@ index 0000000..107ae5b
 +  // until that initial fetch has reset and filled the thread timeline, then
 +  // paginate it backwards until the SDK clears the backwards token (start of
 +  // the thread reached). Re-run when the SDK resets the thread timeline.
++  // Paginate the oldest linked timeline: after a reset, paginating the live
++  // one only links it to the old timeline and keeps its token unchanged.
 +  useEffect(() => {
 +    const thread =
 +      room.getThread(threadRootId) ??
@@ -2027,9 +2092,11 @@ index 0000000..107ae5b
 +      if (loading || !thread.initialEventsFetched) return;
 +      loading = true;
 +      try {
-+        while (!disposed && thread.liveTimeline.getPaginationToken(Direction.Backward) !== null) {
++        while (!disposed) {
++          const [oldest] = getThreadTimelines(thread);
++          if (oldest.getPaginationToken(Direction.Backward) === null) break;
 +          // eslint-disable-next-line no-await-in-loop
-+          await mx.paginateEventTimeline(thread.liveTimeline, { backwards: true });
++          await mx.paginateEventTimeline(oldest, { backwards: true });
 +        }
 +      } catch (err) {
 +        // eslint-disable-next-line no-console
@@ -2054,7 +2121,12 @@ index 0000000..107ae5b
 +  // window before the Thread object is registered by the SDK.
 +  const replyEvents: MatrixEvent[] = (() => {
 +    const thread = room.getThread(threadRootId);
-+    const fromThread = thread?.events ?? [];
++    const fromThread = thread
++      ? getThreadTimelines(thread).reduce<MatrixEvent[]>(
++          (events, timeline) => events.concat(timeline.getEvents()),
++          []
++        )
++      : [];
 +    if (fromThread.length > 0) {
 +      return fromThread.filter(
 +        (ev: MatrixEvent) => ev.getId() !== threadRootId && !reactionOrEditEvent(ev)
@@ -2595,10 +2667,20 @@ index 4c86c4e..56d4851 100644
 +  );
 +};
 diff --git a/src/app/utils/notifications.ts b/src/app/utils/notifications.ts
-index a23bd1a..4ba2d2b 100644
+index a23bd1a..f826bcc 100644
 --- a/src/app/utils/notifications.ts
 +++ b/src/app/utils/notifications.ts
-@@ -5,22 +5,28 @@ export async function markAsRead(mx: MatrixClient, roomId: string, privateReceip
+@@ -1,26 +1,40 @@
+ import { MatrixClient, ReceiptType } from 'matrix-js-sdk';
+ 
+-export async function markAsRead(mx: MatrixClient, roomId: string, privateReceipt: boolean) {
++export async function markAsRead(
++  mx: MatrixClient,
++  roomId: string,
++  privateReceipt: boolean,
++  mainTimelineOnly = false
++) {
+   const room = mx.getRoom(roomId);
    if (!room) return;
  
    const timeline = room.getLiveTimeline().getEvents();
@@ -2626,17 +2708,20 @@ index a23bd1a..4ba2d2b 100644
 +  }
 +  if (!latestEvent) return;
  
-+  // Send an UNTHREADED receipt. A room's unread in cinny is the main-timeline
-+  // count plus the sum of every thread's count (Room.getUnreadNotificationCount),
-+  // so a plain main/threaded receipt leaves the room marked unread whenever any
-+  // thread still has unread notifications - the room stays bold even after
-+  // "Mark as Read". An unthreaded receipt clears the main timeline and every
-+  // thread's unread bucket in one shot.
++  // An explicit "Mark as Read" sends an UNTHREADED receipt. A room's unread in
++  // cinny is the main-timeline count plus the sum of every thread's count
++  // (Room.getUnreadNotificationCount), so a plain main/threaded receipt leaves
++  // the room marked unread whenever any thread still has unread notifications -
++  // the room stays bold even after "Mark as Read". An unthreaded receipt clears
++  // the main timeline and every thread's unread bucket in one shot.
++  // Automatic marking while viewing the main timeline (mainTimelineOnly) sends
++  // the SDK's default threaded receipt for the main timeline instead, so unread
++  // threads stay unread until they are opened.
    await mx.sendReadReceipt(
      latestEvent,
 -    privateReceipt ? ReceiptType.ReadPrivate : ReceiptType.Read
 +    privateReceipt ? ReceiptType.ReadPrivate : ReceiptType.Read,
-+    true
++    !mainTimelineOnly
    );
  }
 diff --git a/src/app/utils/room.ts b/src/app/utils/room.ts
