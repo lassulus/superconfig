@@ -48,10 +48,6 @@ in
     kernelParams = [ "acpi_backlight=none" ];
   };
 
-  environment.systemPackages = [
-    pkgs.tpacpi-bat
-  ];
-
   fileSystems = {
     "/" = {
       device = "/dev/mapper/pool-root";
