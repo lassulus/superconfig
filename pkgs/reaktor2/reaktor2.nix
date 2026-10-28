@@ -21,7 +21,7 @@
   network-simple,
   network-simple-tls,
   network-uri,
-  pcre-light,
+  pcre2,
   process,
   random,
   servant-server,
@@ -46,6 +46,9 @@ mkDerivation {
     rev = "6ff1335c7c9775e1cf167b950b6de97359d3b659";
     fetchSubmodules = true;
   };
+  # Ports the System plugin from pcre-light to pcre2 (bundled PCRE2); drop
+  # once upstream reaktor2 no longer depends on pcre-light.
+  patches = [ ./pcre2.patch ];
   isLibrary = false;
   isExecutable = true;
   executableHaskellDepends = [
@@ -68,7 +71,7 @@ mkDerivation {
     network-simple
     network-simple-tls
     network-uri
-    pcre-light
+    pcre2
     process
     random
     servant-server
