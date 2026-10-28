@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Pushes the closures of PATH... to niks3.lassul.us, served as
 # cache.lassul.us, with the job's GitHub OIDC token (needs id-token: write;
-# niks3 on neoprism trusts tokens of lassulus/superconfig, see
+# niks3 on neoprism trusts tokens of lassulus/superconfig and droid-nix, see
 # configs/nix-cache.nix). cache.nixos.org keeps serving what it signed,
 # those paths are left out. Needs niks3 in PATH.
 # Usage: niks3-push.sh PATH...

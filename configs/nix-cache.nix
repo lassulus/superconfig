@@ -67,12 +67,16 @@ in
     # a CI build would hit B2 first, and B2 throttles that many misses with
     # 503s.
     priority = 50;
-    # CI (.github/workflows/ci.yml) pushes with the job's GitHub OIDC token.
-    # Fork PRs don't get one.
+    # CI (.github/workflows/ci.yml) pushes with the job's GitHub OIDC token,
+    # so does droid-nix's CI. Fork PRs don't get one. A token matching any of
+    # the repositories is accepted.
     oidc.providers.github = {
       issuer = "https://token.actions.githubusercontent.com";
       audience = "https://niks3.lassul.us";
-      boundClaims.repository = [ "lassulus/superconfig" ];
+      boundClaims.repository = [
+        "lassulus/superconfig"
+        "lassulus/droid-nix"
+      ];
     };
     nginx = {
       enable = true;
