@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Two cgit sources (reaktor2 + its blessings dependency) bumped together to
-# their latest release tags; nix-update can't handle the pair.
+# reaktor2 (GitHub master: upstream has no release tag for the pcre2 port)
+# and its blessings dependency (cgit, latest release tag) bumped together;
+# nix-update can't handle the pair.
 attr=reaktor2
 
 # Run by update-pkgs from the flake root ($0 is a read-only store copy).
@@ -22,10 +23,7 @@ latest_tag() {
 
 changed=()
 bump() {
-  local name=$1 file=$dir/$2
-  local tag rev old_rev version
-  read -r tag rev < <(latest_tag "https://cgit.krebsco.de/$name")
-  version=${tag#v}
+  local name=$1 file=$dir/$2 rev=$3 version=$4 old_rev
   old_rev=$(sed -n 's/^ *rev = "\([^"]*\)".*/\1/p' "$file")
   if [ "$old_rev" = "$rev" ]; then
     return
@@ -34,14 +32,19 @@ bump() {
   sed -i \
     -e "s|^\( *\)rev = \".*\"|\1rev = \"$rev\"|" \
     -e "s|^\( *\)version = \".*\"|\1version = \"$version\"|" \
-    -e "s|^\( *\)sha256 = \".*\"|\1sha256 = \"\"|" \
+    -e "s|^\( *\)\(sha256\|hash\) = \".*\"|\1\2 = \"\"|" \
     "$file"
   changed+=("$name")
   echo "$name: $old_rev -> $rev ($version)"
 }
 
-bump blessings blessings.nix
-bump reaktor2 reaktor2.nix
+read -r tag rev < <(latest_tag https://cgit.krebsco.de/blessings)
+bump blessings blessings.nix "$rev" "${tag#v}"
+
+read -r rev _ < <(git ls-remote https://github.com/krebs/reaktor2 refs/heads/master)
+version=$(curl -fsS "https://raw.githubusercontent.com/krebs/reaktor2/$rev/reaktor2.cabal" |
+  sed -n 's/^version: *//p')
+bump reaktor2 reaktor2.nix "$rev" "$version"
 
 if [ ${#changed[@]} -eq 0 ]; then
   echo "$attr: already up to date"
@@ -64,13 +67,13 @@ for _ in "${changed[@]}"; do
   fi
   case $drv in
   blessings*) file=$dir/blessings.nix ;;
-  reaktor2*) file=$dir/reaktor2.nix ;;
+  source*) file=$dir/reaktor2.nix ;; # fetchFromGitHub names its src "source"
   *)
     echo "$attr: unexpected hash mismatch in $drv" >&2
     exit 1
     ;;
   esac
-  sed -i "s|^\( *\)sha256 = \"[^\"]*\"|\1sha256 = \"$got\"|" "$file"
+  sed -i "s|^\( *\)\(sha256\|hash\) = \"[^\"]*\"|\1\2 = \"$got\"|" "$file"
   echo "$attr: $drv hash -> $got"
   got=
 done

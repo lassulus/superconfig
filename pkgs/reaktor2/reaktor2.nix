@@ -1,6 +1,7 @@
 {
   mkDerivation,
   aeson,
+  array,
   async,
   attoparsec,
   base,
@@ -10,7 +11,7 @@
   containers,
   data-default,
   directory,
-  fetchgit,
+  fetchFromGitHub,
   filepath,
   hashable,
   http-types,
@@ -21,9 +22,10 @@
   network-simple,
   network-simple-tls,
   network-uri,
-  pcre2,
   process,
   random,
+  regex-base,
+  regex-pcre2,
   servant-server,
   string-conversions,
   stringsearch,
@@ -40,19 +42,17 @@
 mkDerivation {
   pname = "reaktor2";
   version = "0.4.5";
-  src = fetchgit {
-    url = "https://cgit.krebsco.de/reaktor2";
-    sha256 = "0arcw06k3hhmcp6kk5lxrzadin3lx6ywxrznicljr92flkgj8isc";
-    rev = "6ff1335c7c9775e1cf167b950b6de97359d3b659";
-    fetchSubmodules = true;
+  src = fetchFromGitHub {
+    owner = "krebs";
+    repo = "reaktor2";
+    rev = "6c94909eaa0fbaa3409ed1d713c649fcabfd90ef";
+    hash = "sha256-UtFEOYoG6NOwk41+kGQBpdDTpOSnolOIMCZPEMpWlL0=";
   };
-  # Ports the System plugin from pcre-light to pcre2 (bundled PCRE2); drop
-  # once upstream reaktor2 no longer depends on pcre-light.
-  patches = [ ./pcre2.patch ];
   isLibrary = false;
   isExecutable = true;
   executableHaskellDepends = [
     aeson
+    array
     async
     attoparsec
     base
@@ -71,9 +71,10 @@ mkDerivation {
     network-simple
     network-simple-tls
     network-uri
-    pcre2
     process
     random
+    regex-base
+    regex-pcre2
     servant-server
     string-conversions
     stringsearch
