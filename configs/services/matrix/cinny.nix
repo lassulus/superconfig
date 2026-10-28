@@ -11,10 +11,15 @@ let
         ./cinny-threads-ui.patch
         # Independent of the threads patch. After a reload the sync only loads
         # the last 8 events per room; if the read receipt is older and only
-        # membership/ACL events followed it, roomHaveUnread can't find the
-        # receipt and marks the room unread. Ask the server whether a message
-        # follows the receipt instead.
+        # membership/ACL events or reactions followed it, roomHaveUnread can't
+        # find the receipt and marks the room unread. Ask the server whether a
+        # message follows the receipt instead.
         ./cinny-unread-beyond-timeline.patch
+        # With threadSupport, reactions/edits to events that aren't loaded live
+        # in no timeline, so a room whose last 8 events are such relations
+        # starts with an empty live timeline and opened at the oldest events of
+        # the first back pagination. Show the latest events instead.
+        ./cinny-empty-live-timeline.patch
       ];
       # Quack (https://www.youtube.com/watch?v=Fw3RB7xnb80) instead of the
       # stock chime; vite content-hashes it into assets/ at build time.
