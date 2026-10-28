@@ -7,7 +7,15 @@ let
   # historically been limited to RoomViewHeader.tsx.
   cinny-threads = pkgs.cinny.override {
     cinny-unwrapped = pkgs.cinny-unwrapped.overrideAttrs (old: {
-      patches = (old.patches or [ ]) ++ [ ./cinny-threads-ui.patch ];
+      patches = (old.patches or [ ]) ++ [
+        ./cinny-threads-ui.patch
+        # Independent of the threads patch. After a reload the sync only loads
+        # the last 8 events per room; if the read receipt is older and only
+        # membership/ACL events followed it, roomHaveUnread can't find the
+        # receipt and marks the room unread. Ask the server whether a message
+        # follows the receipt instead.
+        ./cinny-unread-beyond-timeline.patch
+      ];
       # Quack (https://www.youtube.com/watch?v=Fw3RB7xnb80) instead of the
       # stock chime; vite content-hashes it into assets/ at build time.
       postPatch = (old.postPatch or "") + ''
