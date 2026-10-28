@@ -75,7 +75,7 @@ index f7ef1b7..1edc47d 100644
    useEffect(() => {
      const handleMembershipChange = (room: Room, membership: string) => {
 diff --git a/src/app/utils/room.ts b/src/app/utils/room.ts
-index 05dfeb2..06ac9fc 100644
+index 05dfeb2..4c97941 100644
 --- a/src/app/utils/room.ts
 +++ b/src/app/utils/room.ts
 @@ -1,9 +1,11 @@
@@ -101,36 +101,31 @@ index 05dfeb2..06ac9fc 100644
    RelationType,
    Room,
    RoomMember,
-@@ -214,10 +218,17 @@ export const roomHaveNotification = (room: Room): boolean => {
+@@ -214,11 +218,16 @@ export const roomHaveNotification = (room: Room): boolean => {
    return total > 0 || highlight > 0;
  };
  
-+// Rooms whose read receipt points before the events the sync loaded, and for
-+// which the server confirmed that no notification event follows the receipt:
-+// the id of the latest live event at the time of the check (see
-+// confirmReadBeyondTimeline).
-+const confirmedReadUpTo = new WeakMap<Room, string>();
++// Live timelines whose preceding history the server confirmed to contain no
++// notification event after our read receipt (see confirmReadBeyondTimeline).
++const confirmedReadTimeline = new WeakMap<Room, EventTimeline>();
 +
  export const roomHaveUnread = (mx: MatrixClient, room: Room) => {
    const userId = mx.getUserId();
    if (!userId) return false;
    const readUpToId = room.getEventReadUpTo(userId);
-+  const confirmedId = confirmedReadUpTo.get(room);
-   const liveEvents = room.getLiveTimeline().getEvents();
+-  const liveEvents = room.getLiveTimeline().getEvents();
++  const liveTimeline = room.getLiveTimeline();
++  const liveEvents = liveTimeline.getEvents();
  
    if (liveEvents[liveEvents.length - 1]?.getSender() === userId) {
-@@ -227,12 +238,75 @@ export const roomHaveUnread = (mx: MatrixClient, room: Room) => {
-   for (let i = liveEvents.length - 1; i >= 0; i -= 1) {
-     const event = liveEvents[i];
-     if (!event) return false;
--    if (event.getId() === readUpToId) return false;
-+    const eventId = event.getId();
-+    if (eventId === readUpToId || eventId === confirmedId) return false;
+     return false;
+@@ -230,6 +239,68 @@ export const roomHaveUnread = (mx: MatrixClient, room: Room) => {
+     if (event.getId() === readUpToId) return false;
      if (isNotificationEvent(event)) return true;
    }
-   return true;
- };
- 
++  return confirmedReadTimeline.get(room) !== liveTimeline;
++};
++
 +const hasNotificationEventAfter = async (
 +  mx: MatrixClient,
 +  roomId: string,
@@ -167,20 +162,20 @@ index 05dfeb2..06ac9fc 100644
 + * our read receipt points at an older event, it can't tell whether anything
 + * worth reading came in between, e.g. when only membership/ACL changes
 + * followed the receipt. Ask the server for notification events after our
-+ * public and private receipt; if none follows one of them, remember the latest
-+ * live event as read, so roomHaveUnread returns false until a new
-+ * notification event arrives.
++ * public and private receipt; if none follows one of them, remember the live
++ * timeline as confirmed, so roomHaveUnread returns false until a notification
++ * event is added to it. The live timeline may be empty: with threadSupport,
++ * relations to events that aren't loaded (e.g. reactions to older messages)
++ * live in no timeline.
 + * Resolves to true if the room was confirmed read.
 + */
 +export const confirmReadBeyondTimeline = async (mx: MatrixClient, room: Room) => {
 +  const userId = mx.getUserId();
 +  if (!userId || room.getEventReadUpTo(userId)) return false;
-+  const liveEvents = room.getLiveTimeline().getEvents();
++  const liveTimeline = room.getLiveTimeline();
 +  // The receipt is older than every loaded event, so a loaded notification
 +  // event is unread for sure.
-+  if (liveEvents.some(isNotificationEvent)) return false;
-+  const latestId = liveEvents.at(-1)?.getId();
-+  if (!latestId) return false;
++  if (liveTimeline.getEvents().some(isNotificationEvent)) return false;
 +
 +  const receiptEventIds = [ReceiptType.ReadPrivate, ReceiptType.Read]
 +    .map((type) => room.getReadReceiptForUserId(userId, false, type)?.eventId)
@@ -189,10 +184,7 @@ index 05dfeb2..06ac9fc 100644
 +    receiptEventIds.map((eventId) => hasNotificationEventAfter(mx, room.roomId, eventId))
 +  );
 +  if (!unreadAfter.includes(false)) return false;
-+  confirmedReadUpTo.set(room, latestId);
-+  return true;
-+};
-+
- export const getUnreadInfo = (room: Room): UnreadInfo => {
-   const total = room.getUnreadNotificationCount(NotificationCountType.Total);
-   const highlight = room.getUnreadNotificationCount(NotificationCountType.Highlight);
++  confirmedReadTimeline.set(room, liveTimeline);
+   return true;
+ };
+ 

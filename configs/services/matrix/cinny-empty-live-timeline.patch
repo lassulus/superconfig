@@ -1,0 +1,27 @@
+diff --git a/src/app/features/room/RoomTimeline.tsx b/src/app/features/room/RoomTimeline.tsx
+index c533528..4ac5f19 100644
+--- a/src/app/features/room/RoomTimeline.tsx
++++ b/src/app/features/room/RoomTimeline.tsx
+@@ -811,6 +811,22 @@ export function RoomTimeline({ room, eventId, roomInputRef, editor }: RoomTimeli
+     }
+   }, []);
+ 
++  // The live timeline can start out empty: with threadSupport, relations to
++  // events that aren't loaded (e.g. reactions to older messages) live in no
++  // timeline, so a sync of only such events adds nothing to it. The first back
++  // pagination then moves the empty range past the fetched events
++  // (recalibratePagination) and the room opens at the oldest of them. Once
++  // events are there, show the latest ones as for any other room.
++  const startedEmptyRef = useRef(!eventId && eventsLength === 0);
++  useEffect(() => {
++    if (!startedEmptyRef.current || eventsLength === 0) return;
++    startedEmptyRef.current = false;
++    if (!liveTimelineLinked) return;
++    setTimeline(getInitialTimeline(room));
++    scrollToBottomRef.current.count += 1;
++    scrollToBottomRef.current.smooth = false;
++  }, [eventsLength, liveTimelineLinked, room]);
++
+   // if live timeline is linked and unreadInfo change
+   // Scroll to last read message
+   useLayoutEffect(() => {
