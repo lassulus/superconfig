@@ -18,12 +18,24 @@ DM because no call could hear it. The gateway only dispatches commands of
 allowed users (MATRIX_ALLOWED_USERS), so the answer is the user's own; the
 agent cannot issue it. The code may be left out while exactly one approval
 waits.
+
+Every voice call gets its own thread in the Matrix home room, holding the
+call's transcript: after each turn of a voice session (post_llm_call), the
+spoken conversation the turn was delegated with (both sides, small talk
+included) and Hermes' answer go into that call's thread. The thread root is
+posted on the call's first turn; the webhook route cannot thread, since it
+does not return the root's event id.
 """
 
+import asyncio
 import json
+import logging
 import os
+import time
 import urllib.error
 import urllib.request
+
+log = logging.getLogger(__name__)
 
 SEND_SCHEMA = {
     "name": "matrix_dm_send",
@@ -70,28 +82,34 @@ def send(args, **_kw):
     )
 
 
-def voice_session(session_id):
-    """Whether the calling session is a hermes-voice call: an API server
-    session whose lineage starts at a voice-* session (context compression
-    continues a session under a new id, with the old one as parent)."""
-    from gateway.session_context import get_session_env
+def voice_call_id(session_id):
+    """The voice-* session a session's lineage starts at (context compression
+    continues a session under a new id, with the old one as parent), or
+    None when it is no hermes-voice call."""
     from hermes_state import SessionDB
 
-    if get_session_env("HERMES_SESSION_PLATFORM", "") != "api_server":
-        return False
-    session_id = session_id or get_session_env("HERMES_SESSION_ID", "")
     db = SessionDB(read_only=True)
     try:
         seen = set()
         while session_id and session_id not in seen and len(seen) < 100:
             if session_id.startswith(VOICE_SESSION_PREFIX):
-                return True
+                return session_id
             seen.add(session_id)
             session = db.get_session(session_id)
             session_id = session and session.get("parent_session_id")
     finally:
         db.close()
-    return False
+    return None
+
+
+def voice_session(session_id):
+    """Whether the calling session is a hermes-voice call: an API server
+    session whose lineage starts at a voice-* session."""
+    from gateway.session_context import get_session_env
+
+    if get_session_env("HERMES_SESSION_PLATFORM", "") != "api_server":
+        return False
+    return voice_call_id(session_id or get_session_env("HERMES_SESSION_ID", "")) is not None
 
 
 def end_call(args, session_id=None, **_kw):
@@ -100,6 +118,72 @@ def end_call(args, session_id=None, **_kw):
     if not voice_session(session_id):
         return tool_error("end_call only works in a voice call; there is no call to end here.")
     return json.dumps({"status": "The call ends once your reply has been spoken."})
+
+
+# hermes-voice's delegation text (hermes_voice.transcript_message).
+TRANSCRIPT_HEADER = "Spoken conversation since the last request, newest last:"
+# Thread root event id per call (its voice-* session id). Only in memory: a
+# call still running across a gateway restart continues in a new thread.
+THREADS = {}
+# Serializes the posts (thread root first), on the gateway loop.
+POST_LOCK = None
+
+
+def matrix_adapter():
+    """The gateway runner and its live Matrix adapter (None when missing)."""
+    from gateway.run import _gateway_runner_ref
+
+    runner = _gateway_runner_ref()
+    if runner is None:
+        return None, None
+    for platform, adapter in runner.adapters.items():
+        if getattr(platform, "value", platform) == "matrix":
+            return runner, adapter
+    return runner, None
+
+
+async def post_transcript(adapter, room, call_id, text):
+    global POST_LOCK
+    if POST_LOCK is None:
+        POST_LOCK = asyncio.Lock()
+    async with POST_LOCK:
+        root = THREADS.get(call_id)
+        if root is None:
+            root = await adapter.create_handoff_thread(
+                room, "📞 Voice call, " + time.strftime("%a %d %b %Y %H:%M")
+            )
+            if root is None:
+                log.warning("voice transcript: no thread for %s", call_id)
+                return
+            THREADS[call_id] = root
+        result = await adapter.send(room, text, metadata={"thread_id": root})
+        if not result.success:
+            log.warning("voice transcript: posting for %s failed: %s", call_id, result.error)
+
+
+def transcript(session_id=None, user_message=None, assistant_response=None, platform=None, **_kw):
+    """post_llm_call: put a voice turn into its call's Matrix thread."""
+    if getattr(platform, "value", platform) != "api_server":
+        return
+    call_id = voice_call_id(session_id)
+    if call_id is None:
+        return
+    spoken = str(user_message or "").removeprefix(TRANSCRIPT_HEADER).strip()
+    answer = str(assistant_response or "").strip()
+    text = "\n".join(part for part in (spoken, answer and f"Hermes: {answer}") if part)
+    room = os.environ.get("MATRIX_HOME_ROOM")
+    runner, adapter = matrix_adapter()
+    loop = getattr(runner, "_gateway_loop", None)
+    if not (text and room and adapter and loop):
+        return
+    from agent.async_utils import safe_schedule_threadsafe
+
+    safe_schedule_threadsafe(
+        post_transcript(adapter, room, call_id, text),
+        loop,
+        logger=log,
+        log_message="voice transcript: scheduling the post failed",
+    )
 
 
 def assist(raw_args):
@@ -152,6 +236,7 @@ def register(ctx):
         handler=end_call,
         emoji="📴",
     )
+    ctx.register_hook("post_llm_call", transcript)
     ctx.register_command(
         "assist",
         handler=assist,

@@ -85,9 +85,10 @@ in
 
   # hermes-voice's side in the gateway (tools/hermes-voice/hermes-plugin): the
   # matrix_dm_send and end_call tools, on for every platform like any plugin
-  # toolset (end_call refuses outside voice sessions), and /assist, which
+  # toolset (end_call refuses outside voice sessions), /assist, which
   # answers approvals asked in the Matrix DM through hermes-voice
-  # (authenticated with API_SERVER_KEY).
+  # (authenticated with API_SERVER_KEY), and the call transcript: one thread
+  # per voice call in the Matrix home room.
   services.hermes-agent.extraPlugins = [
     (pkgs.runCommand "hermes-voice" { } ''
       cp -r ${../../tools/hermes-voice/hermes-plugin} $out
