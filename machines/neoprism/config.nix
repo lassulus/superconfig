@@ -48,6 +48,7 @@
     ../../configs/services/radio/proxy.nix
     ../../configs/services/flix/proxy.nix
     ../../configs/services/coms/jitsi.nix
+    ../../configs/services/coms/jitsi-space.nix
 
     # dns
     ../../configs/dns/knot.nix
