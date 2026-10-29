@@ -1,0 +1,89 @@
+<!doctype html>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width" />
+<title>Jitsi</title>
+<style>
+  html,
+  body {
+    height: 100%;
+    margin: 0;
+    background: #21262c;
+    color: #eee;
+    font: 16px sans-serif;
+  }
+  #lobby {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 0.6em;
+    text-align: center;
+  }
+  #names {
+    color: #aaa;
+  }
+  button {
+    font: inherit;
+    padding: 0.5em 2em;
+    border: 0;
+    border-radius: 2em;
+    background: #0dbd8b;
+    color: #fff;
+    cursor: pointer;
+  }
+  a {
+    color: #aaa;
+    font-size: 0.85em;
+  }
+  #call {
+    height: 100%;
+    display: none;
+  }
+</style>
+<div id="lobby">
+  <div id="count"></div>
+  <div id="names"></div>
+  <button id="join">Join</button>
+  <a id="tab" target="_blank">open in a new tab</a>
+</div>
+<div id="call"></div>
+<script src="https://@domain@/external_api.js"></script>
+<script>
+  const domain = "@domain@";
+  const room = "@room@";
+  const lobby = document.getElementById("lobby");
+  const call = document.getElementById("call");
+  document.getElementById("tab").href = `https://${domain}/${room}`;
+
+  new EventSource("events").onmessage = (event) => {
+    const names = JSON.parse(event.data);
+    document.getElementById("count").textContent =
+      names.length === 0
+        ? "Nobody in the call"
+        : names.length === 1
+          ? "1 person in the call"
+          : `${names.length} people in the call`;
+    document.getElementById("names").textContent = names.join(", ");
+  };
+
+  document.getElementById("join").onclick = () => {
+    lobby.style.display = "none";
+    call.style.display = "block";
+    const api = new JitsiMeetExternalAPI(domain, {
+      roomName: room,
+      parentNode: call,
+      width: "100%",
+      height: "100%",
+      // filled in by the Matrix client
+      userInfo: {
+        displayName: new URLSearchParams(location.search).get("name") || "",
+      },
+    });
+    api.on("readyToClose", () => {
+      api.dispose();
+      call.style.display = "none";
+      lobby.style.display = "flex";
+    });
+  };
+</script>
