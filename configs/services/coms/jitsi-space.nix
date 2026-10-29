@@ -12,8 +12,9 @@ let
 in
 {
   # Relays the chat of jitsi.lassul.us/space and #space:lassul.us both ways
-  # and adds the call to the Matrix room as a widget, which needs the bot
-  # (@jitsi:lassul.us) to have the power level for state events.
+  # and adds a widget to the Matrix room that shows who is in the call and
+  # joins it, which needs the bot (@jitsi:lassul.us) to have the power level
+  # for state events.
   clan.core.vars.generators.jitsi-matrix-relay = {
     files."registration.yaml".owner = "matrix-synapse";
     files.as-token = { };
@@ -58,6 +59,7 @@ in
       MATRIX_AS_TOKEN_FILE = "%d/as-token";
       MATRIX_HS_TOKEN_FILE = "%d/hs-token";
       LISTEN_PORT = toString port;
+      WIDGET_URL = "https://${hostName}/matrix/space/";
     };
     serviceConfig = {
       ExecStart = lib.getExe self.packages.${pkgs.stdenv.hostPlatform.system}.jitsi-matrix-relay;
@@ -69,5 +71,10 @@ in
       Restart = "always";
       RestartSec = 10;
     };
+  };
+  services.nginx.virtualHosts.${hostName}.locations."^~ /matrix/space/" = {
+    proxyPass = "http://127.0.0.1:${toString port}/widget/";
+    # the participant list is a stream of server-sent events
+    extraConfig = "proxy_buffering off;";
   };
 }

@@ -2,11 +2,13 @@
 
 Joins the Jitsi room as a participant over XMPP (anonymous login) and the
 Matrix room as an application service user, whose events the homeserver
-pushes to LISTEN_PORT. Any error ends the process, so the service manager
-restarts it.
+pushes to LISTEN_PORT. The Matrix room gets a widget (served under /widget/
+on LISTEN_PORT) that shows who is in the call and joins it. Any error ends
+the process, so the service manager restarts it.
 """
 
 import asyncio
+import json
 import logging
 import os
 import uuid
@@ -30,6 +32,9 @@ with open(env["MATRIX_AS_TOKEN_FILE"]) as f:
     AS_TOKEN = f.read().strip()
 with open(env["MATRIX_HS_TOKEN_FILE"]) as f:
     HS_TOKEN = f.read().strip()
+WIDGET_URL = env["WIDGET_URL"]
+with open("@widget@") as f:
+    WIDGET = f.read().replace("@domain@", JITSI_DOMAIN).replace("@room@", JITSI_ROOM)
 
 MUC = f"{JITSI_ROOM}@conference.{JITSI_DOMAIN}"
 NICK_NS = "http://jabber.org/protocol/nick"
@@ -46,6 +51,7 @@ class Jitsi(slixmpp.ClientXMPP):
         self.relay = on_message
         self.id = uuid.uuid4().hex[:8]
         self.names = {}
+        self.changed = asyncio.get_event_loop().create_future()
         self.add_event_handler("session_start", self.start)
         self.add_event_handler("presence", self.on_presence)
         self.add_event_handler("message", self.on_message)
@@ -77,9 +83,18 @@ class Jitsi(slixmpp.ClientXMPP):
                 # kicked, or the room was destroyed
                 self.disconnect()
             self.names.pop(resource, None)
-            return
-        nick = presence.xml.find(f"{{{NICK_NS}}}nick")
-        self.names[resource] = nick.text if nick is not None else resource
+        else:
+            nick = presence.xml.find(f"{{{NICK_NS}}}nick")
+            self.names[resource] = nick.text if nick is not None else resource
+        self.changed.set_result(None)
+        self.changed = asyncio.get_event_loop().create_future()
+
+    def participants(self):
+        return sorted(
+            name
+            for resource, name in self.names.items()
+            if resource not in (self.id, "focus")
+        )
 
     def on_message(self, msg):
         resource = msg["from"].resource
@@ -125,24 +140,18 @@ class Matrix:
         await self.widget()
 
     async def widget(self):
-        # Element shows the call in the room; it renders widgets of type
-        # "jitsi" with its own wrapper from domain and conferenceId.
         widget_id = f"jitsi-{JITSI_ROOM}"
         room = quote(self.room_id)
         data = await self.call(
             "PUT",
             f"/rooms/{room}/state/im.vector.modular.widgets/{widget_id}",
             {
-                "type": "jitsi",
+                "type": "m.custom",
                 "name": "Jitsi",
-                "url": f"https://{JITSI_DOMAIN}/{JITSI_ROOM}",
+                # the client fills in $matrix_display_name
+                "url": f"{WIDGET_URL}?name=$matrix_display_name",
                 "creatorUserId": self.user_id,
-                "data": {
-                    "domain": JITSI_DOMAIN,
-                    "conferenceId": JITSI_ROOM,
-                    "roomName": JITSI_ROOM,
-                    "isAudioOnly": False,
-                },
+                "data": {},
             },
             allow=("M_FORBIDDEN",),
         )
@@ -152,7 +161,11 @@ class Matrix:
         await self.call(
             "PUT",
             f"/rooms/{room}/state/io.element.widgets.layout/",
-            {"widgets": {widget_id: {"container": "top", "index": 0, "height": 50}}},
+            {
+                "widgets": {
+                    widget_id: {"container": "top", "index": 0, "width": 100, "height": 50}
+                }
+            },
         )
 
     async def send(self, text):
@@ -182,6 +195,16 @@ class Matrix:
         return web.json_response({})
 
 
+async def events(request, jitsi):
+    # Server-sent events: the participants now and after every change.
+    response = web.StreamResponse(headers={"Content-Type": "text/event-stream"})
+    await response.prepare(request)
+    while True:
+        changed = jitsi.changed
+        await response.write(f"data: {json.dumps(jitsi.participants())}\n\n".encode())
+        await changed
+
+
 async def main():
     async with aiohttp.ClientSession() as session:
         matrix = Matrix(session)
@@ -192,6 +215,10 @@ async def main():
         matrix.on_message = lambda name, body: jitsi.say(f"{name}: {body}")
         app = web.Application()
         app.router.add_put("/_matrix/app/v1/transactions/{txn}", matrix.transaction)
+        app.router.add_get(
+            "/widget/", lambda _: web.Response(text=WIDGET, content_type="text/html")
+        )
+        app.router.add_get("/widget/events", lambda request: events(request, jitsi))
         runner = web.AppRunner(app)
         await runner.setup()
         await web.TCPSite(runner, "127.0.0.1", int(env["LISTEN_PORT"])).start()
