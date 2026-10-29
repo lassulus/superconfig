@@ -1,6 +1,9 @@
 { self, ... }:
 {
-  imports = [ ./coturn.nix ];
+  imports = [
+    ./coturn.nix
+    ./jitsi-moderators.nix
+  ];
 
   # jitsi-meet 1.0.8792 is marked insecure in nixpkgs; secureify via overlay
   # rather than nixpkgs.config.permittedInsecurePackages (which doesn't
