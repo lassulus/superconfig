@@ -1,0 +1,58 @@
+From 888727ae07ebf4d010f346eff616217b45ff9bc6 Mon Sep 17 00:00:00 2001
+From: Hermes <hermes@lassul.us>
+Date: Thu, 29 Oct 2026 20:17:57 +0100
+Subject: [PATCH] Add MODERATOR to grant moderator rights via the token
+
+---
+ README.md | 1 +
+ main.go   | 4 ++++
+ 2 files changed, 5 insertions(+)
+
+diff --git a/README.md b/README.md
+index 9298a75..bc8a1e7 100644
+--- a/README.md
++++ b/README.md
+@@ -25,6 +25,7 @@ This image is available in the [Docker Hub](https://hub.docker.com/repository/do
+ `NAME_KEY` - Key for the user's name from the OAuth token (defaults to 'name', but can be 'given_name' or any other key present in the token)  
+ `DEEPLINK` - Whether the callback should use a deep link for redirect to ensure the originating client (Desktop, iOS, Android) is used  
+ `LOBBY_BYPASS_KEY` - Claim that lets the user skip the lobby (e.g. 'lobby_bypass'; unset disables it). Accepts `true` or `"true"`; read from the ID token, else from UserInfo. Requires the [token_lobby_bypass](https://github.com/jitsi-contrib/prosody-plugins/tree/main/token_lobby_bypass) Prosody plugin on the MUC component. Map it from an attribute users can't edit themselves  
++`MODERATOR` - Whether the token makes the user a moderator (`context.user.moderator`), for the [token_affiliation](https://github.com/jitsi-contrib/prosody-plugins/tree/main/token_affiliation) Prosody plugin. Use it when the OAuth provider lets only moderators log in  
+ 
+ Example (.env or environment Variables)
+ 
+diff --git a/main.go b/main.go
+index 2280170..622f3c5 100644
+--- a/main.go
++++ b/main.go
+@@ -35,6 +35,7 @@ type Config struct {
+ 	Deeplink       bool   `mapstructure:"DEEPLINK"`
+ 	NameKey        string `mapstructure:"NAME_KEY"`
+ 	LobbyBypassKey string `mapstructure:"LOBBY_BYPASS_KEY"`
++	Moderator      bool   `mapstructure:"MODERATOR"`
+ }
+ 
+ var config Config
+@@ -108,6 +109,7 @@ type UserContext struct {
+ 		Email       string `json:"email"`
+ 		Name        string `json:"name"`
+ 		LobbyBypass bool   `json:"lobby_bypass,omitempty"`
++		Moderator   bool   `json:"moderator,omitempty"`
+ 	} `json:"user"`
+ }
+ 
+@@ -132,6 +134,7 @@ func init() {
+ 		config.NameKey = "name"
+ 	}
+ 	config.LobbyBypassKey = os.Getenv("LOBBY_BYPASS_KEY")
++	config.Moderator, _ = strconv.ParseBool(os.Getenv("MODERATOR"))
+ }
+ 
+ func randString(nByte int) (string, error) {
+@@ -325,6 +328,7 @@ func main() {
+ 		user.User.Email = playLoad.Email
+ 		user.User.Name = playLoad.Name
+ 		user.User.LobbyBypass = playLoad.LobbyBypass
++		user.User.Moderator = config.Moderator
+ 
+ 		stateJSON, err := base64.RawURLEncoding.DecodeString(stateDataEncoded)
+ 		if err != nil {
