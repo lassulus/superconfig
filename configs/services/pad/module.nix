@@ -40,6 +40,8 @@
         defaultPermission = "freely";
         # No "you are leaving HedgeDoc" interstitial on external links.
         externalLinkWarning = false;
+        # Default is 100000 characters per note.
+        documentMaxLength = 1000000;
         allowedUploadMimeTypes = [ "*" ];
         imageUploadType = "krebspaste";
         # debug = true;
