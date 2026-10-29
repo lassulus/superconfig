@@ -25,10 +25,11 @@ in
   };
 
   config = {
-    # Moderators: users with a grant on the Zitadel project "jitsi" (console on
-    # id.lassul.us) log in under Settings > Profile and are moderators in every
-    # room. Everyone else joins anonymously and is never made moderator.
-    lass.zitadel.projects.jitsi = {
+    # Moderators: users with a grant on the Zitadel project "jitsi-moderators"
+    # (console on id.lassul.us) log in under Settings > Profile and are
+    # moderators in every room. Everyone else joins anonymously and is never
+    # made moderator.
+    lass.zitadel.projects.jitsi-moderators = {
       access = "managed";
       apps.web = {
         redirectUris = [ "https://${hostName}/oidc/callback" ];
@@ -64,7 +65,7 @@ in
       '';
       serviceConfig = {
         DynamicUser = true;
-        EnvironmentFile = config.lass.zitadel.projects.jitsi.apps.web.envFile.path;
+        EnvironmentFile = config.lass.zitadel.projects.jitsi-moderators.apps.web.envFile.path;
         LoadCredential = "jwt-secret:${config.clan.core.vars.generators.jitsi-jwt.files.secret.path}";
         Restart = "on-failure";
       };
