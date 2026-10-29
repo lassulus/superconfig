@@ -2,9 +2,10 @@
 
 Joins the Jitsi room as a participant over XMPP (anonymous login) and the
 Matrix room as an application service user, whose events the homeserver
-pushes to LISTEN_PORT. The Matrix room gets a widget (served under /widget/
-on LISTEN_PORT) that shows who is in the call and joins it. Any error ends
-the process, so the service manager restarts it.
+pushes to LISTEN_PORT. Who is in the call shows in the Matrix room in a
+widget (served under /widget/ on LISTEN_PORT, with a button that joins the
+call), a pinned message and a line of the topic. Any error ends the
+process, so the service manager restarts it.
 """
 
 import asyncio
@@ -37,6 +38,8 @@ with open("@widget@") as f:
     WIDGET = f.read().replace("@domain@", JITSI_DOMAIN).replace("@room@", JITSI_ROOM)
 
 MUC = f"{JITSI_ROOM}@conference.{JITSI_DOMAIN}"
+CALL_URL = f"https://{JITSI_DOMAIN}/{JITSI_ROOM}"
+STATUS = "📹 "
 NICK_NS = "http://jabber.org/protocol/nick"
 MUC_NS = "http://jabber.org/protocol/muc"
 
@@ -52,6 +55,8 @@ class Jitsi(slixmpp.ClientXMPP):
         self.id = uuid.uuid4().hex[:8]
         self.names = {}
         self.changed = asyncio.get_event_loop().create_future()
+        # the room sends the other occupants before our own presence
+        self.joined = asyncio.get_event_loop().create_future()
         self.add_event_handler("session_start", self.start)
         self.add_event_handler("presence", self.on_presence)
         self.add_event_handler("message", self.on_message)
@@ -77,6 +82,7 @@ class Jitsi(slixmpp.ClientXMPP):
     def on_presence(self, presence):
         if presence["from"].bare != MUC:
             return
+        before = self.participants()
         resource = presence["from"].resource
         if presence["type"] == "unavailable":
             if resource == self.id:
@@ -86,8 +92,11 @@ class Jitsi(slixmpp.ClientXMPP):
         else:
             nick = presence.xml.find(f"{{{NICK_NS}}}nick")
             self.names[resource] = nick.text if nick is not None else resource
-        self.changed.set_result(None)
-        self.changed = asyncio.get_event_loop().create_future()
+            if resource == self.id and not self.joined.done():
+                self.joined.set_result(None)
+        if self.participants() != before:
+            self.changed.set_result(None)
+            self.changed = asyncio.get_event_loop().create_future()
 
     def participants(self):
         return sorted(
@@ -113,6 +122,7 @@ class Matrix:
         self.user_id = None
         self.room_id = None
         self.on_message = None
+        self.pinned = None
 
     async def call(self, method, path, body=None, allow=()):
         async with self.http.request(
@@ -138,6 +148,16 @@ class Matrix:
             "room_id"
         ]
         await self.widget()
+        room = quote(self.room_id)
+        pins = await self.call(
+            "GET", f"/rooms/{room}/state/m.room.pinned_events/", allow=("M_NOT_FOUND",)
+        )
+        for event_id in pins.get("pinned", []):
+            event = await self.call(
+                "GET", f"/rooms/{room}/event/{quote(event_id)}", allow=("M_NOT_FOUND",)
+            )
+            if event.get("sender") == self.user_id:
+                self.pinned = event_id
 
     async def widget(self):
         widget_id = f"jitsi-{JITSI_ROOM}"
@@ -168,12 +188,51 @@ class Matrix:
             },
         )
 
-    async def send(self, text):
-        await self.call(
+    async def send(self, text, msgtype="m.text", **extra):
+        return await self.call(
             "PUT",
             f"/rooms/{quote(self.room_id)}/send/m.room.message/{uuid.uuid4().hex}",
-            {"msgtype": "m.text", "body": text},
+            {"msgtype": msgtype, "body": text, **extra},
         )
+
+    async def status(self, names):
+        # Who is in the call: the bot's pinned message (edited) and the last
+        # line of the topic.
+        if names:
+            text = f"{STATUS}{len(names)} in the call: {', '.join(names)} · {CALL_URL}"
+        else:
+            text = f"{STATUS}nobody in the call · {CALL_URL}"
+        room = quote(self.room_id)
+        if self.pinned:
+            await self.send(
+                f"* {text}",
+                "m.notice",
+                **{
+                    "m.new_content": {"msgtype": "m.notice", "body": text},
+                    "m.relates_to": {"rel_type": "m.replace", "event_id": self.pinned},
+                },
+            )
+        else:
+            self.pinned = (await self.send(text, "m.notice"))["event_id"]
+            pins = await self.call(
+                "GET", f"/rooms/{room}/state/m.room.pinned_events/", allow=("M_NOT_FOUND",)
+            )
+            await self.call(
+                "PUT",
+                f"/rooms/{room}/state/m.room.pinned_events/",
+                {"pinned": pins.get("pinned", []) + [self.pinned]},
+            )
+        topic = (
+            await self.call(
+                "GET", f"/rooms/{room}/state/m.room.topic/", allow=("M_NOT_FOUND",)
+            )
+        ).get("topic", "")
+        lines = [line for line in topic.split("\n") if line and not line.startswith(STATUS)]
+        new_topic = "\n".join(lines + [text])
+        if new_topic != topic:
+            await self.call(
+                "PUT", f"/rooms/{room}/state/m.room.topic/", {"topic": new_topic}
+            )
 
     async def name(self, user_id):
         member = await self.call(
@@ -205,6 +264,18 @@ async def events(request, jitsi):
         await changed
 
 
+async def show_status(matrix, jitsi):
+    await jitsi.joined
+    shown = None
+    while True:
+        changed = jitsi.changed
+        names = jitsi.participants()
+        if names != shown:
+            await matrix.status(names)
+            shown = names
+        await changed
+
+
 async def main():
     async with aiohttp.ClientSession() as session:
         matrix = Matrix(session)
@@ -223,7 +294,12 @@ async def main():
         await runner.setup()
         await web.TCPSite(runner, "127.0.0.1", int(env["LISTEN_PORT"])).start()
         jitsi.connect(XMPP_HOST, 5222)
-        await jitsi.disconnected
+        done, _ = await asyncio.wait(
+            [asyncio.ensure_future(show_status(matrix, jitsi)), jitsi.disconnected],
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        for task in done:
+            task.result()
         raise SystemExit("disconnected from the Jitsi room")
 
 
