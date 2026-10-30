@@ -13,7 +13,7 @@
 {
   environment.packages = with pkgs; [
     nvi
-    gitMinimal
+    git-phone
     libarchive
     gnugrep
     gnused
