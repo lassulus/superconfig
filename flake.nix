@@ -252,7 +252,11 @@
       ) clan.config.nixosConfigurations;
       # The phone, CI builds it on aarch64 (.github/workflows/ci.yml)
       flake.droidNixConfigurations.massulus = inputs.droid-nix.lib.droidNixConfiguration {
-        pkgs = import nixpkgs { system = "aarch64-linux"; };
+        pkgs = import nixpkgs {
+          system = "aarch64-linux";
+          # icu4c (40 MiB) only came in via nix's boost
+          overlays = [ (_: prev: { boost189 = prev.boost189.override { enableIcu = false; }; }) ];
+        };
         modules = [ ./machines/massulus/droid-nix.nix ];
         extraSpecialArgs.self = self;
       };
