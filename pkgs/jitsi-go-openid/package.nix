@@ -7,7 +7,7 @@
 
 buildGoModule {
   pname = "jitsi-go-openid";
-  version = "0-unstable-2026-10-09";
+  version = "1.2-unstable-2026-10-09";
 
   src = fetchFromGitHub {
     owner = "mod242";
