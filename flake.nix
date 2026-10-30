@@ -254,8 +254,7 @@
       flake.droidNixConfigurations.massulus = inputs.droid-nix.lib.droidNixConfiguration {
         pkgs = import nixpkgs {
           system = "aarch64-linux";
-          # icu4c (40 MiB) only came in via nix's boost
-          overlays = [ (_: prev: { boost189 = prev.boost189.override { enableIcu = false; }; }) ];
+          overlays = [ (import ./machines/massulus/overlay.nix) ];
         };
         modules = [ ./machines/massulus/droid-nix.nix ];
         extraSpecialArgs.self = self;
