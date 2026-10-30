@@ -15,6 +15,15 @@ in
   ];
 
   services.postgresql.enable = true;
+  # the modules only order the bridges after a local Synapse, which used to
+  # bring postgres up first; without it they race the postgres socket
+  systemd.services = lib.mapAttrs' (
+    name: _:
+    lib.nameValuePair "mautrix-${name}" {
+      after = [ "postgresql.target" ];
+      requires = [ "postgresql.target" ];
+    }
+  ) appservices.bridges;
 
   # Synapse pushes events to the bridges over retiolum, accept only neoprism
   networking.firewall.extraInputRules = ''
