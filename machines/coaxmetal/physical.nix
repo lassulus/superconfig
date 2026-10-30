@@ -13,6 +13,8 @@
     # device = "/dev/disk/by-id/nvme-WDC_PC_SN730_SDBQNTY-1T00-1001_205349800040";
     device = "nodev";
     efiSupport = true;
+    # /boot is 1G and coaxmetal is excluded from nix.gc
+    configurationLimit = 10;
     # efiInstallAsRemovable = true;
   };
 
