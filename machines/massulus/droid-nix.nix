@@ -12,7 +12,7 @@
 }:
 {
   environment.packages = with pkgs; [
-    vim
+    nvi
     gitMinimal
     libarchive
     gnugrep
