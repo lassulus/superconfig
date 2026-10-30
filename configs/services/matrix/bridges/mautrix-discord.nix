@@ -1,28 +1,29 @@
 { config, pkgs, ... }:
+let
+  appservices = config.lass.matrix-appservices;
+  appservice = appservices.bridges.discord;
+in
 {
-  # The upstream module creates /var/lib/mautrix-discord with mode 0770 owned
-  # by mautrix-discord:mautrix-discord, while matrix-synapse only gets the
-  # `mautrix-discord-registration` supplementary group. That blocks
-  # matrix-synapse from traversing the directory to read the registration
-  # file. Granting it the `mautrix-discord` group as well lets it `chdir` in.
-  systemd.services.matrix-synapse.serviceConfig.SupplementaryGroups = [ "mautrix-discord" ];
-
   services.mautrix-discord = {
     enable = true;
-    registerToSynapse = true;
+    # AS_TOKEN / HS_TOKEN of the registration Synapse uses (./appservices.nix);
+    # the module writes them into its own registration on every start
+    environmentFile = appservice.tokens;
     settings = {
       homeserver = {
-        address = "http://[::1]:8008";
+        address = appservices.homeserver;
         domain = "lassul.us";
       };
       # `settings.{homeserver,appservice,bridge,logging}` use `types.attrs` with
       # full defaults, so this is a shallow merge — set keys override the
       # default's same-level keys, but nested subtrees we redefine (database,
       # bot, encryption, permissions) replace the default's subtree wholesale.
+      # The bridge fills keys missing from them in from its example config.
       appservice = {
-        address = "http://127.0.0.1:29334";
-        hostname = "127.0.0.1";
-        port = 29334;
+        inherit (appservice) address port;
+        hostname = "0.0.0.0";
+        as_token = "$AS_TOKEN";
+        hs_token = "$HS_TOKEN";
         database = {
           type = "postgres";
           uri = "postgres:///mautrix-discord?host=/run/postgresql";
@@ -41,8 +42,8 @@
         delivery_receipts = false;
         message_status_events = false;
         encryption = {
-          allow = false;
-          default = false;
+          allow = true;
+          default = true;
           require = false;
         };
         permissions = {
