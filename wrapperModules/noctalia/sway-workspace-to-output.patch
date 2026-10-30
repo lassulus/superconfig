@@ -1,0 +1,25 @@
+diff --git a/src/compositors/sway/sway_workspace_backend.cpp b/src/compositors/sway/sway_workspace_backend.cpp
+index 12dbd4f..56b297a 100644
+--- a/src/compositors/sway/sway_workspace_backend.cpp
++++ b/src/compositors/sway/sway_workspace_backend.cpp
+@@ -278,10 +278,17 @@ void SwayWorkspaceBackend::activate(const std::string& id) {
+   sendMessage(kIpcRunCommand, "workspace " + StringUtils::quoteDouble(id));
+ }
+ 
+-void SwayWorkspaceBackend::activateForOutput(wl_output* /*output*/, const std::string& id) { activate(id); }
++void SwayWorkspaceBackend::activateForOutput(wl_output* output, const std::string& id) {
++  activate(id);
++  // Bring the workspace to the output it was activated from.
++  const std::string outputName = m_outputNameResolver != nullptr ? m_outputNameResolver(output) : std::string{};
++  if (m_socketFd >= 0 && !id.empty() && !outputName.empty()) {
++    sendMessage(kIpcRunCommand, "move workspace to output " + StringUtils::quoteDouble(outputName));
++  }
++}
+ 
+-void SwayWorkspaceBackend::activateForOutput(wl_output* /*output*/, const Workspace& workspace) {
+-  activate(workspace.id.empty() ? workspace.name : workspace.id);
++void SwayWorkspaceBackend::activateForOutput(wl_output* output, const Workspace& workspace) {
++  activateForOutput(output, workspace.id.empty() ? workspace.name : workspace.id);
+ }
+ 
+ std::vector<Workspace> SwayWorkspaceBackend::all() const {

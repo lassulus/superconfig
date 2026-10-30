@@ -31,16 +31,9 @@ let
         ${pkgs.kitty}/bin/kitten @ --to unix:"$sock" set-colors -a /var/theme/config/kitty-colors.conf 2>/dev/null || :
       done
       set -f
-      # Update noctalia-shell dark mode setting (it watches settings.json for changes)
-      noctalia_settings="''${XDG_CONFIG_HOME:-$HOME/.config}/noctalia/settings.json"
-      if test -f "$noctalia_settings"; then
-        if [ "$1" = dark ]; then
-          noctalia_dark=true
-        else
-          noctalia_dark=false
-        fi
-        ${pkgs.jq}/bin/jq ".colorSchemes.darkMode = $noctalia_dark" "$noctalia_settings" > "$noctalia_settings.tmp" && \
-          ${pkgs.coreutils}/bin/mv "$noctalia_settings.tmp" "$noctalia_settings" || :
+      # Update noctalia's theme mode, if it is installed and running
+      if command -v noctalia >/dev/null; then
+        noctalia msg theme-mode-set "$1" || :
       fi
     else
       echo "theme $1 not found"
