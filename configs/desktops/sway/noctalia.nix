@@ -5,12 +5,12 @@
   ...
 }:
 let
-  noctalia-shell = self.packages.${pkgs.system}.noctalia-shell;
+  noctalia = self.packages.${pkgs.system}.noctalia;
 in
 {
-  systemd.user.services.noctalia-shell = {
+  systemd.user.services.noctalia = {
     description = "Noctalia Shell - Wayland desktop shell";
-    documentation = [ "https://docs.noctalia.dev" ];
+    documentation = [ "https://docs.noctalia.dev/v5/" ];
     partOf = [ "sway-session.target" ];
     wantedBy = [ "sway-session.target" ];
     after = [ "sway-session.target" ];
@@ -28,13 +28,13 @@ in
       pkgs.wl-clipboard
     ];
     serviceConfig = {
-      ExecStart = "${noctalia-shell}/bin/noctalia-shell";
+      ExecStart = "${noctalia}/bin/noctalia";
       Restart = "on-failure";
     };
   };
 
   environment.systemPackages = [
-    noctalia-shell
+    noctalia
     # ryzenadj and power-profile for power profile control
     pkgs.ryzenadj
     self.packages.${pkgs.system}.power-profile

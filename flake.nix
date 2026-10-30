@@ -227,7 +227,7 @@
         ./skills/flake-module.nix
 
         ./wrapperModules/pi/flake-module.nix
-        ./wrapperModules/noctalia-shell/flake-module.nix
+        ./wrapperModules/noctalia/flake-module.nix
         {
           options.flake.wrapperModules = nixpkgs.lib.mkOption {
             type = nixpkgs.lib.types.lazyAttrsOf nixpkgs.lib.types.raw;
