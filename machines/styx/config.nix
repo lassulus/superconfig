@@ -16,6 +16,7 @@
     ../../configs/monitoring/server.nix
     ../../configs/monitoring/grafana-public.nix
     ../../configs/health-dav.nix
+    ../../configs/services/matrix/bridges
     ./backup.nix
   ];
 

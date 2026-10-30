@@ -1,19 +1,27 @@
-{ config, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
+let
+  appservices = config.lass.matrix-appservices;
+  appservice = appservices.bridges.whatsapp;
+in
 {
   services.mautrix-whatsapp = {
     enable = true;
-    registerToSynapse = true;
     # use pure-Go olm implementation to avoid the insecure libolm dependency
     package = pkgs.mautrix-whatsapp.override { withGoolm = true; };
+    environmentFile = config.clan.core.vars.generators.mautrix-whatsapp.files.env.path;
     settings = {
       homeserver = {
-        address = "http://[::1]:8008";
+        address = appservices.homeserver;
         domain = "lassul.us";
       };
       appservice = {
-        address = "http://127.0.0.1:29318";
-        hostname = "127.0.0.1";
-        port = 29318;
+        inherit (appservice) address port;
+        hostname = "0.0.0.0";
         username_template = "whatsapp_{{.}}";
       };
       database = {
@@ -37,9 +45,10 @@
         message_status_events = true;
       };
       encryption = {
-        allow = false;
-        default = false;
+        allow = true;
+        default = true;
         require = false;
+        pickle_key = "$ENCRYPTION_PICKLE_KEY";
       };
       bridge = {
         personal_filtering_spaces = true;
@@ -60,8 +69,24 @@
     };
   };
 
-  # let synapse read the appservice registration file written by the bridge
-  users.users.matrix-synapse.extraGroups = [ "mautrix-whatsapp" ];
+  # the registration Synapse uses (./appservices.nix); written before the
+  # module's preStart so it neither generates its own nor other tokens
+  systemd.services.mautrix-whatsapp = {
+    serviceConfig.LoadCredential = [ "appservice:${appservice.tokens}" ];
+    preStart = lib.mkBefore ''
+      ${appservice.writeRegistration} "$CREDENTIALS_DIRECTORY/appservice" /var/lib/mautrix-whatsapp/whatsapp-registration.yaml
+    '';
+  };
+
+  # pickle_key encrypts the bridge's olm account in its database: it has to
+  # stay the same for the life of that crypto store
+  clan.core.vars.generators.mautrix-whatsapp = {
+    files.env = { };
+    runtimeInputs = [ pkgs.pwgen ];
+    script = ''
+      printf 'ENCRYPTION_PICKLE_KEY=%s\n' "$(pwgen -s 64 1)" > "$out"/env
+    '';
+  };
 
   services.postgresql = {
     ensureDatabases = [ "mautrix-whatsapp" ];

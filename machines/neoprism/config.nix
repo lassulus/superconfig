@@ -16,11 +16,9 @@
     ../../configs/services/matrix
     ../../configs/services/matrix/proxy.nix
     ../../configs/services/matrix/cinny.nix
-    ../../configs/services/matrix/bridges/mautrix-whatsapp.nix
-    ../../configs/services/matrix/bridges/mautrix-signal.nix
+    # the mautrix bridges themselves run on styx
+    ../../configs/services/matrix/bridges/synapse.nix
     ../../configs/services/matrix/bridges/heisenbridge.nix
-    ../../configs/services/matrix/bridges/mautrix-telegram.nix
-    ../../configs/services/matrix/bridges/mautrix-discord.nix
 
     ../../configs/services/pad
     ../../configs/services/paint
