@@ -13,7 +13,7 @@
 {
   environment.packages = with pkgs; [
     vim
-    git
+    gitMinimal
     libarchive
     gnugrep
     gnused
