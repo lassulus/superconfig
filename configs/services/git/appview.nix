@@ -11,6 +11,12 @@ let
   listenAddr = "127.0.0.1:${toString port}";
 in
 {
+  lass.ports = {
+    ${toString port} = "appview";
+    ${toString (port + 1)} = "appview-metrics";
+    ${toString redisPort} = "redis-appview";
+  };
+
   # Tangled appview: the web UI for repos on knot.lassul.us (knot.nix) and
   # other knots. Users log in with their atproto account via OAuth to their
   # PDS. Records come from Bluesky's jetstream (upstream default) and repo

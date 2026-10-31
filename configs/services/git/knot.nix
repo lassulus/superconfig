@@ -11,7 +11,7 @@ let
   ownerDid = "did:plc:6nk6tk76up7254wawocoekjr"; # lass.pds.lassul.us
   user = "tangled-knot";
   stateDir = "/var/lib/tangled-knot";
-  listenAddr = "127.0.0.1:5555";
+  listenAddr = "127.0.0.1:${toString config.lass.servicePorts.tangled-knot}";
   sshPort = 2222;
   package = self.packages.${pkgs.stdenv.hostPlatform.system}.tangled.knot-rs;
 
@@ -23,7 +23,7 @@ let
       admins = [ ownerDid ];
       appview_endpoint = "https://git.lassul.us";
       listen_addr = listenAddr;
-      internal_listen_addr = "[::1]:5444";
+      internal_listen_addr = "[::1]:${toString config.lass.servicePorts.tangled-knot-internal}";
       ssh_listen_addr = "[::]:${toString sshPort}";
       ssh_host_key_file = "${stateDir}/ssh_host_key";
     };
@@ -57,6 +57,12 @@ let
   '';
 in
 {
+  lass.ports = {
+    "5555" = "tangled-knot";
+    "5444" = "tangled-knot-internal";
+    ${toString sshPort} = "tangled-knot-ssh";
+  };
+
   # Tangled knot 2 (knot-rs): git hosting for git.lassul.us, following
   # tangled's nix/modules/knot-rs.nix without its flake (the module files are
   # in a fetched source, importing them would be IFD): plain HTTP behind
@@ -179,7 +185,7 @@ in
     script = ''
       ${pkgs.curl}/bin/curl -fsS --retry 10 --retry-connrefused \
         -H 'Content-Type: application/json' -d '{"hostname":"${domain}"}' \
-        http://127.0.0.1:7000/xrpc/sh.tangled.sync.requestCrawl
+        http://127.0.0.1:${toString config.lass.servicePorts.knotmirror}/xrpc/sh.tangled.sync.requestCrawl
     '';
   };
 
