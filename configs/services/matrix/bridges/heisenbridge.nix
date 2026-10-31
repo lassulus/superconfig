@@ -1,10 +1,12 @@
+{ config, ... }:
 {
+  lass.ports."9898" = "heisenbridge";
   services.heisenbridge = {
     enable = true;
-    homeserver = "http://[::1]:8008";
+    homeserver = "http://[::1]:${toString config.lass.servicePorts.matrix-synapse}";
     address = "127.0.0.1";
-    port = 9898;
-    registrationUrl = "http://127.0.0.1:9898";
+    port = config.lass.servicePorts.heisenbridge;
+    registrationUrl = "http://127.0.0.1:${toString config.lass.servicePorts.heisenbridge}";
     owner = "@lassulus:lassul.us";
     namespaces = {
       users = [

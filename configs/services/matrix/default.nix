@@ -5,6 +5,11 @@
   ...
 }:
 {
+  lass.ports = {
+    "8008" = "matrix-synapse";
+    ${toString config.services.postgresql.settings.port} = "postgresql";
+  };
+
   services.matrix-synapse = {
     enable = true;
     settings = {
@@ -60,7 +65,7 @@
       ];
       listeners = [
         {
-          port = 8008;
+          port = config.lass.servicePorts.matrix-synapse;
           bind_addresses = [
             "::1"
             self.inputs.kartei.hosts.${config.networking.hostName}.nets.retiolum.ip6.addr
@@ -108,7 +113,9 @@
   };
 
   # TODO add other VPNs here as well
-  networking.firewall.interfaces.retiolum.allowedTCPPorts = [ 8008 ];
+  networking.firewall.interfaces.retiolum.allowedTCPPorts = [
+    config.lass.servicePorts.matrix-synapse
+  ];
 
   services.postgresql.enable = true;
   services.postgresql = {
