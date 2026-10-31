@@ -12,6 +12,11 @@ let
   radicle-node = self.lib.secureify pkgs.radicle-node;
 in
 {
+  lass.ports = {
+    "8776" = "radicle-node";
+    "8778" = "radicle-httpd";
+  };
+
   # Generate Radicle identity keys using clan vars
   clan.core.vars.generators.radicle = {
     files."radicle.key" = { };
@@ -55,7 +60,7 @@ in
       # API (Jetty, 127.0.0.1:8080): radicle-httpd died with "Address
       # already in use" on every restart and nginx proxied
       # radicle.lassul.us to Jetty's 404 page instead.
-      listenPort = 8778;
+      listenPort = config.lass.servicePorts.radicle-httpd;
       nginx = {
         serverName = "radicle.lassul.us";
         enableACME = true;
@@ -73,10 +78,10 @@ in
       cli.hints = true;
       node = {
         alias = config.networking.hostName;
-        listen = [ "0.0.0.0:8776" ];
+        listen = [ "0.0.0.0:${toString config.lass.servicePorts.radicle-node}" ];
         peers.type = "dynamic";
         connect = [ ];
-        externalAddresses = [ "radicle.lassul.us:8776" ];
+        externalAddresses = [ "radicle.lassul.us:${toString config.lass.servicePorts.radicle-node}" ];
         network = "main";
         log = "INFO";
         relay = "auto";
