@@ -12,6 +12,7 @@
     };
   };
   config = {
+    lass.ports."3091" = "hedgedoc";
 
     security.acme.certs.${config.clan.hedgedoc.domain}.group = "hedgecert";
     users.groups.hedgecert.members = [
@@ -34,7 +35,7 @@
           config.clan.hedgedoc.domain
         ];
         useCDN = true;
-        port = 3091;
+        port = config.lass.servicePorts.hedgedoc;
         domain = config.clan.hedgedoc.domain;
         allowFreeURL = true;
         defaultPermission = "freely";

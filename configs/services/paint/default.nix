@@ -4,6 +4,8 @@ let
   port = 3092;
 in
 {
+  lass.ports.${toString port} = "paint";
+
   # WBO collaborative whiteboard. Public like the pad: anyone with the link to
   # /boards/<name> can draw, boards are kept as JSON in the state dir.
   systemd.services.whitebophir = {

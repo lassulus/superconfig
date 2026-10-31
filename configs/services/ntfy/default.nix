@@ -3,6 +3,8 @@ let
   port = 2586;
 in
 {
+  lass.ports.${toString port} = "ntfy";
+
   # ntfy as UnifiedPush distributor for the phone. Anonymous like ntfy.sh:
   # the phone subscribes to its "up…" topics, app servers (Synapse, phonetpm
   # daemons) publish to them without an account.

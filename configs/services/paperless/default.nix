@@ -13,6 +13,8 @@ let
   ];
 in
 {
+  lass.ports.${toString cfg.port} = "paperless";
+
   clan.core.vars.generators.paperless-admin = {
     files."password" = { };
     runtimeInputs = with pkgs; [
