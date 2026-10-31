@@ -1,17 +1,27 @@
 {
   self,
+  config,
   lib,
   pkgs,
   ...
 }:
 let
   domain = "mirror.lassul.us";
-  listenAddr = "127.0.0.1:7000";
+  listenAddr = "127.0.0.1:${toString config.lass.servicePorts.knotmirror}";
   tapPort = 7480;
   redisPort = 6377;
   package = self.packages.${pkgs.stdenv.hostPlatform.system}.tangled.knotmirror;
 in
 {
+  lass.ports = {
+    "7000" = "knotmirror";
+    "7100" = "knotmirror-metrics";
+    "7200" = "knotmirror-admin";
+    ${toString tapPort} = "knotmirror-tap";
+    ${toString redisPort} = "redis-knotmirror";
+    ${toString config.services.postgresql.settings.port} = "postgresql";
+  };
+
   # Tangled knotmirror: the appview reads repo contents from here instead of
   # mirror.tangled.network. It mirrors a repo the first time the appview asks
   # for it (resolving the knot from the repo's DID) and follows the event
@@ -90,8 +100,8 @@ in
         "MIRROR_KNOT_USE_SSL=true"
         "MIRROR_KNOT_SSRF=true"
         "MIRROR_RESYNC_PARALLELISM=12"
-        "MIRROR_METRICS_LISTEN=127.0.0.1:7100"
-        "MIRROR_ADMIN_LISTEN=127.0.0.1:7200"
+        "MIRROR_METRICS_LISTEN=127.0.0.1:${toString config.lass.servicePorts.knotmirror-metrics}"
+        "MIRROR_ADMIN_LISTEN=127.0.0.1:${toString config.lass.servicePorts.knotmirror-admin}"
         "MIRROR_SLURPER_CONCURRENCY=4"
         "MIRROR_SEARCH_ZOEKT_URL="
       ];
