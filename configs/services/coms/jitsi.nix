@@ -1,9 +1,29 @@
-{ self, ... }:
+{
+  self,
+  config,
+  lib,
+  ...
+}:
 {
   imports = [
     ./coturn.nix
     ./jitsi-moderators.nix
   ];
+
+  lass.ports =
+    lib.genAttrs (map toString config.services.prosody.httpPorts) (_: "prosody-http")
+    // lib.genAttrs (map toString config.services.prosody.httpsPorts) (_: "prosody-https")
+    // {
+      # prosody's c2s and s2s defaults
+      "5222" = "prosody-c2s";
+      "5269" = "prosody-s2s";
+      # ice tcp and udp, defaults of nixpkgs' jitsi-videobridge module
+      "4443" = "jitsi-videobridge-tcp";
+      "10000" = "jitsi-videobridge";
+      # the bridge's private REST API and jicofo's, on localhost
+      "8080" = "jitsi-videobridge-rest";
+      "8888" = "jicofo-rest";
+    };
 
   # jitsi-meet 1.0.8792 is marked insecure in nixpkgs; secureify via overlay
   # rather than nixpkgs.config.permittedInsecurePackages (which doesn't
@@ -50,8 +70,8 @@
   };
 
   networking.firewall.allowedTCPPorts = [
-    4443
+    config.lass.servicePorts.jitsi-videobridge-tcp
     10000
   ];
-  networking.firewall.allowedUDPPorts = [ 10000 ];
+  networking.firewall.allowedUDPPorts = [ config.lass.servicePorts.jitsi-videobridge ];
 }

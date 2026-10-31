@@ -71,7 +71,9 @@ in
       };
     };
     # jitsi-go-openid listens on port 3001.
-    services.nginx.virtualHosts.${hostName}.locations."/oidc/".proxyPass = "http://127.0.0.1:3001/";
+    lass.ports."3001" = "jitsi-go-openid";
+    services.nginx.virtualHosts.${hostName}.locations."/oidc/".proxyPass =
+      "http://127.0.0.1:${toString config.lass.servicePorts.jitsi-go-openid}/";
     services.jitsi-meet.config.tokenAuthUrl = "https://${hostName}/oidc/authenticate?state={state}&room={room}";
 
     # Tokens are optional: without one the user is an anonymous guest.

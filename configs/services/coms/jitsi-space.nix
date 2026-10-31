@@ -8,9 +8,10 @@
 let
   inherit (config.services.jitsi-meet) hostName;
   vars = config.clan.core.vars.generators.jitsi-matrix-relay.files;
-  port = 9899;
 in
 {
+  lass.ports."9899" = "jitsi-matrix-relay";
+
   # Relays the chat of jitsi.lassul.us/space and #space:lassul.us both ways
   # and adds a widget to the Matrix room that shows who is in the call and
   # joins it, which needs the bot (@jitsi:lassul.us) to have the power level
@@ -25,7 +26,7 @@ in
       pwgen -s 64 1 | tr -d '\n' > $out/hs-token
       cat > $out/registration.yaml <<EOF
       id: jitsi-matrix-relay
-      url: http://127.0.0.1:${toString port}
+      url: http://127.0.0.1:${toString config.lass.servicePorts.jitsi-matrix-relay}
       as_token: $(cat $out/as-token)
       hs_token: $(cat $out/hs-token)
       sender_localpart: jitsi
@@ -53,12 +54,12 @@ in
       JITSI_NICK = "Matrix";
       XMPP_DOMAIN = "guest.${hostName}";
       XMPP_HOST = "127.0.0.1";
-      MATRIX_HOMESERVER = "http://[::1]:8008";
+      MATRIX_HOMESERVER = "http://[::1]:${toString config.lass.servicePorts.matrix-synapse}";
       MATRIX_ROOM = "#space:lassul.us";
       MATRIX_LOCALPART = "jitsi";
       MATRIX_AS_TOKEN_FILE = "%d/as-token";
       MATRIX_HS_TOKEN_FILE = "%d/hs-token";
-      LISTEN_PORT = toString port;
+      LISTEN_PORT = toString config.lass.servicePorts.jitsi-matrix-relay;
       WIDGET_URL = "https://${hostName}/matrix/space/";
     };
     serviceConfig = {
@@ -73,7 +74,7 @@ in
     };
   };
   services.nginx.virtualHosts.${hostName}.locations."^~ /matrix/space/" = {
-    proxyPass = "http://127.0.0.1:${toString port}/widget/";
+    proxyPass = "http://127.0.0.1:${toString config.lass.servicePorts.jitsi-matrix-relay}/widget/";
     # the participant list is a stream of server-sent events
     extraConfig = "proxy_buffering off;";
   };
