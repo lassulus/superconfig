@@ -7,6 +7,11 @@
 }:
 let
   selfPkgs = self.packages.${pkgs.stdenv.hostPlatform.system};
+  # mosh-server takes a free UDP port from this range
+  moshPorts = {
+    from = 60000;
+    to = 61000;
+  };
 in
 {
 
@@ -296,12 +301,11 @@ in
   };
 
   networking.firewall.allowedTCPPorts = [ 22 ]; # ssh
-  networking.firewall.allowedUDPPortRanges = [
-    {
-      from = 60000;
-      to = 61000;
-    }
-  ]; # mosh
+  lass.ports =
+    lib.genAttrs (map toString (lib.range moshPorts.from moshPorts.to)) (port: "mosh-${port}")
+    # multicast DNS, clan-core's recommended defaults open it in the firewall
+    // lib.optionalAttrs config.services.resolved.enable { "5353" = "resolved-mdns"; };
+  networking.firewall.allowedUDPPortRanges = [ moshPorts ];
   networking.extraHosts = ''
     10.42.0.1 acheron.gg23
     10.42.0.3 styx.gg23
