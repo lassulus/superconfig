@@ -11,6 +11,12 @@ let
   timeful = self.packages.${pkgs.system}.timeful;
 in
 {
+  lass.ports = {
+    ${toString port} = "timeful";
+    # mongodb's default, the module has no option for it
+    "27017" = "mongodb";
+  };
+
   # timeful (formerly schej): crab.fit/when2meet-style availability polls.
   # Creating a poll and painting availability work without an account;
   # signing in (GitHub OAuth, see pkgs/timeful/self-host.patch) keeps a
@@ -22,7 +28,7 @@ in
   };
 
   lass.backup.state.timeful.preBackup = ''
-    ${pkgs.mongodb-tools}/bin/mongodump --uri=mongodb://127.0.0.1:27017 \
+    ${pkgs.mongodb-tools}/bin/mongodump --uri=mongodb://127.0.0.1:${toString config.lass.servicePorts.mongodb} \
       --db=schej-it --gzip --archive=/var/backup/timeful.archive.gz
   '';
 
@@ -68,7 +74,7 @@ in
     ];
     environment = {
       LISTEN_ADDR = "127.0.0.1:${toString port}";
-      MONGODB_URI = "mongodb://127.0.0.1:27017";
+      MONGODB_URI = "mongodb://127.0.0.1:${toString config.lass.servicePorts.mongodb}";
       CORS_ORIGINS = "https://${domain}";
       # no listmonk mailing list; skip its HTTP calls on sign-up
       LISTMONK_ENABLED = "false";
