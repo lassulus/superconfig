@@ -1,0 +1,147 @@
+diff --git a/internal/handler/alerts.go b/internal/handler/alerts.go
+index 96c9b0b..aac6f0b 100644
+--- a/internal/handler/alerts.go
++++ b/internal/handler/alerts.go
+@@ -14,6 +14,7 @@ import (
+ 	"github.com/metio/matrix-alertmanager-receiver/internal/matrix"
+ 	"github.com/prometheus/client_golang/prometheus"
+ 	"github.com/prometheus/client_golang/prometheus/promauto"
++	"github.com/prometheus/common/model"
+ )
+ 
+ var (
+@@ -39,7 +40,7 @@ var (
+ 	}, []string{"room"})
+ )
+ 
+-func AlertsHandler(ctx context.Context, sendingFunc matrix.SendingFunc, templatingFunc alertmanager.TemplatingFunc, roomExtractorFunc RoomExtractorFunc, authorizerFunc AuthorizerFunc) http.HandlerFunc {
++func AlertsHandler(ctx context.Context, sendingFunc matrix.SendingFunc, redactingFunc matrix.RedactingFunc, templatingFunc alertmanager.TemplatingFunc, roomExtractorFunc RoomExtractorFunc, authorizerFunc AuthorizerFunc) http.HandlerFunc {
+ 	return func(writer http.ResponseWriter, request *http.Request) {
+ 		httpRequestsTotal.Inc()
+ 
+@@ -71,9 +72,13 @@ func AlertsHandler(ctx context.Context, sendingFunc matrix.SendingFunc, templati
+ 
+ 		for _, alert := range data.Alerts {
+ 			alertsTotal.WithLabelValues(room).Inc()
++			if alert.Status == string(model.AlertResolved) {
++				redactingFunc(room, alert.Fingerprint, alert.StartsAt)
++				continue
++			}
+ 			if message, templateError := templatingFunc(alert, data); templateError == nil {
+ 				slog.DebugContext(ctx, "Created message", slog.String("html", message))
+-				sendingFunc(message, room)
++				sendingFunc(message, room, alert.Fingerprint)
+ 			}
+ 		}
+ 		writer.WriteHeader(http.StatusOK)
+diff --git a/internal/matrix/client.go b/internal/matrix/client.go
+index 31da678..77c11c7 100644
+--- a/internal/matrix/client.go
++++ b/internal/matrix/client.go
+@@ -44,24 +44,69 @@ var (
+ 	})
+ )
+ 
+-type SendingFunc func(htmlText string, roomID string)
++// SendingFunc posts a firing alert. The message carries the alert's
++// fingerprint, so RedactingFunc can find it again once the alert resolves.
++type SendingFunc func(htmlText string, roomID string, fingerprint string)
++
++// RedactingFunc deletes every message posted for the alert with this
++// fingerprint since it started firing (repeat notifications included).
++type RedactingFunc func(roomID string, fingerprint string, since time.Time)
++
++// fingerprintKey is the custom content field holding the fingerprint. The
++// room history is the only state: it works across restarts and with several
++// receivers (one per Alertmanager) posting as the same bot.
++const fingerprintKey = "us.lassul.alert_fingerprint"
+ 
+ var joinedRoomIDs []string
+ 
+-func CreatingSendingFunc(ctx context.Context, configuration config.Matrix) SendingFunc {
++func CreatingFuncs(ctx context.Context, configuration config.Matrix) (SendingFunc, RedactingFunc) {
+ 	matrixClient := createMatrixClient(ctx, configuration)
+ 	fetchJoinedRooms(ctx, matrixClient)
+-	return func(htmlText string, room string) {
+-		mappedRoom := room
++	mapRoom := func(room string) string {
+ 		if mapped, ok := configuration.RoomMapping[room]; ok {
+-			mappedRoom = mapped
++			return mapped
++		}
++		return room
++	}
++	redacting := func(room string, fingerprint string, since time.Time) {
++		roomID := id.RoomID(mapRoom(room))
++		filter := &mautrix.FilterPart{
++			Senders: []id.UserID{matrixClient.UserID},
++			Types:   []event.Type{event.EventMessage},
++		}
++		from := ""
++		for {
++			resp, err := matrixClient.Messages(ctx, roomID, from, "", mautrix.DirectionBackward, filter, 100)
++			if err != nil {
++				slog.ErrorContext(ctx, "Could not read room history", slog.String("room", roomID.String()), slog.Any("error", err))
++				return
++			}
++			for _, evt := range resp.Chunk {
++				if evt.Timestamp < since.UnixMilli() {
++					return
++				}
++				if evt.Content.Raw[fingerprintKey] != fingerprint {
++					continue
++				}
++				if _, err := matrixClient.RedactEvent(ctx, roomID, evt.ID, mautrix.ReqRedact{Reason: "resolved"}); err != nil {
++					slog.ErrorContext(ctx, "Could not redact message", slog.String("event", evt.ID.String()), slog.Any("error", err))
++				}
++			}
++			if resp.End == "" {
++				return
++			}
++			from = resp.End
+ 		}
++	}
++	return func(htmlText string, room string, fingerprint string) {
++		mappedRoom := mapRoom(room)
+ 		if err := joinRoom(ctx, matrixClient, mappedRoom); err != nil {
+ 			joinRoomFailureTotal.WithLabelValues(mappedRoom).Inc()
+ 			slog.ErrorContext(ctx, fmt.Sprintf("Could not join room %s", room), slog.Any("error", err))
+ 		} else {
+ 			joinRoomSuccessTotal.WithLabelValues(mappedRoom).Inc()
+-			if respSendEvent, err := matrixClient.SendMessageEvent(ctx, id.RoomID(mappedRoom), event.NewEventType("m.room.message"), format.HTMLToContent(htmlText)); err != nil {
++			content := format.HTMLToContent(htmlText)
++			if respSendEvent, err := matrixClient.SendMessageEvent(ctx, id.RoomID(mappedRoom), event.EventMessage, &event.Content{Parsed: &content, Raw: map[string]any{fingerprintKey: fingerprint}}); err != nil {
+ 				sendFailureTotal.Inc()
+ 				slog.ErrorContext(ctx, "Could not send message to Matrix homeserver", slog.Any("error", err))
+ 			} else {
+@@ -69,7 +114,7 @@ func CreatingSendingFunc(ctx context.Context, configuration config.Matrix) Sendi
+ 				slog.DebugContext(ctx, fmt.Sprintf("Message %s sent to Matrix homeserver", respSendEvent.EventID))
+ 			}
+ 		}
+-	}
++	}, redacting
+ }
+ 
+ func createMatrixClient(ctx context.Context, configuration config.Matrix) *mautrix.Client {
+diff --git a/main.go b/main.go
+index 90f1f25..ac286a3 100644
+--- a/main.go
++++ b/main.go
+@@ -52,7 +52,7 @@ func main() {
+ 	}
+ 	slog.InfoContext(ctx, "Configuration parsed", slog.Any("configuration", configuration.LogValue()))
+ 
+-	sendingFunc := matrix.CreatingSendingFunc(ctx, configuration.Matrix)
++	sendingFunc, redactingFunc := matrix.CreatingFuncs(ctx, configuration.Matrix)
+ 	slog.InfoContext(ctx, "Matrix sending function created")
+ 
+ 	templatingFunc := alertmanager.CreateTemplatingFunc(ctx, configuration.Templating)
+@@ -71,7 +71,7 @@ func main() {
+ 	}
+ 	slog.InfoContext(ctx, "Request authorizer function created")
+ 
+-	http.HandleFunc(configuration.HTTPServer.AlertsPathPrefix, handler.AlertsHandler(ctx, sendingFunc, templatingFunc, extractorFunc, authorizerFunc))
++	http.HandleFunc(configuration.HTTPServer.AlertsPathPrefix, handler.AlertsHandler(ctx, sendingFunc, redactingFunc, templatingFunc, extractorFunc, authorizerFunc))
+ 	if configuration.HTTPServer.MetricsEnabled {
+ 		slog.InfoContext(ctx, "Enabling metrics endpoint")
+ 		http.Handle(configuration.HTTPServer.MetricsPath, promhttp.Handler())
