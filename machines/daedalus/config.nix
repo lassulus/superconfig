@@ -1,5 +1,6 @@
 {
   self,
+  config,
   lib,
   pkgs,
   ...
@@ -92,7 +93,8 @@
         x11vnc
         # torbrowser
       ];
-      networking.firewall.interfaces.retiolum.allowedTCPPorts = [ 5900 ];
+      lass.ports."5900" = "x11vnc";
+      networking.firewall.interfaces.retiolum.allowedTCPPorts = [ config.lass.servicePorts.x11vnc ];
     }
   ];
 
