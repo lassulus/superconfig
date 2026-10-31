@@ -4,8 +4,7 @@ matrix_dm_send lets every session, the voice calls on the API server included,
 write to the owner's Matrix DM (the gateway's Matrix home room). Hermes
 registers its send_message tool for no session (tools/send_message_tool.py
 keeps it out of the model's tools on purpose); this one reaches that single
-room and uses the same sender as cron delivery, through the gateway's live
-Matrix adapter. Sent messages are mirrored into the DM's session, so the
+room, through the gateway's live Matrix adapter. Sent messages are mirrored into the DM's session, so the
 Matrix side sees what was asked when the user answers there.
 
 end_call ends the voice call the session belongs to. The tool itself only
@@ -75,11 +74,27 @@ CHOICES = {"approve": "once", "deny": "deny"}
 
 
 def send(args, **_kw):
-    from tools.send_message_tool import send_message_tool
+    """Send through the live Matrix adapter on the gateway's loop.
 
-    return send_message_tool(
-        {"action": "send", "target": "matrix", "message": args.get("message", "")}
-    )
+    Not send_message_tool: its Matrix route awaits adapter.send() on the
+    tool's own loop (tools/send_message_senders.py), where aiohttp fails
+    with "Timeout context manager should be used inside a task", and
+    without a live adapter it connects a second client on the gateway's
+    crypto store, which breaks E2EE."""
+    from gateway.mirror import mirror_to_session
+    from tools.registry import tool_error
+
+    message = args.get("message", "")
+    room = os.environ.get("MATRIX_HOME_ROOM")
+    runner, adapter = matrix_adapter()
+    loop = getattr(runner, "_gateway_loop", None)
+    if not (room and adapter and loop and loop.is_running()):
+        return tool_error("The gateway's Matrix connection is not available.")
+    result = asyncio.run_coroutine_threadsafe(adapter.send(room, message), loop).result()
+    if not result.success:
+        return tool_error(f"Matrix send failed: {result.error}")
+    mirror_to_session("matrix", room, message)
+    return json.dumps({"success": True, "message_id": result.message_id})
 
 
 def voice_call_id(session_id):
