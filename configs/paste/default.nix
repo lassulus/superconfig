@@ -152,5 +152,5 @@ in
     };
   };
 
-  networking.firewall.interfaces.retiolum.allowedTCPPorts = [ 80 ];
+  networking.firewall.interfaces.retiolum.allowedTCPPorts = [ config.lass.servicePorts.nginx-http ];
 }
