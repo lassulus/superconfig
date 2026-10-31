@@ -4,7 +4,7 @@
   ...
 }:
 let
-  api = "/ip4/127.0.0.1/tcp/5001";
+  api = "/ip4/127.0.0.1/tcp/${toString config.lass.servicePorts.kubo-api}";
   ipfs = "${pkgs.kubo}/bin/ipfs";
   uploadServer = pkgs.writers.writePython3Bin "ipfs-upload-server" {
     flakeIgnore = [ "E501" ];
@@ -12,6 +12,8 @@ let
 in
 {
   imports = [ ../../configs/nginx.nix ];
+
+  lass.ports."8090" = "ipfs-upload";
 
   # scratch area for in-flight uploads (extracted, added, then deleted)
   systemd.tmpfiles.rules = [
@@ -32,7 +34,7 @@ in
         "ROOTS_FILE=/var/lib/ipfs/gc-roots"
         "GATEWAY_BASE=https://starkstrom.lassul.us"
         "BIND=127.0.0.1"
-        "PORT=8090"
+        "PORT=${toString config.lass.servicePorts.ipfs-upload}"
         "MAX_BYTES=8589934592" # 8 GiB compressed upload
         "MAX_EXTRACT_BYTES=21474836480" # 20 GiB extracted
         "DISK_PATH=/var/lib/ipfs"
@@ -51,11 +53,11 @@ in
     enableACME = true;
     forceSSL = true;
     locations."/ipfs/".extraConfig = ''
-      proxy_pass http://127.0.0.1:8089;
+      proxy_pass http://127.0.0.1:${toString config.lass.servicePorts.kubo-gateway};
       proxy_set_header Host $host;
     '';
     locations."/".extraConfig = ''
-      proxy_pass http://127.0.0.1:8090;
+      proxy_pass http://127.0.0.1:${toString config.lass.servicePorts.ipfs-upload};
       client_max_body_size 8g;
       # Stream multi-GB bodies straight through instead of spooling to disk.
       proxy_request_buffering off;
