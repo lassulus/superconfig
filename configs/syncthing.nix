@@ -53,6 +53,12 @@ let
   used_peers = lib.filterAttrs (n: _v: lib.elem n used_peer_names) all_peers;
 in
 {
+  lass.ports = {
+    "8384" = "syncthing-gui";
+    "21027" = "syncthing-discovery";
+    "22000" = "syncthing";
+  };
+
   services.syncthing = {
     enable = true;
     group = "syncthing";
@@ -95,7 +101,7 @@ in
 
   boot.kernel.sysctl."fs.inotify.max_user_watches" = 524288;
   networking.firewall = {
-    allowedTCPPorts = [ 22000 ];
-    allowedUDPPorts = [ 21027 ];
+    allowedTCPPorts = [ config.lass.servicePorts.syncthing ];
+    allowedUDPPorts = [ config.lass.servicePorts.syncthing-discovery ];
   };
 }

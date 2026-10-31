@@ -6,6 +6,24 @@
   ...
 }:
 {
+  lass.ports = {
+    "80" = "nginx-http";
+    "443" = "nginx-https";
+    "445" = "samba";
+    "1900" = "jellyfin-dlna";
+    "5055" = "jellyseerr";
+    "6767" = "bazarr";
+    "6969" = "gamarr";
+    "7359" = "jellyfin-discovery";
+    "7878" = "radarr";
+    "8080" = "sabnzbd";
+    "8096" = "jellyfin";
+    "8191" = "flaresolverr";
+    "8920" = "jellyfin-https";
+    "8989" = "sonarr";
+    "9091" = "transmission";
+    "9696" = "prowlarr";
+  };
   # sabnzbd hard-depends on cheetah3, whose PyPI dist is `ct3` while nixpkgs
   # sets pname="cheetah3". pythonMetadataCheckPhase then looks up metadata for
   # "cheetah3", finds only "ct3", and fails the build with PackageNotFoundError.
@@ -40,6 +58,7 @@
       download-dir = "/var/download/transmission";
       incomplete-dir-enabled = false;
       rpc-bind-address = "::";
+      rpc-port = config.lass.servicePorts.transmission;
       message-level = 1;
       # 0o002: files 664 so sonarr/radarr (group download) can hardlink
       # instead of copying (fs.protected_hardlinks needs owner or write)
@@ -71,7 +90,7 @@
       set -efu
       # transmission lives in its own netns (t1 = 128.0.0.1/30), this unit runs
       # outside it (t2 = 128.0.0.2), so localhost is *not* the daemon here.
-      TRANSMISSION_HOST="128.0.0.1:9091"
+      TRANSMISSION_HOST="128.0.0.1:${toString config.lass.servicePorts.transmission}"
       MAX_AGE_DAYS=30
       MIN_RATIO=5.0
 
@@ -198,10 +217,10 @@
       INI=/var/lib/sabnzbd/sabnzbd.ini
       key=$(grep -E '^api_key' "$INI" | head -1 | cut -d= -f2 | tr -d ' ')
       sab() {
-        curl -fsS --max-time 15 "http://127.0.0.1:8080/api?output=json&apikey=$key&$1" >/dev/null || :
+        curl -fsS --max-time 15 "http://127.0.0.1:${toString config.lass.servicePorts.sabnzbd}/api?output=json&apikey=$key&$1" >/dev/null || :
       }
       tr_remote() {
-        transmission-remote 128.0.0.1:9091 "$@" >/dev/null || :
+        transmission-remote 128.0.0.1:${toString config.lass.servicePorts.transmission} "$@" >/dev/null || :
       }
       notify() {
         token=$(cat "$CREDENTIALS_DIRECTORY/matrix-token")
@@ -279,26 +298,26 @@
     };
     virtualHosts."jelly.r" = {
       locations."/".extraConfig = ''
-        proxy_pass http://localhost:8096/;
+        proxy_pass http://localhost:${toString config.lass.servicePorts.jellyfin}/;
         proxy_set_header Accept-Encoding "";
       '';
     };
     virtualHosts."transmission.r" = {
       locations."/" = {
         proxyWebsockets = true;
-        proxyPass = "http://128.0.0.1:9091";
+        proxyPass = "http://128.0.0.1:${toString config.lass.servicePorts.transmission}";
       };
     };
     virtualHosts."radar.r" = {
       locations."/" = {
         proxyWebsockets = true;
-        proxyPass = "http://localhost:7878";
+        proxyPass = "http://localhost:${toString config.lass.servicePorts.radarr}";
       };
     };
     virtualHosts."sonar.r" = {
       locations."/" = {
         proxyWebsockets = true;
-        proxyPass = "http://localhost:8989";
+        proxyPass = "http://localhost:${toString config.lass.servicePorts.sonarr}";
         # sonar.r now has forced authentication
         extraConfig = ''
           proxy_set_header Authorization "Basic a3JlYnM6YWlkc2JhbGxz";
@@ -338,14 +357,14 @@
   };
 
   networking.firewall.allowedTCPPorts = [
-    80 # nginx
-    443 # nginx
+    config.lass.servicePorts.nginx-http
+    config.lass.servicePorts.nginx-https
     config.lass.servicePorts.gamarr
-    9091 # transmission web
-    8096 # jellyfin
-    8920 # jellyfin
+    config.lass.servicePorts.transmission
+    config.lass.servicePorts.jellyfin
+    config.lass.servicePorts.jellyfin-https
     51413 # transmission traffic
-    445 # smbd
+    config.lass.servicePorts.samba
     111 # smbd
     2049 # smbd
     4000 # smbd
@@ -354,8 +373,8 @@
   ];
   networking.firewall.allowedUDPPorts = [
     51413 # transmission traffic
-    1900 # jellyfin
-    7359 # jellyfin
+    config.lass.servicePorts.jellyfin-dlna
+    config.lass.servicePorts.jellyfin-discovery
     111 # smbd
     2049 # smbd
     4000 # smbd
@@ -370,7 +389,7 @@
     content = ''
       chain prerouting {
         type nat hook prerouting priority dstnat; policy accept;
-        iifname "retiolum" tcp dport 9091 dnat to fdb4:3310:947::2
+        iifname "retiolum" tcp dport ${toString config.lass.servicePorts.transmission} dnat to fdb4:3310:947::2
       }
     '';
   };
@@ -413,12 +432,14 @@
   # request managment
   services.jellyseerr = {
     enable = true;
+    port = config.lass.servicePorts.jellyseerr;
     openFirewall = true;
   };
 
   # movies
   services.radarr = {
     enable = true;
+    settings.server.port = config.lass.servicePorts.radarr;
     openFirewall = true;
     user = "download";
     group = "download";
@@ -427,12 +448,12 @@
   # shows
   services.sonarr = {
     enable = true;
+    settings.server.port = config.lass.servicePorts.sonarr;
     openFirewall = true;
     user = "download";
     group = "download";
   };
   # games, web ui on yellow.r:6969 (its default 6767 is bazarr's)
-  lass.ports."6969" = "gamarr";
   systemd.services.gamarr = {
     environment.GAMARR__SERVER__PORT = toString config.lass.servicePorts.gamarr;
     after = [ "network.target" ];
@@ -465,17 +486,18 @@
   # indexers
   services.prowlarr = {
     enable = true;
+    settings.server.port = config.lass.servicePorts.prowlarr;
     openFirewall = true;
   };
 
   # flaresolverr for bypassing cloudflare on some indexers
   services.flaresolverr = {
     enable = true;
+    port = config.lass.servicePorts.flaresolverr;
     openFirewall = true;
   };
 
   # subtitles
-  lass.ports."6767" = "bazarr";
   services.bazarr = {
     enable = true;
     settings.general.port = config.lass.servicePorts.bazarr;
@@ -487,6 +509,7 @@
   # usenet download client
   services.sabnzbd = {
     enable = true;
+    settings.misc.port = config.lass.servicePorts.sabnzbd;
     group = "download";
     openFirewall = true;
   };

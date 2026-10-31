@@ -42,7 +42,7 @@ in
         # The API server binds the retiolum address (hermes.nix), not
         # loopback; traffic to the host's own address goes through lo.
         "--hermes-url"
-        "http://${config.networking.hostName}.r:8642"
+        "http://${config.networking.hostName}.r:${toString config.lass.servicePorts.hermes-api}"
         "--hermes-key-file"
         "%d/hermes-key"
         "--openai-key-file"
