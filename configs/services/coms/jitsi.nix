@@ -71,7 +71,6 @@
 
   networking.firewall.allowedTCPPorts = [
     config.lass.servicePorts.jitsi-videobridge-tcp
-    10000
   ];
   networking.firewall.allowedUDPPorts = [ config.lass.servicePorts.jitsi-videobridge ];
 }
