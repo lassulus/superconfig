@@ -22,9 +22,9 @@ in
     extraConfig = ''
       $config['product_name'] = 'lassulus webmail';
       $config['default_list_mode'] = 'threads';
-      $config['imap_host'] = 'ssl://${domain}:993';
-      $config['smtp_host'] = 'ssl://${domain}:465';
-      $config['managesieve_host'] = 'tls://${domain}:4190';
+      $config['imap_host'] = 'ssl://${domain}:${toString config.lass.servicePorts.dovecot-imaps}';
+      $config['smtp_host'] = 'ssl://${domain}:${toString config.lass.servicePorts.postfix-submissions}';
+      $config['managesieve_host'] = 'tls://${domain}:${toString config.lass.servicePorts.dovecot-managesieve}';
 
       $oidc = parse_ini_file('${zitadelEnv}', false, INI_SCANNER_RAW);
       $config['oauth_provider'] = 'generic';
