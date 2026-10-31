@@ -302,6 +302,9 @@ in
       to = 61000;
     }
   ]; # mosh
+  # One mDNS stack per host: with resolved's mDNS next to avahi both bind
+  # 5353, avahi warns about it and keeps renaming itself (ignavia-<n>.local).
+  services.resolved.settings.Resolve.MulticastDNS = lib.mkIf config.services.avahi.enable false;
   networking.extraHosts = ''
     10.42.0.1 acheron.gg23
     10.42.0.3 styx.gg23
