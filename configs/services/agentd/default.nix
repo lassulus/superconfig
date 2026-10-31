@@ -11,10 +11,12 @@
   ...
 }:
 let
-  port = 8791; # 8790 is hermes-voice
+  port = config.lass.servicePorts.agentd;
 in
 {
   imports = [ self.inputs.agentd.nixosModules.default ];
+
+  lass.ports."8791" = "agentd";
 
   services.agentd = {
     enable = true;

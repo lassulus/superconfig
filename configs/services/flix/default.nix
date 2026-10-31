@@ -340,7 +340,7 @@
   networking.firewall.allowedTCPPorts = [
     80 # nginx
     443 # nginx
-    6969 # gamarr
+    config.lass.servicePorts.gamarr
     9091 # transmission web
     8096 # jellyfin
     8920 # jellyfin
@@ -432,8 +432,9 @@
     group = "download";
   };
   # games, web ui on yellow.r:6969 (its default 6767 is bazarr's)
+  lass.ports."6969" = "gamarr";
   systemd.services.gamarr = {
-    environment.GAMARR__SERVER__PORT = "6969";
+    environment.GAMARR__SERVER__PORT = toString config.lass.servicePorts.gamarr;
     after = [ "network.target" ];
     wantedBy = [ "multi-user.target" ];
     serviceConfig = {
@@ -474,8 +475,10 @@
   };
 
   # subtitles
+  lass.ports."6767" = "bazarr";
   services.bazarr = {
     enable = true;
+    settings.general.port = config.lass.servicePorts.bazarr;
     openFirewall = true;
     user = "download";
     group = "download";
