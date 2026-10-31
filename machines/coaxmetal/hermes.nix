@@ -290,6 +290,13 @@ in
     # In rooms Hermes requires an @mention by default; DMs always respond.
     settings.matrix.session_scope = "room";
 
+    # A restart waits for running turns before it stops the gateway, and
+    # refuses every new chat message during that wait. The default (1800 s)
+    # let one turn waiting on an unanswered clarify block all chats for
+    # 13 minutes. After 5 minutes the remaining turns are interrupted and
+    # resume on the next message.
+    settings.agent.restart_after_turn_timeout = 300;
+
     # Matrix is a Tier-2 platform whose default tool-progress preview caps
     # commands at 40 chars (so a `terminal` call shows only `curl -X POST -H
     # "Content-Type: applic...`). "verbose" makes the gateway render the FULL
