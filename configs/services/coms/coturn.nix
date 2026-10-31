@@ -1,4 +1,9 @@
-{ config, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 let
   domain = "turn.lassul.us";
   minPort = 49152;
@@ -7,6 +12,12 @@ let
   ip6 = "2a01:4f9:4a:4f1a::2";
 in
 {
+  lass.ports = {
+    ${toString config.services.coturn.listening-port} = "coturn";
+    ${toString config.services.coturn.tls-listening-port} = "coturn-tls";
+  }
+  // lib.genAttrs (map toString (lib.range minPort maxPort)) (port: "coturn-relay-${port}");
+
   # STUN/TURN for jitsi.lassul.us. Clients get the servers and short-lived
   # credentials (TURN REST, HMAC over the shared secret) from Prosody's
   # mod_external_services (XEP-0215), see the prosody block below.
@@ -71,10 +82,10 @@ in
   services.prosody.virtualHosts.${config.services.jitsi-meet.hostName}.extraConfig = ''
     external_service_secret = Credential("coturn-secret")
     external_services = {
-      { type = "stun", host = "${domain}", port = 3478 },
-      { type = "turn", host = "${domain}", port = 3478, transport = "udp", secret = true, ttl = 86400, algorithm = "turn" },
-      { type = "turn", host = "${domain}", port = 3478, transport = "tcp", secret = true, ttl = 86400, algorithm = "turn" },
-      { type = "turns", host = "${domain}", port = 5349, transport = "tcp", secret = true, ttl = 86400, algorithm = "turn" },
+      { type = "stun", host = "${domain}", port = ${toString config.lass.servicePorts.coturn} },
+      { type = "turn", host = "${domain}", port = ${toString config.lass.servicePorts.coturn}, transport = "udp", secret = true, ttl = 86400, algorithm = "turn" },
+      { type = "turn", host = "${domain}", port = ${toString config.lass.servicePorts.coturn}, transport = "tcp", secret = true, ttl = 86400, algorithm = "turn" },
+      { type = "turns", host = "${domain}", port = ${toString config.lass.servicePorts.coturn-tls}, transport = "tcp", secret = true, ttl = 86400, algorithm = "turn" },
     }
   '';
   systemd.services.prosody.serviceConfig.LoadCredential = [
@@ -82,12 +93,12 @@ in
   ];
 
   networking.firewall.allowedTCPPorts = [
-    3478
-    5349
+    config.lass.servicePorts.coturn
+    config.lass.servicePorts.coturn-tls
   ];
   networking.firewall.allowedUDPPorts = [
-    3478
-    5349
+    config.lass.servicePorts.coturn
+    config.lass.servicePorts.coturn-tls
   ];
   networking.firewall.allowedTCPPortRanges = [
     {
