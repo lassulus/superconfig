@@ -14,7 +14,8 @@ newer delegation within the same call stops the previous run (the user
 corrected or replaced the request); hanging up just ends the call, and the run
 finishes whatever the user asked for. On hang-up the page sends what the user
 said since the last delegation, so a request spoken right before hanging up
-still reaches Hermes. When a run asks for approval while no page is listening,
+still reaches Hermes, and the whole call (both sides), which goes to the
+owner's Matrix DM as its transcript. When a run asks for approval while no page is listening,
 the question goes to the owner's Matrix DM (the gateway's Matrix home room,
 through its webhook platform), and the hermes-voice plugin's
 `/assist approve|deny <code>` command answers it.
@@ -266,16 +267,19 @@ def create_live_session(config, sdp, history, voice):
     return {"session_id": answer["session"]["id"], "sdp": answer["transport"]["sdp"]}
 
 
-def transcript_message(lines):
+def render_lines(lines):
+    """Transcript lines as `User: …` / `Assistant: …` text, empty ones left out."""
     rendered = []
     for line in lines:
         text = str(line.get("text", "")).strip()
         if text:
             who = "Assistant" if line.get("speaker") == "assistant" else "User"
             rendered.append(f"{who}: {text}")
-    return "Spoken conversation since the last request, newest last:\n" + "\n".join(
-        rendered
-    )
+    return "\n".join(rendered)
+
+
+def transcript_message(lines):
+    return "Spoken conversation since the last request, newest last:\n" + render_lines(lines)
 
 
 def iter_sse(response):
@@ -759,6 +763,7 @@ class Handler(BaseHTTPRequestHandler):
             runs = [run for run in RUNS.values() if run.hermes_session == hermes_session]
         for run in runs:
             run.hang_up()
+        self.post_call_transcript(hermes_session, request.get("call"))
         if not any(line.get("speaker") == "user" for line in lines):
             self.send_json(HTTPStatus.OK, {"run_id": None})
             return
@@ -774,6 +779,19 @@ class Handler(BaseHTTPRequestHandler):
         Run(self.config, hermes_session, run_id, hung_up=True)
         log.info("hang-up of %s left a request: run %s", hermes_session, run_id)
         self.send_json(HTTPStatus.OK, {"run_id": run_id})
+
+    def post_call_transcript(self, hermes_session, lines):
+        """The whole call, both sides, as one message in the owner's Matrix DM."""
+        if not self.config.matrix_webhook or not isinstance(lines, list):
+            return
+        spoken = render_lines(line for line in lines if isinstance(line, dict))
+        if not spoken:
+            return
+        title = "📞 Voice call, ended " + time.strftime("%a %d %b %Y %H:%M")
+        try:
+            notify_matrix(self.config, f"{title}\n\n{spoken}")
+        except (urllib.error.URLError, OSError) as error:
+            log.warning("call transcript of %s not posted: %s", hermes_session, error)
 
     def handle_approve(self, request):
         code = request.get("code")
@@ -831,7 +849,7 @@ def main():
     parser.add_argument(
         "--matrix-webhook",
         help="Hermes webhook route (deliver_only to Matrix, signed with API_SERVER_KEY) that "
-        "receives approvals no call can answer",
+        "receives approvals no call can answer and the transcript of every call",
     )
     parser.add_argument("--config", help="JSON file: voice, model, idle_seconds, glossary, instructions")
     parser.add_argument(

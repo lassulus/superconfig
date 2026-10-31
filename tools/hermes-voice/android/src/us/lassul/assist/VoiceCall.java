@@ -80,6 +80,8 @@ final class VoiceCall {
     private final Api api;
     private final Conversation conversation;
     private final Listener listener;
+    // Where this call starts in the conversation, for its transcript.
+    private final int firstLine;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService io = Executors.newCachedThreadPool();
 
@@ -160,6 +162,7 @@ final class VoiceCall {
         this.api = api;
         this.conversation = conversation;
         this.listener = listener;
+        this.firstLine = conversation.lines.size();
     }
 
     void start() {
@@ -712,17 +715,20 @@ final class VoiceCall {
         listener.onFinished(reason, failed);
     }
 
-    // Tell the server the call is over, with what the user said since the last delegation: a
-    // request spoken right before hanging up still reaches Hermes.
+    // Tell the server the call is over, with what the user said since the last delegation (a
+    // request spoken right before hanging up still reaches Hermes) and the whole call for its
+    // transcript.
     private void hangUp() {
         List<Conversation.Line> lines = conversation.undelegated("user", "assistant");
+        List<Conversation.Line> call = conversation.since(firstLine, "user", "assistant");
         conversation.delegated = conversation.lines.size();
         conversation.save();
         final JSONObject body;
         try {
             body = new JSONObject()
                     .put("hermes_session", conversation.hermesSession)
-                    .put("lines", Conversation.toJson(lines));
+                    .put("lines", Conversation.toJson(lines))
+                    .put("call", Conversation.toJson(call));
         } catch (JSONException error) {
             return;
         }

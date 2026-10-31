@@ -185,6 +185,8 @@ class Call {
     this.closing = false;
     this.ending = null;
     this.eventCounter = 0;
+    // Where this call starts in the conversation, for its transcript.
+    this.firstLine = state.lines.length;
   }
 
   async start() {
@@ -562,21 +564,25 @@ class Call {
   }
 
   // Tell the server the call is over, with what the user said since the last
-  // delegation: a request spoken right before hanging up still reaches
-  // Hermes. keepalive lets the request outlive the page.
+  // delegation (a request spoken right before hanging up still reaches
+  // Hermes) and the whole call for its transcript. keepalive lets the
+  // request outlive the page.
   hangUp() {
-    const lines = state.lines
-      .slice(state.delegated)
-      .filter(
-        (line) => line.speaker === "user" || line.speaker === "assistant",
-      );
+    const spoken = (line) =>
+      line.speaker === "user" || line.speaker === "assistant";
+    const lines = state.lines.slice(state.delegated).filter(spoken);
+    const callLines = state.lines.slice(this.firstLine).filter(spoken);
     state.delegated = state.lines.length;
     saveState();
     api("/hangup", {
       method: "POST",
       keepalive: true,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ hermes_session: state.hermesSession, lines }),
+      body: JSON.stringify({
+        hermes_session: state.hermesSession,
+        lines,
+        call: callLines,
+      }),
     }).catch(() => {});
   }
 

@@ -87,8 +87,7 @@ in
   # matrix_dm_send and end_call tools, on for every platform like any plugin
   # toolset (end_call refuses outside voice sessions), /assist, which
   # answers approvals asked in the Matrix DM through hermes-voice
-  # (authenticated with API_SERVER_KEY), and the call transcript: one thread
-  # per voice call in the Matrix home room.
+  # (authenticated with API_SERVER_KEY).
   services.hermes-agent.extraPlugins = [
     (pkgs.runCommand "hermes-voice" { } ''
       cp -r ${../../tools/hermes-voice/hermes-plugin} $out
@@ -96,7 +95,8 @@ in
   ];
   services.hermes-agent.environment.HERMES_VOICE_URL = "http://localhost:${toString port}";
 
-  # How hermes-voice asks for an approval when no call can hear it: a
+  # How hermes-voice asks for an approval when no call can hear it, and
+  # where it posts each call's transcript after the hang-up: a
   # deliver_only route on the gateway's webhook platform (hermes.nix) posts
   # the text to the Matrix home room, no agent turn.
   services.hermes-agent.settings.platforms.webhook.extra.routes.voice-approval = {
