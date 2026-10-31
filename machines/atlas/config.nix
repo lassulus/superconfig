@@ -55,9 +55,9 @@
     # no stale mark when swayidle dies while idle
     ExecStopPost = "${pkgs.coreutils}/bin/rm -f %t/idle";
   };
-  # no screen lock either when systemd-lock-handler starts lock.target (sleep,
-  # loginctl lock-session) or via the sway lock keybindings
-  systemd.user.services.swaylock.wantedBy = lib.mkForce [ ];
+  # no screen lock either: not before sleep, on loginctl lock-session or via
+  # the sway lock keybindings
+  lass.noctalia.settings.lockscreen.enabled = false;
   systemd.services.idle-shutdown = {
     startAt = "minutely";
     path = [
