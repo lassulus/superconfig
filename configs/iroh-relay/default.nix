@@ -7,6 +7,7 @@ let
   # DEFAULT_RELAY_QUIC_PORT -- clients derive it from the relay url and expect
   # it there, so do not move it without telling every client.
   quicPort = 7842;
+  metricsPort = 9096;
   certGroup = "irohrelaycert";
 
   configFile = (
@@ -21,7 +22,7 @@ let
       enable_quic_addr_discovery = true
 
       enable_metrics = true
-      metrics_bind_addr = "127.0.0.1:9096"
+      metrics_bind_addr = "127.0.0.1:${toString metricsPort}"
 
       [tls]
       hostname = "${domain}"
@@ -48,6 +49,12 @@ in
   ...
 }:
 {
+  lass.ports = {
+    ${toString httpPort} = "iroh-relay";
+    ${toString quicPort} = "iroh-relay-quic";
+    ${toString metricsPort} = "iroh-relay-metrics";
+  };
+
   # Self-hosted iroh relay.
   #
   # A relay supplies the two things a relay-free iroh endpoint cannot get for
