@@ -11,6 +11,8 @@ let
   '';
 in
 {
+  lass.ports.${toString port} = "c-base-ai-tunnel";
+
   clan.core.vars.generators.c-base-ai-tunnel = {
     files."id_ed25519" = {
       owner = "c-base-tunnel";
