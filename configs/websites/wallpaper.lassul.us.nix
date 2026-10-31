@@ -6,6 +6,8 @@ let
   server = self.packages.${pkgs.stdenv.hostPlatform.system}.realwallpaper-server;
 in
 {
+  lass.ports.${toString port} = "wallpaper";
+
   # live world map wallpapers rendered on demand (tools/realwallpaper):
   # https://wallpaper.lassul.us/?location=52.52,13.40&variant=lens
   imports = [ ./default.nix ];

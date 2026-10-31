@@ -9,6 +9,8 @@ in
   ...
 }:
 {
+  lass.ports.${toString port} = "byoidc";
+
   # byoidc: OIDC provider that signs users in with their own OpenID provider.
   # Zitadel offers it as the IdP "Your own provider" (configs/zitadel.nix),
   # which uses the client "zitadel" below with the same client secret.
