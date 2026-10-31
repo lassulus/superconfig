@@ -1,4 +1,9 @@
-{ lib, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 let
   weather_for_ips = pkgs.writers.writePython3Bin "weather_for_ips" {
     libraries = [ pkgs.python3Packages.geoip2 ];
@@ -17,9 +22,9 @@ let
     curl -fSsz /tmp/GeoLite2-City.mmdb -o /tmp/GeoLite2-City.mmdb http://c.r/GeoLite2-City.mmdb
     MAXMIND_GEOIP_DB="/tmp/GeoLite2-City.mmdb"; export MAXMIND_GEOIP_DB
     (
-      curl -sS 'http://admin:hackme@localhost:8000/admin/listclients.json?mount=/radio.ogg'
-      curl -sS 'http://admin:hackme@localhost:8000/admin/listclients.json?mount=/radio.mp3'
-      curl -sS 'http://admin:hackme@localhost:8000/admin/listclients.json?mount=/radio.opus'
+      curl -sS 'http://admin:hackme@localhost:${toString config.lass.servicePorts.icecast}/admin/listclients.json?mount=/radio.ogg'
+      curl -sS 'http://admin:hackme@localhost:${toString config.lass.servicePorts.icecast}/admin/listclients.json?mount=/radio.mp3'
+      curl -sS 'http://admin:hackme@localhost:${toString config.lass.servicePorts.icecast}/admin/listclients.json?mount=/radio.opus'
     ) | jq -rs '
       [
         .[][].source|values|to_entries[].value |

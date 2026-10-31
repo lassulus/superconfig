@@ -27,14 +27,14 @@ let
     #   mv "$current_track" "$music_dir"/the_playlist/.graveyard/
     #   echo killing: "$track_infos"
     # fi
-    ${pkgs.curl}/bin/curl -fSs -X POST http://localhost:8002/skip |
+    ${pkgs.curl}/bin/curl -fSs -X POST http://localhost:${toString config.lass.servicePorts.radio}/skip |
       ${pkgs.jq}/bin/jq -r '.filename'
   '';
 
   good_track = pkgs.writers.writeBashBin "good_track" ''
     set -eu
 
-    current_track=$(${pkgs.curl}/bin/curl -fSs http://localhost:8002/current | ${pkgs.jq}/bin/jq -r .filename)
+    current_track=$(${pkgs.curl}/bin/curl -fSs http://localhost:${toString config.lass.servicePorts.radio}/current | ${pkgs.jq}/bin/jq -r .filename)
     track_infos=$(${print_current}/bin/print_current)
     # TODO come up with new rating, without moving files
     # if [[ "$current_track" =~ .*/the_playlist/music/.* ]]; then
@@ -46,11 +46,11 @@ let
   '';
 
   print_current = pkgs.writers.writeDashBin "print_current" ''
-    file=$(${pkgs.curl}/bin/curl -fSs http://localhost:8002/current |
+    file=$(${pkgs.curl}/bin/curl -fSs http://localhost:${toString config.lass.servicePorts.radio}/current |
       ${pkgs.jq}/bin/jq -r '.filename' |
       ${pkgs.gnused}/bin/sed 's,^${music_dir},,'
     )
-    link=$(${pkgs.curl}/bin/curl http://localhost:8002/current |
+    link=$(${pkgs.curl}/bin/curl http://localhost:${toString config.lass.servicePorts.radio}/current |
       ${pkgs.jq}/bin/jq -r '.filename' |
       ${pkgs.gnused}/bin/sed 's@.*\(.\{11\}\)\.ogg@https://youtu.be/\1@'
     )
@@ -74,6 +74,13 @@ in
     ./news.nix
     ./weather.nix
   ];
+
+  lass.ports = {
+    ${toString config.services.nginx.defaultHTTPListenPort} = "nginx-http";
+    ${toString config.services.icecast.listen.port} = "icecast";
+    # liquidsoap's harbor, radio.liq reads RADIO_PORT
+    "8002" = "radio";
+  };
 
   users.users = {
     "${name}" = rec {
@@ -111,7 +118,7 @@ in
       ExecStart = pkgs.writers.writeDash "radio_watcher" ''
         set -efux
         while :; do
-          ${pkgs.curl}/bin/curl -Ss http://localhost:8000/radio.ogg -o /dev/null
+          ${pkgs.curl}/bin/curl -Ss http://localhost:${toString config.lass.servicePorts.icecast}/radio.ogg -o /dev/null
           ${pkgs.systemd}/bin/systemctl restart radio
           sleep 60
         done
@@ -123,13 +130,13 @@ in
   services.liquidsoap.streams.radio = ./radio.liq;
   systemd.services.radio = {
     environment = {
-      RADIO_PORT = "8002";
+      RADIO_PORT = toString config.lass.servicePorts.radio;
       HOOK_TRACK_CHANGE = pkgs.writers.writeDash "on_change" ''
         set -xefu
         LIMIT=100000 #how many tracks to keep in the history
         HISTORY_FILE=/var/lib/radio/recent
 
-        listeners=$(${pkgs.curl}/bin/curl -fSs http://localhost:8000/status-json.xsl |
+        listeners=$(${pkgs.curl}/bin/curl -fSs http://localhost:${toString config.lass.servicePorts.icecast}/status-json.xsl |
           ${pkgs.jq}/bin/jq '[.icestats.source[].listeners] | add' || echo 0)
         echo "$(${pkgs.coreutils}/bin/date -Is)" "$filename" | ${pkgs.coreutils}/bin/tee -a "$HISTORY_FILE"
         echo "$(${pkgs.coreutils}/bin/tail -$LIMIT "$HISTORY_FILE")" > "$HISTORY_FILE"
@@ -190,7 +197,7 @@ in
   systemd.services.icecast.serviceConfig.Restart = "on-failure";
 
   networking.firewall.interfaces.retiolum.allowedTCPPorts = [
-    8002
+    config.lass.servicePorts.radio
   ];
 
   # POST /skip and /good, run as radio by fcgiwrap
@@ -202,15 +209,15 @@ in
   };
 
   networking.firewall.allowedTCPPorts = [
-    80
-    8000
+    config.lass.servicePorts.nginx-http
+    config.lass.servicePorts.icecast
   ];
   services.nginx = {
     enable = true;
     virtualHosts."radio.r" = {
       locations."/".extraConfig = ''
         # https://github.com/aswild/icecast-notes#core-nginx-config
-        proxy_pass http://localhost:8000;
+        proxy_pass http://localhost:${toString config.lass.servicePorts.icecast};
         # Disable request size limit, very important for uploading large files
         client_max_body_size 0;
 
@@ -242,7 +249,7 @@ in
         alias /var/lib/radio/recent;
       '';
       locations."= /current".extraConfig = ''
-        proxy_pass http://localhost:8002;
+        proxy_pass http://localhost:${toString config.lass.servicePorts.radio};
       '';
       locations."= /skip".extraConfig = trackAction skip_track;
       locations."= /good".extraConfig = trackAction good_track;

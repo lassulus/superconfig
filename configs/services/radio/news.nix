@@ -31,7 +31,7 @@ let
   send_to_radio = pkgs.writers.writeDashBin "send_to_radio" ''
     ${pkgs.vorbis-tools}/bin/oggenc - |
       ${self.packages.${pkgs.stdenv.hostPlatform.system}.cyberlocker-tools}/bin/cput news.ogg
-    ${pkgs.curl}/bin/curl -fSs -X POST http://localhost:8002/newsshow
+    ${pkgs.curl}/bin/curl -fSs -X POST http://localhost:${toString config.lass.servicePorts.radio}/newsshow
   '';
 
   gc_news = pkgs.writers.writeDashBin "gc_news" ''

@@ -1,4 +1,6 @@
-_: {
+{ config, ... }:
+{
+  lass.ports."8000" = "radio-redirect";
   services.nginx.virtualHosts."radio.lassul.us" = {
     enableACME = true;
     addSSL = true;
@@ -37,14 +39,14 @@ _: {
     listen = [
       {
         addr = "0.0.0.0";
-        port = 8000;
+        port = config.lass.servicePorts.radio-redirect;
       }
       {
         addr = "[::]";
-        port = 8000;
+        port = config.lass.servicePorts.radio-redirect;
       }
     ];
     locations."/".return = "301 http://radio.lassul.us$request_uri";
   };
-  networking.firewall.allowedTCPPorts = [ 8000 ];
+  networking.firewall.allowedTCPPorts = [ config.lass.servicePorts.radio-redirect ];
 }
