@@ -14,6 +14,7 @@
 {
   self,
   config,
+  lib,
   pkgs,
   ...
 }:
@@ -124,6 +125,11 @@ let
   };
 in
 {
+  lass.ports = {
+    ${toString routerPort} = "crit-router";
+  }
+  // lib.genAttrs (map toString (lib.range firstPort lastPort)) (port: "crit-${port}");
+
   environment.systemPackages = [ crit ];
 
   users.groups.crit.members = [

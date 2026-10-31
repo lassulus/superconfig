@@ -45,7 +45,7 @@ let
 
   # The gateway's webhook platform (settings.platforms.webhook below),
   # loopback only.
-  webhookPort = 8644;
+  webhookPort = config.lass.servicePorts.hermes-webhook;
 
   # Post a message to Matrix through the running gateway: the
   # "notify" webhook route below hands it to the gateway's own Matrix adapter.
@@ -114,6 +114,11 @@ let
 
 in
 {
+  lass.ports = {
+    "8642" = "hermes-api";
+    "8644" = "hermes-webhook";
+  };
+
   imports = [
     self.inputs.hermes-agent.nixosModules.default
     ../../configs/hermes-mail-vars.nix
@@ -493,7 +498,7 @@ in
       # ExecStartPre below (the retiolum address). Unlike Matrix there is no
       # per-user allowlist here — the bearer token is the whole gate.
       API_SERVER_ENABLED = "true";
-      API_SERVER_PORT = "8642";
+      API_SERVER_PORT = toString config.lass.servicePorts.hermes-api;
 
       # Mailbox hermes@lassul.us on neoprism (configs/mailserver.nix).
       # EMAIL_PASSWORD comes from the shared hermes-mail var via hermes-env.
@@ -599,7 +604,7 @@ in
   # and hermes.lassul.us answers 504, while a local curl to the same
   # address:port returns 200 — traffic to the host's own address goes through
   # lo, which is accepted.
-  networking.firewall.interfaces.retiolum.allowedTCPPorts = [ 8642 ];
+  networking.firewall.interfaces.retiolum.allowedTCPPorts = [ config.lass.servicePorts.hermes-api ];
 
   # "-" because the file is absent until the ExecStartPre above finds an
   # address, and a missing bind override must not fail the unit.

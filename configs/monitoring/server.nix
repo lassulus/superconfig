@@ -51,6 +51,8 @@ let
   grafanaVars = config.clan.core.vars.generators.monitoring-grafana.files;
 in
 {
+  lass.ports = lib.mapAttrs' (service: port: lib.nameValuePair (toString port) service) ports;
+
   services.victoriametrics = {
     enable = true;
     listenAddress = ":${toString ports.victoriametrics}";

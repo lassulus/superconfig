@@ -11,9 +11,11 @@
 }:
 let
   inherit (self.packages.${pkgs.system}) orca;
-  port = 6768;
+  port = config.lass.servicePorts.orca;
 in
 {
+  lass.ports."6768" = "orca";
+
   users.users.orca = {
     isNormalUser = true;
     home = "/home/orca";
