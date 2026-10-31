@@ -1,5 +1,6 @@
 {
   config,
+  lib,
   pkgs,
   self,
   ...
@@ -13,6 +14,9 @@ let
   vars = config.clan.core.vars.generators;
 in
 {
+  # "127.0.0.1:5751" -> "5751"
+  lass.ports.${lib.last (lib.splitString ":" config.services.niks3.httpAddr)} = "niks3";
+
   imports = [ self.inputs.niks3.nixosModules.niks3 ];
 
   # B2 credentials (prompted), the niks3 API token (generated).
