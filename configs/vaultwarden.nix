@@ -20,6 +20,7 @@
       EOF
     '';
   };
+  lass.ports.${toString config.services.vaultwarden.config.ROCKET_PORT} = "vaultwarden";
   services.vaultwarden = {
     enable = true;
     environmentFile = config.clan.core.vars.generators.vaultwarden.files."vaultwarden.env".path;

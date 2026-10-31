@@ -38,14 +38,14 @@ let
     # lass's own events and whatever Hermes adds. Book reads its events back:
     # deleting, moving or confirming one there manages the booking.
     caldav = {
-      url = "http://127.0.0.1:5232";
+      url = "http://127.0.0.1:${toString config.lass.servicePorts.radicale}";
       user = "lass";
       calendar = "calendar";
     };
     # Local postfix (configs/mailserver.nix) accepts from localhost and DKIM-signs.
     smtp = {
       host = "127.0.0.1";
-      port = 25;
+      port = config.lass.servicePorts.postfix-smtp;
       from = "book@lassul.us";
       notify = "lass@lassul.us";
     };
@@ -53,6 +53,8 @@ let
   };
 in
 {
+  lass.ports.${toString port} = "book";
+
   # book: request-and-approve booking page (tools/book). Requests land in
   # radicale (configs/radicale.nix) as TENTATIVE events and in lass's inbox
   # with an approve link.

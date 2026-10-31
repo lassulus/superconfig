@@ -4,13 +4,17 @@
   ...
 }:
 {
+  lass.ports = {
+    "3200" = "docuseal";
+    ${toString config.services.docuseal.redis.port} = "redis-docuseal";
+  };
   services.docuseal = {
     enable = true;
     host = "127.0.0.1";
-    port = 3200;
+    port = config.lass.servicePorts.docuseal;
     extraConfig = {
       SMTP_ADDRESS = "localhost";
-      SMTP_PORT = "25";
+      SMTP_PORT = toString config.lass.servicePorts.postfix-smtp;
       SMTP_DOMAIN = "lassul.us";
       SMTP_ENABLE_STARTTLS = "false";
     };
