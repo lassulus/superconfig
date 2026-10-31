@@ -205,6 +205,22 @@ let
   };
 in
 {
+  lass.ports =
+    let
+      # offsets from the base port, as in nixpkgs' sunshine firewall rules
+      port = offset: toString (config.services.sunshine.settings.port + offset);
+    in
+    {
+      ${port (-5)} = "sunshine-https";
+      ${port 0} = "sunshine";
+      ${port 1} = "sunshine-web";
+      ${port 9} = "sunshine-video";
+      ${port 10} = "sunshine-control";
+      ${port 11} = "sunshine-audio";
+      ${port 13} = "sunshine-mic";
+      ${port 21} = "sunshine-rtsp";
+    };
+
   environment.systemPackages = [ tablet-screen ];
 
   services.sunshine = {
