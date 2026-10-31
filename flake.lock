@@ -1,5 +1,25 @@
 {
   "nodes": {
+    "agentd": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1793464071,
+        "narHash": "sha256-xZk8RhvhO7vM7TlnFrJ0bhvLDbVZPXM2f/IBTOMsWuQ=",
+        "owner": "lassulus",
+        "repo": "agentd",
+        "rev": "655b5e08b635d0412ee51d99e07cfc73bc87b73d",
+        "type": "github"
+      },
+      "original": {
+        "owner": "lassulus",
+        "repo": "agentd",
+        "type": "github"
+      }
+    },
     "blobs": {
       "flake": false,
       "locked": {
@@ -728,6 +748,7 @@
     },
     "root": {
       "inputs": {
+        "agentd": "agentd",
         "byoidc": "byoidc",
         "clan-core": "clan-core",
         "disko": "disko",

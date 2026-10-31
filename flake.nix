@@ -61,6 +61,9 @@
     hermes-agent.url = "github:nousresearch/hermes-agent";
     hermes-agent.inputs.nixpkgs.follows = "nixpkgs";
 
+    agentd.url = "github:lassulus/agentd";
+    agentd.inputs.nixpkgs.follows = "nixpkgs";
+
     nixpkgs-triage.url = "github:Lassulus/nixpkgs-triage";
     nixpkgs-triage.inputs.nixpkgs.follows = "nixpkgs";
 
