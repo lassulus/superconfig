@@ -22,6 +22,14 @@ in
     ./hermes-mail-vars.nix
   ];
 
+  # fixed in nixos-mailserver
+  lass.ports = {
+    "25" = "postfix-smtp";
+    "465" = "postfix-submissions";
+    "993" = "dovecot-imaps";
+    "4190" = "dovecot-managesieve";
+  };
+
   mailserver = {
     enable = true;
     fqdn = "mail.lassul.us";
@@ -238,11 +246,11 @@ in
 
   # Firewall: SMTP(25), submission(587), submissions(465), IMAPS(993), ManageSieve(4190)
   networking.firewall.allowedTCPPorts = [
-    25
+    config.lass.servicePorts.postfix-smtp
     587
-    465
-    993
-    4190
+    config.lass.servicePorts.postfix-submissions
+    config.lass.servicePorts.dovecot-imaps
+    config.lass.servicePorts.dovecot-managesieve
   ];
 
   # muchsync: lass user needs access to vmail for notmuch/muchsync
@@ -268,14 +276,14 @@ in
             <displayShortName>lassul.us</displayShortName>
             <incomingServer type="imap">
               <hostname>mail.lassul.us</hostname>
-              <port>993</port>
+              <port>${toString config.lass.servicePorts.dovecot-imaps}</port>
               <socketType>SSL</socketType>
               <authentication>password-cleartext</authentication>
               <username>%EMAILADDRESS%</username>
             </incomingServer>
             <outgoingServer type="smtp">
               <hostname>mail.lassul.us</hostname>
-              <port>465</port>
+              <port>${toString config.lass.servicePorts.postfix-submissions}</port>
               <socketType>SSL</socketType>
               <authentication>password-cleartext</authentication>
               <username>%EMAILADDRESS%</username>
