@@ -5,8 +5,14 @@
 # Reachable only over retiolum (http://coaxmetal.r:8791) and locally;
 # Hermes is a client with the API token from the `agentd` vars generator.
 # omp needs a one-time login: `runuser -u agentd -- omp`, then /login.
+#
+# Dev mode: agentd runs ~/dev/agentd/bin/agentd when that link exists, else
+# the pinned package. `nix build --out-link ~/dev/agentd <agentd worktree>`
+# as the agentd user restarts it onto that build; `rm ~/dev/agentd` goes
+# back to the pinned one (omp/skills/agentd-dev).
 {
   config,
+  options,
   pkgs,
   self,
   ...
@@ -14,6 +20,7 @@
 let
   port = config.lass.servicePorts.agentd;
   home = "/var/lib/agentd";
+  pinned = self.inputs.agentd.packages.${pkgs.stdenv.hostPlatform.system}.default;
 in
 {
   imports = [ self.inputs.agentd.nixosModules.default ];
@@ -22,6 +29,12 @@ in
 
   services.agentd = {
     enable = true;
+    package = pkgs.writeShellScriptBin "agentd" ''
+      if [ -x ${home}/dev/agentd/bin/agentd ]; then
+        exec ${home}/dev/agentd/bin/agentd "$@"
+      fi
+      exec ${pinned}/bin/agentd "$@"
+    '';
     listen = "0.0.0.0:${toString port}";
     # agents may start in ~/src or in a worktree under ~/worktrees
     workspaceRoot = home;
@@ -29,7 +42,24 @@ in
       "${pkgs.omp}/bin/omp"
       "acp"
     ];
+    # nix, so agents can build and test (and deploy a dev agentd)
+    path = options.services.agentd.path.default ++ [ config.nix.package ];
     auth.tokensFile = config.clan.core.vars.generators.agentd.files.tokens.path;
+  };
+
+  # Restart onto a new dev build. Watching the directory, not the link:
+  # `nix build --out-link` renames a new link over the old one, which a
+  # watch on the link itself does not see.
+  systemd.paths.agentd-dev = {
+    wantedBy = [ "paths.target" ];
+    pathConfig = {
+      PathChanged = "${home}/dev";
+      Unit = "agentd-dev-restart.service";
+    };
+  };
+  systemd.services.agentd-dev-restart = {
+    serviceConfig.Type = "oneshot";
+    script = "${config.systemd.package}/bin/systemctl restart agentd.service";
   };
 
   # Inherited by every agent.
@@ -45,6 +75,7 @@ in
   systemd.tmpfiles.rules = [
     "d ${home}/src 0700 agentd agentd -"
     "d ${home}/worktrees 0700 agentd agentd -"
+    "d ${home}/dev 0700 agentd agentd -"
     "d ${home}/.omp 0700 agentd agentd -"
     "d ${home}/.omp/agent 0700 agentd agentd -"
     "L+ ${home}/.omp/agent/skills - - - - ${./omp/skills}"
