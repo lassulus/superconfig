@@ -7,9 +7,11 @@
 }:
 let
   domain = "transmission.lassul.us";
-  oauth2Proxy = "127.0.0.1:4182";
+  oauth2Proxy = "127.0.0.1:${toString config.lass.servicePorts.transmission-oauth2-proxy}";
 in
 {
+  lass.ports."4182" = "transmission-oauth2-proxy";
+
   # Transmission's web UI on yellow, public behind a login on id.lassul.us.
   # Only users an admin granted the Zitadel project below in the console can
   # log in. services.oauth2-proxy is single-instance and taken by
