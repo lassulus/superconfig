@@ -1,7 +1,7 @@
 # agentd (github:lassulus/agentd): coding agents (ACP harnesses) behind a
 # REST API. Runs as its own `agentd` user; the harness logins (~/.omp, ...)
 # live in /var/lib/agentd, agents work below /var/lib/agentd/workspace.
-# Reachable only over retiolum (http://coaxmetal.r:8790) and locally;
+# Reachable only over retiolum (http://coaxmetal.r:8791) and locally;
 # Hermes is a client with the API token from the `agentd` vars generator.
 # omp needs a one-time login: `runuser -u agentd -- omp`, then /login.
 {
@@ -11,7 +11,7 @@
   ...
 }:
 let
-  port = 8790;
+  port = 8791; # 8790 is hermes-voice
 in
 {
   imports = [ self.inputs.agentd.nixosModules.default ];
