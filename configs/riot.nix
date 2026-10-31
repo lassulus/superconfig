@@ -11,6 +11,9 @@ let
   ];
 in
 {
+  # forwarded to the container's sshd, nothing else is reachable on it
+  lass.ports."45622" = "riot-ssh";
+
   containers.riot = {
     config = {
       environment.systemPackages = [
@@ -69,7 +72,7 @@ in
     content = ''
       chain prerouting {
         type nat hook prerouting priority dstnat; policy accept;
-        tcp dport 45622 dnat to ${config.containers.riot.localAddress}:22
+        tcp dport ${toString config.lass.servicePorts.riot-ssh} dnat to ${config.containers.riot.localAddress}:22
       }
       chain postrouting {
         type nat hook postrouting priority srcnat; policy accept;
