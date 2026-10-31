@@ -111,6 +111,11 @@
 
   networking.useHostResolvConf = false;
   services.resolved.settings.Resolve.DNSStubListener = "no";
+  lass.ports = {
+    # fixed defaults of dnsmasq and of networkd's DHCPServer on int0
+    "53" = "dnsmasq";
+    "67" = "networkd-dhcp-server";
+  };
   services.dnsmasq = {
     enable = true;
     resolveLocalQueries = false;

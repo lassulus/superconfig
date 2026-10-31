@@ -18,7 +18,6 @@
   ...
 }:
 let
-  exporterPort = 9764;
   smokeping = config.services.prometheus.exporters.smokeping;
 
   # target label -> address. `cmts` is the first hop behind the cable modem
@@ -39,6 +38,11 @@ in
     ./internet-speedtest.nix
   ];
 
+  lass.ports = {
+    "9764" = "vodafone-station-exporter";
+    ${toString smokeping.port} = "smokeping-exporter";
+  };
+
   clan.core.vars.generators.vodafone-station.prompts.password = {
     description = "Vodafone Station (192.168.0.1) web UI admin password, passage admin/gg23/vodafone-router/pass";
     type = "hidden";
@@ -54,7 +58,7 @@ in
       ExecStart = lib.escapeShellArgs [
         (lib.getExe self.packages.${pkgs.stdenv.hostPlatform.system}.vodafone-station-exporter)
         "--listen"
-        "127.0.0.1:${toString exporterPort}"
+        "127.0.0.1:${toString config.lass.servicePorts.vodafone-station-exporter}"
         "--password-file"
         "%d/password"
       ];
@@ -80,7 +84,9 @@ in
     # logs in and out again, so keep the interval relaxed.
     sources.vodafone_station_raw = {
       type = "prometheus_scrape";
-      endpoints = [ "http://127.0.0.1:${toString exporterPort}/metrics" ];
+      endpoints = [
+        "http://127.0.0.1:${toString config.lass.servicePorts.vodafone-station-exporter}/metrics"
+      ];
       scrape_interval_secs = 60;
       scrape_timeout_secs = 45;
     };
