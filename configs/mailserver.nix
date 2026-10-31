@@ -244,10 +244,9 @@ in
     "nginx"
   ];
 
-  # Firewall: SMTP(25), submission(587), submissions(465), IMAPS(993), ManageSieve(4190)
+  # Firewall: SMTP(25), submissions(465), IMAPS(993), ManageSieve(4190)
   networking.firewall.allowedTCPPorts = [
     config.lass.servicePorts.postfix-smtp
-    587
     config.lass.servicePorts.postfix-submissions
     config.lass.servicePorts.dovecot-imaps
     config.lass.servicePorts.dovecot-managesieve

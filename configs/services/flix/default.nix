@@ -363,11 +363,9 @@
     config.lass.servicePorts.transmission
     config.lass.servicePorts.jellyfin
     config.lass.servicePorts.jellyfin-https
-    51413 # transmission traffic
     config.lass.servicePorts.samba
   ];
   networking.firewall.allowedUDPPorts = [
-    51413 # transmission traffic
     config.lass.servicePorts.jellyfin-dlna
     config.lass.servicePorts.jellyfin-discovery
   ];
