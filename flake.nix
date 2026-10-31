@@ -179,10 +179,39 @@
             };
             yggdrasil = {
               roles.default.tags.nixos = { };
+              roles.default.extraModules = [
+                (
+                  { config, lib, ... }:
+                  let
+                    inherit (config.services.yggdrasil) settings;
+                    # "tcp://[::]:6443" -> "6443"
+                    urlPort = url: lib.last (lib.splitString ":" url);
+                  in
+                  {
+                    lass.ports =
+                      lib.genAttrs (map urlPort settings.Listen) (port: "yggdrasil-${port}")
+                      // lib.genAttrs (lib.unique (map (i: toString i.Port) settings.MulticastInterfaces)) (
+                        _: "yggdrasil-multicast"
+                      )
+                      # multicast beacons, fixed in yggdrasil itself
+                      // {
+                        "9001" = "yggdrasil-beacon";
+                      };
+                  }
+                )
+              ];
             };
             tor-yggdrasil = {
               module.name = "tor";
               roles.client.tags.nixos = { };
+              roles.client.extraModules = [
+                (
+                  { config, ... }:
+                  {
+                    lass.ports.${toString config.services.tor.client.socksListenAddress.port} = "tor-socks";
+                  }
+                )
+              ];
               roles.server.tags.nixos = { };
               roles.server.settings = {
                 secretHostname = false;

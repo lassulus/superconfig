@@ -37,8 +37,9 @@ in
 {
   imports = [ ./monitoring/retiolum-ping.nix ];
 
-  networking.firewall.allowedTCPPorts = [ 655 ];
-  networking.firewall.allowedUDPPorts = [ 655 ];
+  lass.ports."655" = "retiolum";
+  networking.firewall.allowedTCPPorts = [ config.lass.servicePorts.retiolum ];
+  networking.firewall.allowedUDPPorts = [ config.lass.servicePorts.retiolum ];
 
   services.tinc.networks.retiolum = {
     package = tincrPkg;
