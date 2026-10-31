@@ -169,6 +169,8 @@ in
       };
     };
   };
+  # "http://127.0.0.1:4180" -> "4180"
+  lass.ports.${lib.last (lib.splitString ":" oauth2Proxy)} = "oauth2-proxy";
   services.oauth2-proxy = {
     enable = true;
     provider = "oidc";
