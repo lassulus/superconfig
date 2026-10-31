@@ -1,3 +1,4 @@
+{ config, ... }:
 {
   services.nginx = {
     virtualHosts = {
@@ -29,7 +30,7 @@
         forceSSL = true;
         enableACME = true;
         locations."/_matrix" = {
-          proxyPass = "http://[::1]:8008";
+          proxyPass = "http://[::1]:${toString config.lass.servicePorts.matrix-synapse}";
           # Without this Synapse sees every client as ::1, because
           # `x_forwarded = true` falls back to the peer address when no
           # X-Forwarded-For arrives. rc_login.address then becomes a single
