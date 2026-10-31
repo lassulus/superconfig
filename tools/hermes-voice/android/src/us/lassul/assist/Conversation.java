@@ -178,9 +178,14 @@ final class Conversation {
 
     /** Lines since the last hand-over to Hermes, of the given speakers. */
     List<Line> undelegated(String... speakers) {
+        return since(delegated, speakers);
+    }
+
+    /** Lines from index start on, of the given speakers. */
+    List<Line> since(int start, String... speakers) {
         List<Line> out = new ArrayList<>();
         List<String> wanted = Arrays.asList(speakers);
-        for (Line line : lines.subList(Math.min(delegated, lines.size()), lines.size())) {
+        for (Line line : lines.subList(Math.min(start, lines.size()), lines.size())) {
             if (wanted.contains(line.speaker)) {
                 out.add(line);
             }
