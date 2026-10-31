@@ -1,8 +1,12 @@
-{ ... }:
+{ config, ... }:
 {
+  lass.ports = {
+    ${toString config.services.nginx.defaultHTTPListenPort} = "nginx-http";
+    ${toString config.services.nginx.defaultSSLListenPort} = "nginx-https";
+  };
   networking.firewall.allowedTCPPorts = [
-    80
-    443
+    config.lass.servicePorts.nginx-http
+    config.lass.servicePorts.nginx-https
   ];
   security.acme.acceptTerms = true;
   security.acme.defaults.email = "acme@lassul.us";
