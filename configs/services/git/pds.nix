@@ -11,6 +11,8 @@ let
   zitadelEnv = config.lass.zitadel.projects.pds.apps.web.envFile.path;
 in
 {
+  lass.ports.${toString cfg.settings.server.port} = "tranquil-pds";
+
   # ATProto PDS (Tranquil). Accounts get handles <name>.pds.lassul.us and
   # log in via id.lassul.us. Accounts are created only by the SSO signup
   # (no invite code), nginx rejects all other account-creation routes.
@@ -71,7 +73,7 @@ in
         from_name = "lassul.us PDS";
         smarthost = {
           host = "mail.lassul.us";
-          port = 465;
+          port = config.lass.servicePorts.postfix-submissions;
           tls = "implicit";
         };
       };
