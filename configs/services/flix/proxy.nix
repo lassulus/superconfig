@@ -1,11 +1,18 @@
-{ self, pkgs, ... }:
+{
+  self,
+  config,
+  pkgs,
+  ...
+}:
 {
   imports = [ ./transmission-proxy.nix ];
 
   # POST → ipfs-upload backend (writes file to /var/lib/ipfs/download/<path>
   # and returns the CID). Anything else → the kubo gateway.
-  services.nginx.upstreams.ipfs-gateway.servers."127.0.0.1:8089" = { };
-  services.nginx.upstreams.ipfs-upload.servers."127.0.0.1:8090" = { };
+  services.nginx.upstreams.ipfs-gateway.servers."127.0.0.1:${toString config.lass.servicePorts.kubo-gateway}" =
+    { };
+  services.nginx.upstreams.ipfs-upload.servers."127.0.0.1:${toString config.lass.servicePorts.ipfs-upload}" =
+    { };
   services.nginx.appendHttpConfig = ''
     map $request_method $ipfs_lassul_upstream {
       default ipfs-gateway;

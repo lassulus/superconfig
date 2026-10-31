@@ -1,5 +1,13 @@
 { config, pkgs, ... }:
 {
+  # jellyfin in the yellow container, forwarded below
+  lass.ports = {
+    "1900" = "jellyfin-dlna";
+    "7359" = "jellyfin-discovery";
+    "8096" = "jellyfin";
+    "8920" = "jellyfin-https";
+  };
+
   lass.sync-containers3.containers.yellow = {
     sshKey = config.clan.core.vars.generators.yellow-container.files."yellow.sync.key".path;
     startCommand = ''
@@ -18,31 +26,31 @@
   };
 
   networking.firewall.allowedTCPPorts = [
-    8096
-    8920
+    config.lass.servicePorts.jellyfin
+    config.lass.servicePorts.jellyfin-https
   ];
   networking.firewall.allowedUDPPorts = [
-    1900
-    7359
+    config.lass.servicePorts.jellyfin-dlna
+    config.lass.servicePorts.jellyfin-discovery
   ];
   containers.yellow.forwardPorts = [
     {
-      hostPort = 8096;
+      hostPort = config.lass.servicePorts.jellyfin;
       containerPort = 8096;
       protocol = "tcp";
     }
     {
-      hostPort = 8920;
+      hostPort = config.lass.servicePorts.jellyfin-https;
       containerPort = 8920;
       protocol = "tcp";
     }
     {
-      hostPort = 1900;
+      hostPort = config.lass.servicePorts.jellyfin-dlna;
       containerPort = 1900;
       protocol = "udp";
     }
     {
-      hostPort = 7359;
+      hostPort = config.lass.servicePorts.jellyfin-discovery;
       containerPort = 7359;
       protocol = "udp";
     }

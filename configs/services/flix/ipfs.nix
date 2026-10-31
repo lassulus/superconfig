@@ -185,6 +185,16 @@ let
   '';
 in
 {
+  lass.ports = {
+    "5001" = "kubo-api";
+    "8089" = "kubo-gateway";
+    "8090" = "ipfs-upload";
+  }
+  // lib.genAttrs (lib.unique (
+    # "/ip4/0.0.0.0/udp/4001/quic-v1" -> "4001", nixpkgs' default Swarm addresses
+    map (addr: lib.elemAt (lib.splitString "/" addr) 4) config.services.kubo.settings.Addresses.Swarm
+  )) (_: "kubo-swarm");
+
   # symlink /var/download into IPFS root so --nocopy works
   systemd.tmpfiles.rules = [
     "L+ /var/lib/ipfs/download - - - - /var/download"
@@ -210,12 +220,12 @@ in
       Experimental.FilestoreEnabled = true;
       Addresses = {
         API = [
-          "/ip4/127.0.0.1/tcp/5001"
-          "/ip6/::1/tcp/5001"
+          "/ip4/127.0.0.1/tcp/${toString config.lass.servicePorts.kubo-api}"
+          "/ip6/::1/tcp/${toString config.lass.servicePorts.kubo-api}"
         ];
         Gateway = [
-          "/ip4/0.0.0.0/tcp/8089"
-          "/ip6/::/tcp/8089"
+          "/ip4/0.0.0.0/tcp/${toString config.lass.servicePorts.kubo-gateway}"
+          "/ip6/::/tcp/${toString config.lass.servicePorts.kubo-gateway}"
         ];
       };
       Datastore.StorageMax = "100GB";
@@ -280,7 +290,7 @@ in
         "IPFS_BIN=${pkgs.kubo}/bin/ipfs"
         "DOWNLOAD_ROOT=/var/lib/ipfs/download"
         "BIND=127.0.0.1"
-        "PORT=8090"
+        "PORT=${toString config.lass.servicePorts.ipfs-upload}"
       ];
       ExecStart = "${uploadServer}/bin/ipfs-upload-server";
       Restart = "always";
@@ -318,11 +328,11 @@ in
   };
 
   networking.firewall.allowedTCPPorts = [
-    4001 # IPFS swarm
-    8089 # IPFS gateway
+    config.lass.servicePorts.kubo-swarm
+    config.lass.servicePorts.kubo-gateway
   ];
   networking.firewall.allowedUDPPorts = [
-    4001 # IPFS swarm (QUIC)
+    config.lass.servicePorts.kubo-swarm # QUIC
   ];
 
   # Shadow `ipfs` in PATH with a wrapper that rejects `ipfs add` without
