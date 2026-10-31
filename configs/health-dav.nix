@@ -11,15 +11,15 @@
 }:
 let
   inherit (import ./monitoring/default.nix) ports;
-  port = 8097;
   dir = "/var/lib/health-dav";
 in
 {
+  lass.ports."8097" = "health-dav";
   services.webdav = {
     enable = true;
     settings = {
       address = "0.0.0.0";
-      inherit port;
+      port = config.lass.servicePorts.health-dav;
       prefix = "/dav";
       behindProxy = true;
       directory = dir;
@@ -51,7 +51,7 @@ in
     '';
   };
 
-  networking.firewall.interfaces.retiolum.allowedTCPPorts = [ port ];
+  networking.firewall.interfaces.retiolum.allowedTCPPorts = [ config.lass.servicePorts.health-dav ];
 
   systemd.services.gadgetbridge-import = {
     description = "Import the Gadgetbridge export into VictoriaMetrics";
