@@ -69,8 +69,6 @@
   };
 
   security.polkit.enable = true;
-  security.pam.services.swaylock = { };
-  security.pam.services.swaylock-plugin = { };
 
   programs.dconf.enable = lib.mkDefault true;
   services.gnome.gnome-keyring.enable = lib.mkDefault true;
@@ -89,7 +87,6 @@
   programs.wshowkeys.enable = true;
 
   environment.systemPackages = with pkgs; [
-    swaylock-effects # lockscreen
     pavucontrol
     swayidle
     rofi
@@ -135,37 +132,4 @@
   ];
 
   qt.platformTheme = "qt5ct";
-
-  # from nixpkgs/nixos/modules/services/system/systemd-lock-handler.md
-  services.systemd-lock-handler.enable = true;
-
-  systemd.user.services.swaylock = {
-    description = "Screen locker for Wayland";
-    documentation = [ "man:swaylock(1)" ];
-
-    # Requires graphical session
-    requisite = [ "graphical-session.target" ];
-    after = [ "graphical-session.target" ];
-
-    # If swaylock exits cleanly, unlock the session:
-    onSuccess = [ "unlock.target" ];
-
-    # When lock.target is stopped, stops this too:
-    partOf = [ "lock.target" ];
-
-    # Delay lock.target until this service is ready:
-    before = [ "lock.target" ];
-    wantedBy = [ "lock.target" ];
-
-    serviceConfig = {
-      Type = "simple";
-      # If swaylock crashes, always restart it immediately:
-      Restart = "on-failure";
-      RestartSec = 0;
-    };
-
-    path = [ pkgs.bash ];
-
-    serviceConfig.ExecStart = lib.getExe self.packages.${pkgs.system}.lockscreen;
-  };
 }

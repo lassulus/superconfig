@@ -43,6 +43,38 @@ in
   security.pam.services.swaylock = { };
   security.pam.services.swaylock.fprintAuth = true;
 
+  # swaylock on lock.target (sleep, loginctl lock-session); sway machines
+  # use noctalia's own lock screen instead (configs/desktops/sway/default.nix).
+  # From nixpkgs/nixos/modules/services/system/systemd-lock-handler.md
+  services.systemd-lock-handler.enable = true;
+
+  systemd.user.services.swaylock = {
+    description = "Screen locker for Wayland";
+    documentation = [ "man:swaylock(1)" ];
+
+    # Requires graphical session
+    requisite = [ "graphical-session.target" ];
+    after = [ "graphical-session.target" ];
+
+    # If swaylock exits cleanly, unlock the session:
+    onSuccess = [ "unlock.target" ];
+
+    # When lock.target is stopped, stops this too:
+    partOf = [ "lock.target" ];
+
+    # Delay lock.target until this service is ready:
+    before = [ "lock.target" ];
+    wantedBy = [ "lock.target" ];
+
+    serviceConfig = {
+      Type = "simple";
+      ExecStart = lib.getExe' pkgs.swaylock-effects "swaylock";
+      # If swaylock crashes, always restart it immediately:
+      Restart = "on-failure";
+      RestartSec = 0;
+    };
+  };
+
   # For greetd, we need a shell script into path, which lets us start qtile.service (after importing the environment of the login shell).
   services.greetd.settings.default_session.command =
     "${pkgs.tuigreet}/bin/tuigreet --remember --cmd ${pkgs.writeScript "startqtile" ''
@@ -65,6 +97,7 @@ in
   };
 
   environment.systemPackages = [
+    pkgs.swaylock-effects # also for the $mod+F11 binding in qtile.py
     pkgs.copyq
     (pkgs.writers.writeDashBin "qtile-debug-shell" { } ''
       ${pyEnv}/bin/ipython "$@"

@@ -1,4 +1,5 @@
 {
+  config,
   pkgs,
   lib,
   self,
@@ -238,6 +239,10 @@ in
     }
   ];
 
+  # noctalia owns the lock screen. It locks by itself before suspend (holding
+  # a logind sleep-delay inhibitor until the lock is up) and on logind's Lock
+  # signal (loginctl lock-session, needs XDG_SESSION_ID imported below); the
+  # idle timeout and the keybindings ask it to lock over IPC.
   systemd.user.services.swayidle = {
     description = "Idle manager for Wayland";
     documentation = [ "man:swayidle(1)" ];
@@ -247,9 +252,8 @@ in
       Type = "simple";
       ExecStart = ''
         ${pkgs.swayidle}/bin/swayidle -w \
-          timeout 120 '${lib.getExe' pkgs.systemd "systemctl"} --user start lock.target' \
-          timeout 300 '${lib.getExe' pkgs.systemd "systemctl"} suspend-then-hibernate' \
-          before-sleep '${lib.getExe' pkgs.systemd "systemctl"} --user start lock.target'
+          timeout 120 '${lib.getExe' config.lass.noctalia.package "noctalia"} msg session lock' \
+          timeout 300 '${lib.getExe' pkgs.systemd "systemctl"} suspend-then-hibernate'
       '';
       Restart = "on-failure";
       RestartSec = 1;
@@ -535,9 +539,9 @@ in
     # mod+ctrl+<digit> marks the focused window into that slot.
     ${windowBindings}
 
-    # screenlock (random live video/image from ~/wallpaper via swaylock-plugin)
-    bindsym $mod+F11 exec ${lib.getExe' pkgs.systemd "systemctl"} --user start lock.target
-    bindsym $mod+l exec ${lib.getExe' pkgs.systemd "systemctl"} --user start lock.target
+    # screenlock (noctalia's lock screen)
+    bindsym $mod+F11 exec ${lib.getExe' config.lass.noctalia.package "noctalia"} msg session lock
+    bindsym $mod+l exec ${lib.getExe' config.lass.noctalia.package "noctalia"} msg session lock
 
     # kill window (xkill-like)
     mode "kill" {
@@ -572,7 +576,7 @@ in
       # screen under sway. Setting it explicitly makes them use the PipeWire portal.
       dbus-update-activation-environment --systemd DISPLAY WAYLAND_DISPLAY SWAYSOCK XDG_CURRENT_DESKTOP=sway XDG_SESSION_TYPE=wayland
       systemctl --user set-environment XDG_SESSION_TYPE=wayland
-      systemctl --user import-environment DISPLAY WAYLAND_DISPLAY SWAYSOCK XDG_CURRENT_DESKTOP
+      systemctl --user import-environment DISPLAY WAYLAND_DISPLAY SWAYSOCK XDG_CURRENT_DESKTOP XDG_SESSION_ID
       systemctl --user start --no-block sway-session.target
       systemctl --user stop xdg-desktop-portal xdg-desktop-portal-wlr
       systemctl --user start xdg-desktop-portal xdg-desktop-portal-wlr
