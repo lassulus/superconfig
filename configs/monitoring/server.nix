@@ -20,6 +20,13 @@ let
   # retiolum one, not whatever private address it would pick on its own.
   retiolumIp = self.inputs.kartei.hosts.${name}.nets.retiolum.ip4.addr;
 
+  # Deletes an alert's messages once it resolves instead of posting a
+  # RESOLVED message. Upstream only knows new messages (an edit-on-resolve
+  # mode is requested in metio/matrix-alertmanager-receiver#170).
+  receiver = pkgs.matrix-alertmanager-receiver.overrideAttrs (old: {
+    patches = (old.patches or [ ]) ++ [ ./matrix-receiver-redact-resolved.patch ];
+  });
+
   receiverConfig = pkgs.writeText "matrix-alertmanager-receiver.json" (
     builtins.toJSON {
       http = {
@@ -136,7 +143,7 @@ in
     wants = [ "network-online.target" ];
     startLimitIntervalSec = 0;
     serviceConfig = {
-      ExecStart = "${lib.getExe pkgs.matrix-alertmanager-receiver} --config-path ${receiverConfig}";
+      ExecStart = "${lib.getExe receiver} --config-path ${receiverConfig}";
       EnvironmentFile = config.clan.core.vars.generators.monitoring-matrix.files.env.path;
       DynamicUser = true;
       Restart = "always";
