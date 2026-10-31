@@ -365,21 +365,11 @@
     config.lass.servicePorts.jellyfin-https
     51413 # transmission traffic
     config.lass.servicePorts.samba
-    111 # smbd
-    2049 # smbd
-    4000 # smbd
-    4001 # smbd
-    4002 # smbd
   ];
   networking.firewall.allowedUDPPorts = [
     51413 # transmission traffic
     config.lass.servicePorts.jellyfin-dlna
     config.lass.servicePorts.jellyfin-discovery
-    111 # smbd
-    2049 # smbd
-    4000 # smbd
-    4001 # smbd
-    4002 # smbd
   ];
   # we need this so we can forward into the the transmission network namespace
   networking.firewall.filterForward = false;
