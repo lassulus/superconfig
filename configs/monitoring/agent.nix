@@ -64,6 +64,9 @@ in
     enable = true;
     listenAddress = "127.0.0.1";
   };
+  config.lass.ports = lib.optionalAttrs smart {
+    ${toString config.services.prometheus.exporters.smartctl.port} = "smartctl-exporter";
+  };
 
   config.services.vector = {
     enable = true;

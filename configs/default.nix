@@ -60,6 +60,7 @@ in
     }
     {
       services.openssh.enable = true;
+      lass.ports = lib.genAttrs (map toString config.services.openssh.ports) (port: "sshd-${port}");
       services.openssh.settings.PasswordAuthentication = false;
       services.openssh.hostKeys = [
         {
