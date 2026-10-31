@@ -1,5 +1,7 @@
 { self, pkgs, ... }:
 {
+  imports = [ ./transmission-proxy.nix ];
+
   # POST → ipfs-upload backend (writes file to /var/lib/ipfs/download/<path>
   # and returns the CID). Anything else → the kubo gateway.
   services.nginx.upstreams.ipfs-gateway.servers."127.0.0.1:8089" = { };
