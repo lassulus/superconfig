@@ -1,4 +1,4 @@
-{ lib, pkgs, ... }:
+{ ... }:
 {
   networking.firewall.allowedTCPPorts = [
     80
@@ -9,15 +9,6 @@
 
   services.nginx = {
     enable = true;
-    # nginx lost libxcrypt from its closure, so crypt() is missing and
-    # auth_basic with bcrypt hashes answers 500 (docs.c3gsm.de). Fixed in
-    # nixpkgs 218990a1b2; evaluation fails once nixos-unstable has it.
-    package =
-      assert lib.assertMsg (!lib.elem pkgs.libxcrypt pkgs.nginxStable.buildInputs)
-        "nixpkgs nginx links libxcrypt again (NixOS/nixpkgs@218990a1b2), drop the override in configs/nginx.nix";
-      pkgs.nginxStable.overrideAttrs (old: {
-        buildInputs = old.buildInputs ++ [ pkgs.libxcrypt ];
-      });
     recommendedGzipSettings = true;
     recommendedOptimisation = true;
     recommendedTlsSettings = true;
