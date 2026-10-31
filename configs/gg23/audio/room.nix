@@ -1,19 +1,30 @@
 # Room speaker for the acheron audio hub (./hub.nix): plays what the hub
 # sends via ROC on the default output.
-{ self, lib, ... }:
+{
+  self,
+  config,
+  lib,
+  ...
+}:
 let
   kartei = import (self.inputs.kartei + "/modules/retiolum/hosts.nix") { inherit lib; };
   acheron = kartei.own.acheron.ip4;
 in
 {
+  lass.ports = {
+    "10001" = "roc-source";
+    "10002" = "roc-repair";
+    "10003" = "roc-control";
+  };
+
   services.pipewire.extraConfig.pipewire."10-audio-room"."context.modules" = [
     {
       name = "libpipewire-module-roc-source";
       args = {
         "local.ip" = "0.0.0.0";
-        "local.source.port" = 10001;
-        "local.repair.port" = 10002;
-        "local.control.port" = 10003;
+        "local.source.port" = config.lass.servicePorts.roc-source;
+        "local.repair.port" = config.lass.servicePorts.roc-repair;
+        "local.control.port" = config.lass.servicePorts.roc-control;
         "fec.code" = "disable";
         "sess.latency.msec" = 30;
         "source.name" = "roc-hub";
@@ -32,6 +43,6 @@ in
 
   # the hub sends over retiolum (see ./hub.nix), accept only acheron
   networking.firewall.extraInputRules = ''
-    iifname "retiolum" ip saddr ${acheron} udp dport 10001-10003 accept
+    iifname "retiolum" ip saddr ${acheron} udp dport ${toString config.lass.servicePorts.roc-source}-${toString config.lass.servicePorts.roc-control} accept
   '';
 }
