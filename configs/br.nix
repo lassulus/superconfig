@@ -15,6 +15,8 @@
   };
 
   services.saned.enable = true;
+  # fixed in nixpkgs' saned socket
+  lass.ports."6566" = "saned";
 
   # usage: scanimage -d "$(find-scanner bra)" --batch --format=tiff --resolution 150  -x 211 -y 298
   environment.systemPackages = [
