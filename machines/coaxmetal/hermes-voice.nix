@@ -6,12 +6,14 @@
   ...
 }:
 let
-  port = 8790;
+  port = config.lass.servicePorts.hermes-voice;
   # The gateway's webhook platform (hermes.nix), loopback only.
   webhookPort = config.services.hermes-agent.settings.platforms.webhook.extra.port;
 in
 {
   imports = [ ../../configs/hermes-voice-vars.nix ];
+
+  lass.ports."8790" = "hermes-voice";
 
   # hermes-voice (tools/hermes-voice): live voice conversations with Hermes
   # through OpenAI's gpt-live-1. Runs next to Hermes so its API key never
