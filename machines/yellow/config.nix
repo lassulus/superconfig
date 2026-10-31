@@ -4,9 +4,6 @@
   lib,
   ...
 }:
-let
-  torrentport = 56709; # port forwarded in airvpn webinterface
-in
 {
   clan.core.vars.password-store.secretLocation = "/var/state/secret-vars";
 
@@ -19,7 +16,8 @@ in
     ./backup.nix
   ];
 
-  services.transmission.settings.peer-port = torrentport;
+  lass.ports."56709" = "transmission-peer"; # port forwarded in airvpn webinterface
+  services.transmission.settings.peer-port = config.lass.servicePorts.transmission-peer;
 
   lass.sync-containers3.inContainer = {
     enable = true;
