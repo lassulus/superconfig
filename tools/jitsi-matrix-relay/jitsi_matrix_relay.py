@@ -18,6 +18,7 @@ from urllib.parse import quote
 import aiohttp
 import slixmpp
 from aiohttp import web
+from slixmpp.exceptions import IqError, IqTimeout
 from slixmpp.xmlstream import ET
 
 env = os.environ
@@ -72,7 +73,14 @@ class Jitsi(slixmpp.ClientXMPP):
                 **{"machine-uid": uuid.uuid4().hex},
             )
         )
-        await iq.send()
+        try:
+            await iq.send()
+        except (IqError, IqTimeout):
+            # e.g. jicofo not up yet after a restart: an exception here
+            # would only end this handler and leave us outside the room
+            logging.exception("focus did not set up the room")
+            self.disconnect()
+            return
         presence = self.make_presence(pto=f"{MUC}/{self.id}")
         x = ET.SubElement(presence.xml, f"{{{MUC_NS}}}x")
         ET.SubElement(x, f"{{{MUC_NS}}}history", maxstanzas="0")
