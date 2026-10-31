@@ -41,6 +41,11 @@ let
   };
 in
 {
+  lass.ports = {
+    ${toString port} = "zitadel";
+    ${toString config.services.postgresql.settings.port} = "postgresql";
+  };
+
   # Zitadel: identity provider for lassul.us services (OIDC). Anyone can
   # register; users sign in with a passkey or an external login (GitHub,
   # Google, their own OpenID provider via byoidc) linked to their account. The
@@ -100,7 +105,7 @@ in
       };
       Database.postgres = {
         Host = "/run/postgresql";
-        Port = 5432;
+        Port = config.lass.servicePorts.postgresql;
         Database = "zitadel";
         User.Username = "zitadel";
         Admin.Username = "zitadel";
