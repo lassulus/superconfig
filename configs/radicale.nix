@@ -69,11 +69,12 @@ let
   '';
 in
 {
+  lass.ports."5232" = "radicale";
   services.radicale = {
     enable = true;
     settings = {
       server = {
-        hosts = [ "127.0.0.1:5232" ];
+        hosts = [ "127.0.0.1:${toString config.lass.servicePorts.radicale}" ];
       };
       auth = {
         type = "htpasswd";
@@ -155,7 +156,7 @@ in
     # (PROPFIND /, or the web client's cross-origin GET /) still reaches
     # radicale.
     locations."= /" = {
-      proxyPass = "http://127.0.0.1:5232";
+      proxyPass = "http://127.0.0.1:${toString config.lass.servicePorts.radicale}";
       extraConfig =
         cors
         + ''
@@ -166,7 +167,7 @@ in
         + proxyHeaders;
     };
     locations."/" = {
-      proxyPass = "http://127.0.0.1:5232";
+      proxyPass = "http://127.0.0.1:${toString config.lass.servicePorts.radicale}";
       extraConfig = cors + proxyHeaders;
     };
   };

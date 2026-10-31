@@ -4,6 +4,8 @@ let
   port = 8476;
 in
 {
+  lass.ports.${toString port} = "nixpkgs-triage";
+
   # read-only dashboard of open nixpkgs PRs (github.com/Lassulus/nixpkgs-triage)
   imports = [ self.inputs.nixpkgs-triage.nixosModules.default ];
 

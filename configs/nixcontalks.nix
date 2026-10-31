@@ -56,6 +56,11 @@ let
   };
 in
 {
+  lass.ports = {
+    ${toString port} = "nixcontalks";
+    ${toString oauth2ProxyPort} = "nixcontalks-oauth2-proxy";
+  };
+
   # NixCon speakers get /<proposal_code>/yes and /<proposal_code>/no links
   # in a pretalx mail to release their talk video under CC BY-SA 4.0
   # (tools/nixcontalks); the no page takes an optional comment. The answers

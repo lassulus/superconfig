@@ -1,7 +1,11 @@
 { config, ... }:
 {
+  lass.ports = {
+    "8081" = "owncast";
+    ${toString config.services.owncast.rtmp-port} = "owncast-rtmp";
+  };
   services.owncast.enable = true;
-  services.owncast.port = 8081;
+  services.owncast.port = config.lass.servicePorts.owncast;
   services.nginx = {
     enable = true;
     virtualHosts."cast.lassul.us" = {
