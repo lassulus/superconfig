@@ -1,5 +1,14 @@
-{ ... }:
+{ config, lib, ... }:
 {
+  lass.ports = {
+    "5001" = "kubo-api";
+    "8089" = "kubo-gateway";
+  }
+  // lib.genAttrs (lib.unique (
+    # "/ip4/0.0.0.0/udp/4001/quic-v1" -> "4001", nixpkgs' default Swarm addresses
+    map (addr: lib.elemAt (lib.splitString "/" addr) 4) config.services.kubo.settings.Addresses.Swarm
+  )) (_: "kubo-swarm");
+
   # Full kubo (IPFS) node. Data lives under /var/lib/ipfs on the 4 TB root.
   # Uploads are copied into the blockstore (NO filestore/--nocopy on this host).
   services.kubo = {
@@ -9,8 +18,8 @@
     # explicit `ipfs-gc` command (see ipfs-endpoint.nix).
     settings = {
       Addresses = {
-        API = [ "/ip4/127.0.0.1/tcp/5001" ];
-        Gateway = [ "/ip4/127.0.0.1/tcp/8089" ];
+        API = [ "/ip4/127.0.0.1/tcp/${toString config.lass.servicePorts.kubo-api}" ];
+        Gateway = [ "/ip4/127.0.0.1/tcp/${toString config.lass.servicePorts.kubo-gateway}" ];
       };
       # Serve only local/pinned blocks -> the public gateway is not an open
       # proxy for arbitrary network CIDs.
@@ -58,6 +67,6 @@
   };
 
   # incoming swarm connections (TCP + QUIC/UDP on 4001)
-  networking.firewall.allowedTCPPorts = [ 4001 ];
-  networking.firewall.allowedUDPPorts = [ 4001 ];
+  networking.firewall.allowedTCPPorts = [ config.lass.servicePorts.kubo-swarm ];
+  networking.firewall.allowedUDPPorts = [ config.lass.servicePorts.kubo-swarm ];
 }
