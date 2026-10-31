@@ -19,6 +19,7 @@
     ../../configs/orca/ide.nix
     ../../configs/orca/server.nix
     ../../configs/crit.nix
+    ../../configs/services/agentd
     ../../configs/monitoring/server.nix
     ./strom.nix
     ./hermes.nix

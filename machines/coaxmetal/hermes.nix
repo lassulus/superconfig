@@ -675,6 +675,7 @@ in
       "hermes-anthropic"
       "hermes-mail"
       "hermes-homeassistant"
+      "agentd"
     ];
     files."hermes.env" = { };
     # clan regenerates a var only when its validation changes, not when the
@@ -691,6 +692,7 @@ in
       ANTHROPIC_TOKEN=$(cat "$in"/hermes-anthropic/oauth-token)
       EMAIL_PASSWORD=$(cat "$in"/hermes-mail/password)
       HASS_TOKEN=$(cat "$in"/hermes-homeassistant/token)
+      AGENTD_TOKEN=$(cat "$in"/agentd/hermes-token)
       EOF
     '';
   };
