@@ -14,6 +14,14 @@ in
     ./mautrix-whatsapp.nix
   ];
 
+  lass.ports =
+    lib.mapAttrs' (
+      name: bridge: lib.nameValuePair (toString bridge.port) "mautrix-${name}"
+    ) appservices.bridges
+    // {
+      ${toString config.services.postgresql.settings.port} = "postgresql";
+    };
+
   services.postgresql.enable = true;
   # the modules only order the bridges after a local Synapse, which used to
   # bring postgres up first; without it they race the postgres socket
