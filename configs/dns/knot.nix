@@ -32,6 +32,8 @@ in
 #     @ IN NS ns1.lassul.us.
 #   '';
 {
+  lass.ports."53" = "knot";
+
   # TSIG key for the acme-review updates, for knot and for lego
   clan.core.vars.generators.knot-acme-review = {
     files."knot-key.conf".owner = "knot";
@@ -54,8 +56,8 @@ in
     settings = {
       server = {
         listen = [
-          "${ip4}@53"
-          "${ip6}@53"
+          "${ip4}@${toString config.lass.servicePorts.knot}"
+          "${ip6}@${toString config.lass.servicePorts.knot}"
         ];
       };
 
@@ -222,6 +224,6 @@ in
   # disable to enable auto key generation
   systemd.services.knot.serviceConfig.SystemCallFilter = lib.mkForce [ ];
 
-  networking.firewall.allowedTCPPorts = [ 53 ];
-  networking.firewall.allowedUDPPorts = [ 53 ];
+  networking.firewall.allowedTCPPorts = [ config.lass.servicePorts.knot ];
+  networking.firewall.allowedUDPPorts = [ config.lass.servicePorts.knot ];
 }
