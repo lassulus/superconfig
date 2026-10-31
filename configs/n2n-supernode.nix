@@ -3,6 +3,8 @@ let
   port = 7654;
 in
 {
+  lass.ports.${toString port} = "n2n-supernode";
+
   systemd.services.n2n-supernode = {
     description = "n2n supernode";
     wantedBy = [ "multi-user.target" ];
