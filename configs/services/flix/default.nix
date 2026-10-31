@@ -1,4 +1,5 @@
 {
+  self,
   config,
   lib,
   pkgs,
@@ -339,6 +340,7 @@
   networking.firewall.allowedTCPPorts = [
     80 # nginx
     443 # nginx
+    6767 # gamarr
     9091 # transmission web
     8096 # jellyfin
     8920 # jellyfin
@@ -429,6 +431,26 @@
     user = "download";
     group = "download";
   };
+  # games, web ui on yellow.r:6767
+  systemd.services.gamarr = {
+    after = [ "network.target" ];
+    wantedBy = [ "multi-user.target" ];
+    serviceConfig = {
+      User = "download";
+      Group = "download";
+      StateDirectory = "gamarr";
+      ExecStart = "${
+        self.packages.${pkgs.stdenv.hostPlatform.system}.gamarr
+      }/bin/Gamarr -nobrowser -data=/var/lib/gamarr";
+      Restart = "on-failure";
+    };
+  };
+  systemd.tmpfiles.settings.gamarr."/var/download/games".d = {
+    user = "download";
+    group = "download";
+    mode = "0775";
+  };
+
   # sonarr needs unsecure packages
   nixpkgs.config.permittedInsecurePackages = [
     "aspnetcore-runtime-wrapped-6.0.36"
@@ -482,6 +504,7 @@
         prowlarr = "/var/lib/private/prowlarr/prowlarr.db";
         jellyseerr = "/var/lib/private/jellyseerr/config/db/db.sqlite3";
         sabnzbd = "/var/lib/sabnzbd/admin/history1.db";
+        gamarr = "/var/lib/gamarr/gamarr.db";
       };
       dirs = [
         "/var/lib/jellyfin"
@@ -490,6 +513,7 @@
         "/var/lib/private/prowlarr"
         "/var/lib/private/jellyseerr"
         "/var/lib/sabnzbd"
+        "/var/lib/gamarr"
       ];
     in
     {
@@ -508,6 +532,8 @@
         "/var/lib/private/jellyseerr/config/db/db.sqlite3*"
         "/var/lib/sabnzbd/Downloads"
         "/var/lib/sabnzbd/logs"
+        "/var/lib/gamarr/logs"
+        "/var/lib/gamarr/MediaCover"
       ]
       # the live databases, also the unneeded servarr logs.db
       ++ map (dir: "${dir}/*.db") dirs
