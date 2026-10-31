@@ -1,4 +1,7 @@
+{ config, ... }:
 {
+  lass.ports."1337" = "zigbee2mqtt";
+
   # symlink the zigbee controller
   services.udev.extraRules = ''
     SUBSYSTEM=="tty", ATTRS{idVendor}=="0451", ATTRS{idProduct}=="16a8", SYMLINK+="cc2531", MODE="0660", GROUP="dialout"
@@ -12,7 +15,7 @@
     enable = true;
     settings = {
       homeassistant.enabled = true;
-      frontend.port = 1337;
+      frontend.port = config.lass.servicePorts.zigbee2mqtt;
       experimental.new_api = true;
       permit_join = false;
       mqtt = {
