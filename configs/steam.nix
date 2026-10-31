@@ -1,6 +1,18 @@
 { pkgs, lib, ... }:
 
 {
+  # fixed in nixpkgs' steam module, opened by remotePlay and dedicatedServer
+  lass.ports = lib.genAttrs (map toString (
+    [
+      10400
+      10401
+      27015
+      27036
+      27037
+    ]
+    ++ lib.range 27031 27035
+  )) (port: "steam-${port}");
+
   programs.steam = {
     enable = true;
     gamescopeSession.enable = true;
