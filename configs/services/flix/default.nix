@@ -340,7 +340,7 @@
   networking.firewall.allowedTCPPorts = [
     80 # nginx
     443 # nginx
-    6767 # gamarr
+    6969 # gamarr
     9091 # transmission web
     8096 # jellyfin
     8920 # jellyfin
@@ -431,8 +431,9 @@
     user = "download";
     group = "download";
   };
-  # games, web ui on yellow.r:6767
+  # games, web ui on yellow.r:6969 (its default 6767 is bazarr's)
   systemd.services.gamarr = {
+    environment.GAMARR__SERVER__PORT = "6969";
     after = [ "network.target" ];
     wantedBy = [ "multi-user.target" ];
     serviceConfig = {
