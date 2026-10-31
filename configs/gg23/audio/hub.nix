@@ -208,6 +208,17 @@ let
   json = name: value: pkgs.writeText name (builtins.toJSON value);
 in
 {
+  lass.ports = {
+    "10001" = "roc-source";
+    "10002" = "roc-repair";
+    "10003" = "roc-control";
+    # AirPlay 2 RTSP, fixed in shairport-sync
+    "7000" = "shairport-sync";
+    # PTP event and general messages, fixed in nqptp
+    "319" = "nqptp-event";
+    "320" = "nqptp-general";
+  };
+
   virtualisation.oci-containers.containers.homeassistant.volumes = [
     "${
       json "audio.yaml" {
@@ -236,9 +247,9 @@ in
           name = "libpipewire-module-roc-source";
           args = {
             "local.ip" = "0.0.0.0";
-            "local.source.port" = 10001;
-            "local.repair.port" = 10002;
-            "local.control.port" = 10003;
+            "local.source.port" = config.lass.servicePorts.roc-source;
+            "local.repair.port" = config.lass.servicePorts.roc-repair;
+            "local.control.port" = config.lass.servicePorts.roc-control;
             "fec.code" = "disable";
             "sess.latency.msec" = 30;
             "source.name" = "roc-lan";
