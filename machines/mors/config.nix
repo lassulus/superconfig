@@ -25,6 +25,7 @@
     ../../configs/autotether.nix
     ../../configs/autoupdate.nix
     {
+      lass.ports.${toString config.services.nginx.defaultHTTPListenPort} = "nginx-http";
       services.nginx = {
         enable = true;
         virtualHosts.default = {
@@ -41,6 +42,7 @@
       };
     }
     {
+      lass.ports.${toString config.services.redis.servers."".port} = "redis";
       services.redis.servers."".enable = true;
     }
     {
