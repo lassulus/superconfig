@@ -32,7 +32,9 @@
     };
     sources.hass_raw = {
       type = "prometheus_scrape";
-      endpoints = [ "http://127.0.0.1:8123/api/prometheus" ];
+      endpoints = [
+        "http://127.0.0.1:${toString config.lass.servicePorts.home-assistant}/api/prometheus"
+      ];
       auth = {
         strategy = "bearer";
         token = "SECRET[credentials.hass-token]";

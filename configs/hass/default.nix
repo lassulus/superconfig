@@ -1,4 +1,9 @@
-{ config, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 {
   imports = [
     ./zigbee.nix
@@ -6,15 +11,21 @@
     ./oidc.nix
   ];
 
+  lass.ports = {
+    # fixed in the home-assistant image, it runs with --network=host
+    "8123" = "home-assistant";
+    ${toString (lib.head config.services.mosquitto.listeners).port} = "mosquitto";
+  };
+
   # Runs on the gg23 router: the LAN (int0) is a trusted interface there
   # (configs/gg23.nix), et0 is the WAN and stays closed.
   networking.firewall.interfaces = {
     retiolum.allowedTCPPorts = [
-      8123 # hass
-      1337 # zigbee2mqtt frontend
+      config.lass.servicePorts.home-assistant
+      config.lass.servicePorts.zigbee2mqtt
     ];
-    wiregrill.allowedTCPPorts = [ 8123 ]; # hass
-    zttzibeakb.allowedTCPPorts = [ 8123 ]; # hass
+    wiregrill.allowedTCPPorts = [ config.lass.servicePorts.home-assistant ];
+    zttzibeakb.allowedTCPPorts = [ config.lass.servicePorts.home-assistant ];
   };
 
   systemd.services.hass-update = {
