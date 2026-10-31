@@ -1,5 +1,14 @@
-{ pkgs, ... }:
 {
+  config,
+  lib,
+  pkgs,
+  ...
+}:
+{
+  # "localhost:631" -> "631"
+  lass.ports = lib.genAttrs (map (
+    addr: lib.last (lib.splitString ":" addr)
+  ) config.services.printing.listenAddresses) (_: "cups");
   services.printing = {
     enable = true;
     browsing = true;
