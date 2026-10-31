@@ -1,0 +1,1 @@
+Before reading or changing code in a git repository, follow the git-worktrees skill (skill://git-worktrees): clones live in ~/src/<repo>, and you work only in your own worktree ~/worktrees/<repo>-<topic>, never in the clone itself.
