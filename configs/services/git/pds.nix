@@ -98,7 +98,12 @@ in
   # only the users listed here get a project grant and can log in
   lass.zitadel.projects.pds = {
     access = "declarative";
-    users = [ "lass@lassul.us" ];
+    users = [
+      "lass@lassul.us"
+      # agentd's account (configs/services/agentd), forks and PRs on
+      # git.lassul.us
+      "slop@lassul.us"
+    ];
     apps.web = {
       redirectUris = [ "https://${domain}/oauth/sso/callback" ];
       authMethod = "post";
