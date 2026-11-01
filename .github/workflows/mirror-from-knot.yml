@@ -5,16 +5,16 @@ name: mirror-from-knot
 # from the knot over public HTTPS and pushed here, fast-forward only: a
 # diverged GitHub master fails the run instead of being overwritten.
 #
-# Pushes made with GITHUB_TOKEN don't trigger other workflows, so CI (build
-# all machines, fill cache.lassul.us) is dispatched explicitly afterwards.
+# Pushes with UPDATE_PKGS_TOKEN (fine-grained PAT, workflows write): the
+# GITHUB_TOKEN may not push commits that touch .github/workflows, and a PAT
+# push also starts CI (build all machines, fill cache.lassul.us) on its own.
 on:
   schedule:
     - cron: "17 * * * *"
   workflow_dispatch:
 
 permissions:
-  contents: write
-  actions: write
+  contents: read
 
 concurrency:
   group: mirror-from-knot
@@ -28,9 +28,8 @@ jobs:
         with:
           ref: master
           fetch-depth: 0
+          token: ${{ secrets.UPDATE_PKGS_TOKEN }}
       - name: fast-forward master to the knot
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           git fetch https://knot.lassul.us/lass.pds.lassul.us/superconfig master
           new=$(git rev-parse FETCH_HEAD)
@@ -44,4 +43,3 @@ jobs:
             exit 1
           }
           git push origin "$new:refs/heads/master"
-          gh workflow run ci.yml --ref master
