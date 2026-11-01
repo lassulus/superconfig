@@ -13,7 +13,7 @@ let
   stateDir = "/var/lib/tangled-knot";
   listenAddr = "127.0.0.1:${toString config.lass.servicePorts.tangled-knot}";
   sshPort = 2222;
-  package = self.packages.${pkgs.stdenv.hostPlatform.system}.tangled.knot-rs;
+  package = self.packages.${pkgs.stdenv.hostPlatform.system}.tangled;
 
   # `knot-server config-template` lists the keys; upstream's defaults, except
   # where commented
@@ -21,7 +21,6 @@ let
     server = {
       hostname = domain;
       admins = [ ownerDid ];
-      appview_endpoint = "https://git.lassul.us";
       listen_addr = listenAddr;
       internal_listen_addr = "[::1]:${toString config.lass.servicePorts.tangled-knot-internal}";
       ssh_listen_addr = "[::]:${toString sshPort}";
@@ -29,7 +28,15 @@ let
     };
     atproto.plc_directory = "https://plc.directory";
     acl.admission = "closed";
-    repo.scan_path = "${stateDir}/repos";
+    repo = {
+      scan_path = "${stateDir}/repos";
+      # knot members (our own accounts, e.g. agentd's slopulus) may open
+      # issues and PRs and comment; the default lets only collaborators
+      contribution_policy = "members";
+    };
+    # issue/PR attachments too, not only LFS
+    lfs.store_path = "${stateDir}/lfs";
+    contact.email = "lass@lassul.us";
     # sha256 repos can't exchange objects with sha1 ones (github, cgit)
     git.object_format = "sha1";
     secrets = {
@@ -52,7 +59,7 @@ let
     };
   };
   configFile = pkgs.runCommandLocal "knot-config.toml" { nativeBuildInputs = [ package ]; } ''
-    knot-server validate --config-only ${rendered}
+    knot-server validate --config-only --config ${rendered}
     ln -s ${rendered} $out
   '';
 in
@@ -63,14 +70,16 @@ in
     ${toString sshPort} = "tangled-knot-ssh";
   };
 
-  # Tangled knot 2 (knot-rs): git hosting for git.lassul.us, following
+  # Tangled knot 2 (knot-rs): git hosting, with tangled.org as the web UI
+  # (git.lassul.us redirects there) until upstream supports self-hosting its
+  # new frontend. Issues and PRs live on the knot too. Following
   # tangled's nix/modules/knot-rs.nix without its flake (the module files are
   # in a fetched source, importing them would be IFD): plain HTTP behind
   # nginx, unprivileged ports, keys in stateDir. The Go knot's unit and user
   # are both named knot, which the DNS server already uses.
   # Knot 2 serves ssh itself on [::]:2222 (it binds a single address, and
   # sshd keeps 22). Port 22 on the public addresses is redirected to it, so
-  # git@knot.lassul.us:<owner>/<repo> works as the appview shows it. Admin
+  # git@knot.lassul.us:<owner>/<repo> works as tangled.org shows it. Admin
   # ssh stays on 22 via retiolum/wiregrill and on public 45621
   # (ssh-redirect.nix).
 
@@ -103,6 +112,11 @@ in
       inherit user;
       group = user;
     };
+    "${stateDir}/lfs".d = {
+      mode = "0750";
+      inherit user;
+      group = user;
+    };
   };
 
   systemd.services.knot-rs = {
@@ -119,7 +133,7 @@ in
       UMask = "0077";
       WorkingDirectory = stateDir;
       EnvironmentFile = config.clan.core.vars.generators.tangled-knot.files."knot.env".path;
-      ExecStart = "${lib.getExe package} /etc/knot/config.toml";
+      ExecStart = "${lib.getExe package} --config /etc/knot/config.toml";
       Restart = "on-failure";
       RestartSec = 5;
       TimeoutStopSec = 120;
@@ -131,6 +145,7 @@ in
       ReadWritePaths = [
         stateDir
         "${stateDir}/repos"
+        "${stateDir}/lfs"
       ];
       NoNewPrivileges = true;
       ProtectProc = "invisible";
@@ -168,24 +183,16 @@ in
 
   networking.firewall.allowedTCPPorts = [ sshPort ];
 
-  # knot 2 doesn't request crawls (no KNOT_MIRRORS), so subscribe our
-  # mirror (knotmirror.nix) to the knot's event stream whenever either
-  # starts; the mirror marks a knot offline after it was unreachable for a
-  # while
-  systemd.services.knotmirror-request-crawl = {
-    wantedBy = [
-      "knot-rs.service"
-      "knotmirror.service"
-    ];
-    after = [
-      "knot-rs.service"
-      "knotmirror.service"
-    ];
+  # The knot asks the public relays to crawl it on start, but not
+  # tangled.org's indexer, which feeds the web UI
+  systemd.services.knot-request-crawl = {
+    wantedBy = [ "knot-rs.service" ];
+    after = [ "knot-rs.service" ];
     serviceConfig.Type = "oneshot";
     script = ''
-      ${pkgs.curl}/bin/curl -fsS --retry 10 --retry-connrefused \
+      ${pkgs.curl}/bin/curl -fsS --retry 10 \
         -H 'Content-Type: application/json' -d '{"hostname":"${domain}"}' \
-        http://127.0.0.1:${toString config.lass.servicePorts.knotmirror}/xrpc/sh.tangled.sync.requestCrawl
+        https://index.tangled.network/xrpc/com.atproto.sync.requestCrawl
     '';
   };
 
@@ -210,7 +217,7 @@ in
     locations."/" = {
       proxyPass = "http://${listenAddr}";
       recommendedProxySettings = true;
-      # /events
+      # /xrpc/com.atproto.sync.subscribeRepos
       proxyWebsockets = true;
       extraConfig = ''
         proxy_read_timeout 1d;

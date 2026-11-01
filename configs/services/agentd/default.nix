@@ -21,7 +21,7 @@ let
   port = config.lass.servicePorts.agentd;
   home = "/var/lib/agentd";
   # pushes to the slopulus account's forks on knot.lassul.us; the public
-  # key is published on that account (git.lassul.us settings -> keys)
+  # key is published on that account (tangled.org settings -> keys)
   sshConfig = pkgs.writeText "agentd-ssh-config" ''
     Host knot.lassul.us
       IdentityFile ${config.clan.core.vars.generators.agentd-ssh.files.id_ed25519.path}
