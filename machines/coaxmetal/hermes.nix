@@ -175,6 +175,8 @@ in
       # ssh through the phonetpm agent (SSH_AUTH_SOCK below).
       pkgs.openssh
       hermes-notify
+      # tangled.org PRs on superconfig (instead of crit reviews)
+      self.packages.${pkgs.stdenv.hostPlatform.system}.tg
     ];
 
     # Home Assistant (acheron, configs/hass) left hermes core for the
