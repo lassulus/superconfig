@@ -101,7 +101,7 @@ in
     users = [
       "lass@lassul.us"
       # agentd's account (configs/services/agentd), forks and PRs on
-      # git.lassul.us
+      # knot.lassul.us
       "slop@lassul.us"
     ];
     apps.web = {
