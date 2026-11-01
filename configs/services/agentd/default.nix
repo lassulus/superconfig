@@ -20,6 +20,13 @@
 let
   port = config.lass.servicePorts.agentd;
   home = "/var/lib/agentd";
+  # pushes to the slopulus account's forks on knot.lassul.us; the public
+  # key is published on that account (git.lassul.us settings -> keys)
+  sshConfig = pkgs.writeText "agentd-ssh-config" ''
+    Host knot.lassul.us
+      IdentityFile ${config.clan.core.vars.generators.agentd-ssh.files.id_ed25519.path}
+      IdentitiesOnly yes
+  '';
   pinned = self.inputs.agentd.packages.${pkgs.stdenv.hostPlatform.system}.default;
 in
 {
@@ -80,7 +87,25 @@ in
     "d ${home}/.omp/agent 0700 agentd agentd -"
     "L+ ${home}/.omp/agent/skills - - - - ${./omp/skills}"
     "L+ ${home}/.omp/agent/RULES.md - - - - ${./omp/RULES.md}"
+    "d ${home}/.ssh 0700 agentd agentd -"
+    "L+ ${home}/.ssh/config - - - - ${sshConfig}"
   ];
+
+  clan.core.vars.generators.agentd-ssh = {
+    files.id_ed25519 = {
+      owner = "agentd";
+      mode = "0400";
+    };
+    files."id_ed25519.pub".secret = false;
+    runtimeInputs = [ pkgs.openssh ];
+    script = ''
+      ssh-keygen -t ed25519 -N "" -C "agentd@coaxmetal" -f "$out/id_ed25519"
+    '';
+  };
+
+  # knot2's own host key (knot.nix, ssh_host_key on neoprism)
+  programs.ssh.knownHosts."knot.lassul.us".publicKey =
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBZ368b3nf45MzdgNQC4EkRpQTsssdhj3IEOoo4GdaX2";
 
   networking.firewall.interfaces.retiolum.allowedTCPPorts = [ port ];
 
