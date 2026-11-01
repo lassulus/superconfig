@@ -7,7 +7,6 @@ name: mirror-from-knot
 #
 # Pushes made with GITHUB_TOKEN don't trigger other workflows, so CI (build
 # all machines, fill cache.lassul.us) is dispatched explicitly afterwards.
-# The master ruleset needs "GitHub Actions" in its bypass list.
 on:
   schedule:
     - cron: "17 * * * *"
