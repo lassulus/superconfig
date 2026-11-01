@@ -598,6 +598,20 @@ in
     ''}"
   ];
 
+  # The gateway exits 1 on any SIGTERM it was not told about beforehand, so
+  # every systemctl stop/restart (each deploy) ended as "Failed with result
+  # 'exit-code'" and fired SystemdUnitFailed. `hermes gateway stop` announces
+  # itself with a planned-stop marker first; systemd runs ExecStop before it
+  # sends SIGTERM, so write the same marker for $MAINPID here. Real crashes
+  # still exit 1. Drop once upstream ships it (NousResearch/hermes-agent
+  # issue 42517, PR 24351) and the NixOS module uses it.
+  systemd.services.hermes-agent.serviceConfig.ExecStop =
+    "${pkgs.writeShellScript "hermes-planned-stop" ''
+      [ -n "''${MAINPID:-}" ] || exit 0
+      exec ${config.services.hermes-agent.package.passthru.hermesVenv}/bin/python3 -c \
+        'import os; from gateway.status import write_planned_stop_marker; write_planned_stop_marker(int(os.environ["MAINPID"]))'
+    ''}";
+
   # The packet filter drops INPUT by default here (configs/default.nix sets
   # filter.INPUT.policy = "DROP"), so the API server's port has to be opened
   # for the interface it binds. Without this neoprism's proxy_pass times out
