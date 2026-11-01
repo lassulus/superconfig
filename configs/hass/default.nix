@@ -30,10 +30,15 @@
 
   systemd.services.hass-update = {
     startAt = "daily";
+    path = [ pkgs.podman ];
     script = ''
-      ${pkgs.podman}/bin/podman pull ${config.virtualisation.oci-containers.containers.homeassistant.image}
-      systemctl restart podman-homeassistant.service
-      ${pkgs.podman}/bin/podman system prune -a --volumes -f
+      image=${config.virtualisation.oci-containers.containers.homeassistant.image}
+      podman pull "$image"
+      # restart only when the running container is not on the pulled image
+      if [ "$(podman inspect --format '{{.Image}}' homeassistant || true)" != "$(podman image inspect --format '{{.Id}}' "$image")" ]; then
+        systemctl restart podman-homeassistant.service
+      fi
+      podman system prune -a --volumes -f
     '';
   };
 
@@ -45,6 +50,9 @@
       image = "ghcr.io/home-assistant/home-assistant:stable"; # Warning: if the tag does not change, the image will not be updated
       extraOptions = [
         "--network=host"
+        # HA often needs more than podman's default 10 s to shut down; on
+        # timeout it is SIGKILLed (exit 137, unit failed, unclean recorder DB)
+        "--stop-timeout=60"
       ];
     };
   };
