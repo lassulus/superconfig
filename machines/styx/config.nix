@@ -8,7 +8,6 @@
     ../../configs
     ../../configs/retiolum.nix
     ../../configs/pipewire.nix
-    ../../configs/n8n.nix
     ../../configs/green-host.nix
     ../../configs/syncthing.nix
     ../../configs/ppp/umts-stick.nix
