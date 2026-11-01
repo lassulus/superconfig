@@ -1,0 +1,48 @@
+name: mirror-from-knot
+
+# superconfig lives on tangled.org (knot.lassul.us/lass.pds.lassul.us/superconfig);
+# GitHub is a read-only mirror. Every hour (and on demand) master is pulled
+# from the knot over public HTTPS and pushed here, fast-forward only: a
+# diverged GitHub master fails the run instead of being overwritten.
+#
+# Pushes made with GITHUB_TOKEN don't trigger other workflows, so CI (build
+# all machines, fill cache.lassul.us) is dispatched explicitly afterwards.
+# The master ruleset needs "GitHub Actions" in its bypass list.
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: mirror-from-knot
+  cancel-in-progress: false
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+      - name: fast-forward master to the knot
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git fetch https://knot.lassul.us/lass.pds.lassul.us/superconfig master
+          new=$(git rev-parse FETCH_HEAD)
+          old=$(git rev-parse HEAD)
+          if [ "$new" = "$old" ]; then
+            echo "up to date ($old)"
+            exit 0
+          fi
+          git merge-base --is-ancestor "$old" "$new" || {
+            echo "::error::GitHub master $old is not an ancestor of the knot's $new"
+            exit 1
+          }
+          git push origin "$new:refs/heads/master"
+          gh workflow run ci.yml --ref master
