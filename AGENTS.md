@@ -98,8 +98,10 @@ The user reviews and merges on tangled.org. Every hour (or on demand)
 knot's master and then runs CI (`.github/workflows/ci.yml`): the build of all
 NixOS machines on GitHub runners, with hestia (GitHub Actions cache) as
 binary cache; every CI build is pushed to cache.lassul.us (niks3), so
-deploys substitute the toplevels from there. CI runs after the merge, so
-build the touched machines before opening the PR. Never push or merge on
+deploys substitute the toplevels from there. Every 5 minutes
+`.github/workflows/tangled-prs.yml` runs the same CI on new rounds of open
+PRs (without pushing to the cache) and comments the result on the PR; wait
+for "CI ✓" before asking for review. Never push or merge on
 GitHub: a diverged GitHub master stops the mirror.
 
 ## Machine Facts and Secrets via vars
