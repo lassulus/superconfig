@@ -60,6 +60,20 @@
         meta.mainProgram = "browser-mcp";
       };
 
+      # Unsigned .xpi for the NixOS firefox-devedition, which installs it via
+      # policy with xpinstall.signatures.required disabled. Release Firefox
+      # (barnacle) needs the AMO-signed build from browser-mcp-sign instead.
+      packages.browser-mcp-extension =
+        pkgs.runCommand "browser-mcp-extension"
+          {
+            nativeBuildInputs = [ pkgs.zip ];
+          }
+          ''
+            mkdir -p $out
+            cd ${./extension}
+            zip -r "$out/${extensionId}.xpi" ./*
+          '';
+
       # Signs the extension as unlisted on addons.mozilla.org so release
       # Firefox installs it. Bump the version in extension/manifest.json
       # first: AMO signs every version only once. Credentials come from the

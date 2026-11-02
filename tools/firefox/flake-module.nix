@@ -16,10 +16,12 @@
         nativeMessagingHosts = [
           pkgs.tridactyl-native
           self.packages.${system}.workspace-tabs-native-host
+          self.packages.${system}.browser-mcp
         ];
         extraPolicies = {
           Extensions.Install = [
             "${workspaceTabsExtension}/workspace-tabs@workspace-manager.xpi"
+            "${self.packages.${system}.browser-mcp-extension}/browser-mcp@lassul.us.xpi"
           ];
         };
         extraPrefsFiles = [
