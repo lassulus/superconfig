@@ -46,6 +46,19 @@
       recommendedProxySettings = true;
     };
   };
+
+  # Login via id.lassul.us on Jellyfin (configs/services/flix/sso.nix), only
+  # for users an admin gave a user grant on the project in the console. A
+  # public client with PKCE; its client id is in the envFile and goes into
+  # the flix-oidc var of yellow.
+  lass.zitadel.projects.flix = {
+    access = "managed";
+    apps.jellyfin = {
+      redirectUris = [ "https://flix.lassul.us/sso/OID/redirect/id.lassul.us" ];
+      authMethod = "none";
+    };
+  };
+
   services.nginx.virtualHosts."flex.lassul.us" = {
     forceSSL = true;
     enableACME = true;

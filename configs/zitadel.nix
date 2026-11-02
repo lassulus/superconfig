@@ -61,11 +61,6 @@ in
   #     users = [ "lass@lassul.us" ];
   #     apps.web.redirectUris = [ "https://assist.lassul.us/<callback>" ];
   #   };
-  #   lass.zitadel.projects.flix = {
-  #     access = "managed";
-  #     # jellyfin-plugin-sso with a provider named id.lassul.us
-  #     apps.jellyfin.redirectUris = [ "https://flix.lassul.us/sso/OID/redirect/id.lassul.us" ];
-  #   };
 
   clan.core.vars.generators.zitadel = {
     files."masterkey".owner = "zitadel";

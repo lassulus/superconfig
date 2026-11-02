@@ -6,6 +6,8 @@
   ...
 }:
 {
+  imports = [ ./sso.nix ];
+
   lass.ports = {
     "80" = "nginx-http";
     "443" = "nginx-https";
