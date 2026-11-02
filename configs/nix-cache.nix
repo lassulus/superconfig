@@ -103,7 +103,7 @@ in
   # default max_fails=1 one such close marks that B2 address down for 10s;
   # once all of them are, every request gets "no live upstreams" and a 502.
   # A GET/HEAD on a closed reused connection is retried
-  # (default `proxy_next_upstream error timeout`) without using up a try, on
+  # (`proxy_next_upstream error ...`, see the vhost) without using up a try, on
   # the next address, or on the same one if it resolves to only one.
   services.nginx.appendHttpConfig = ''
     upstream cache_lassul_us_b2 {
@@ -131,6 +131,11 @@ in
       proxy_ssl_name ${endpoint};
       proxy_http_version 1.1;
       proxy_set_header Connection "";
+      # B2 answers 5xx on some objects for hours or days ("retry with
+      # backoff" by design); nix gives up after 5 quick tries and one such
+      # object fails a whole deploy. Retry it on the other B2 addresses
+      # before answering (every address `resolve` returned, once each).
+      proxy_next_upstream error timeout http_500 http_502 http_503 http_504;
       # cache keys never have a query string; don't forward one to S3
       set $args "";
       # S3 answers 403 for keys missing from a bucket it won't list
