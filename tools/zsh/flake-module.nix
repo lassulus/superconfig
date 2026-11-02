@@ -256,67 +256,53 @@
 
 
         # Auto-start tmux for new sessions
-        # Check if we're already in tmux (even through sudo)
-        # Only run in interactive shells — non-interactive SSH commands must not exec tmux
-        if [[ -o interactive && "$TERM" != "linux" && -z "$TMUX" && "$TERM" != "dumb" ]]; then
-          # Check if we're inside tmux by looking for tmux in the process tree
-          in_tmux=false
-          pid=$$
-          while [[ $pid -ne 1 ]]; do
-            if ps -p $pid -o comm= 2>/dev/null | grep -q '^tmux'; then
-              in_tmux=true
-              break
-            fi
-            # Get parent PID
-            pid=$(ps -p $pid -o ppid= 2>/dev/null | tr -d ' ') || break
-          done
-
-          if [[ "$in_tmux" == "false" ]]; then
-            # Preserve SSH_AUTH_SOCK for tmux
-            if [[ -n "$SSH_AUTH_SOCK" ]]; then
-              tmux set-environment -g SSH_AUTH_SOCK "$SSH_AUTH_SOCK" 2>/dev/null
-            fi
-
-            # SSH session chooser: show existing sessions via fzf
-            # Delete key kills the highlighted session, then refreshes the list
-            if [[ -n "$SSH_CLIENT" ]]; then
-              while true; do
-                existing=$(tmux list-sessions -F '#{session_name}: #{session_windows} windows (created #{session_created_string})#{?session_attached, (attached),}' 2>/dev/null)
-                [[ -z "$existing" ]] && break
-                chosen=$(echo ">>> new session <<<\n$existing" \
-                  | fzf --height=80% --reverse \
-                        --header="Pick a tmux session (DEL to kill)" \
-                        --expect=delete \
-                        --preview='s={1}; s=''${s%:}; [ "$s" = ">>>" ] && echo "Create a new session" || tmux capture-pane -t "$s" -p -e 2>/dev/null' \
-                        --preview-window=right:60%)
-                key=$(echo "$chosen" | head -1)
-                selection=$(echo "$chosen" | tail -1)
-                chosen_name=$(echo "$selection" | cut -d: -f1)
-                if [[ "$key" == "delete" && -n "$chosen_name" && "$chosen_name" != ">>> new session <<<" ]]; then
-                  tmux kill-session -t "$chosen_name" 2>/dev/null
-                  continue
-                fi
-                if [[ -n "$chosen_name" && "$chosen_name" != ">>> new session <<<" ]]; then
-                  exec tmux -u attach -t "$chosen_name"
-                fi
-                break
-              done
-            fi
-
-            # Generate a readable session name using name-generator
-            session_name=$(${
-              self.packages.${pkgs.system}.name-generator
-            }/bin/name-generator 2>/dev/null || echo "session-$$")
-            # Prefix with workspace name in graphical sessions
-            if [[ -n "$WAYLAND_DISPLAY" ]]; then
-              _ws_name=$(${
-                self.packages.${pkgs.system}.workspace-manager
-              }/bin/workspace-manager workspace 2>/dev/null)
-              [[ -n "$_ws_name" ]] && session_name="''${_ws_name}-''${session_name}"
-            fi
-            # Start tmux with the generated session name
-            exec tmux -u new-session -s "$session_name"
+        # Only run in interactive shells — non-interactive SSH commands must not exec tmux.
+        # sudo clears $TMUX, so a sudo shell ($SUDO_USER) would nest tmux.
+        if [[ -o interactive && "$TERM" != "linux" && -z "$TMUX" && -z "$SUDO_USER" && "$TERM" != "dumb" ]]; then
+          # Preserve SSH_AUTH_SOCK for tmux
+          if [[ -n "$SSH_AUTH_SOCK" ]]; then
+            tmux set-environment -g SSH_AUTH_SOCK "$SSH_AUTH_SOCK" 2>/dev/null
           fi
+
+          # SSH session chooser: show existing sessions via fzf
+          # Delete key kills the highlighted session, then refreshes the list
+          if [[ -n "$SSH_CLIENT" ]]; then
+            while true; do
+              existing=$(tmux list-sessions -F '#{session_name}: #{session_windows} windows (created #{session_created_string})#{?session_attached, (attached),}' 2>/dev/null)
+              [[ -z "$existing" ]] && break
+              chosen=$(echo ">>> new session <<<\n$existing" \
+                | fzf --height=80% --reverse \
+                      --header="Pick a tmux session (DEL to kill)" \
+                      --expect=delete \
+                      --preview='s={1}; s=''${s%:}; [ "$s" = ">>>" ] && echo "Create a new session" || tmux capture-pane -t "$s" -p -e 2>/dev/null' \
+                      --preview-window=right:60%)
+              key=$(echo "$chosen" | head -1)
+              selection=$(echo "$chosen" | tail -1)
+              chosen_name=$(echo "$selection" | cut -d: -f1)
+              if [[ "$key" == "delete" && -n "$chosen_name" && "$chosen_name" != ">>> new session <<<" ]]; then
+                tmux kill-session -t "$chosen_name" 2>/dev/null
+                continue
+              fi
+              if [[ -n "$chosen_name" && "$chosen_name" != ">>> new session <<<" ]]; then
+                exec tmux -u attach -t "$chosen_name"
+              fi
+              break
+            done
+          fi
+
+          # Generate a readable session name using name-generator
+          session_name=$(${
+            self.packages.${pkgs.system}.name-generator
+          }/bin/name-generator 2>/dev/null || echo "session-$$")
+          # Prefix with workspace name in graphical sessions
+          if [[ -n "$WAYLAND_DISPLAY" ]]; then
+            _ws_name=$(${
+              self.packages.${pkgs.system}.workspace-manager
+            }/bin/workspace-manager workspace 2>/dev/null)
+            [[ -n "$_ws_name" ]] && session_name="''${_ws_name}-''${session_name}"
+          fi
+          # Start tmux with the generated session name
+          exec tmux -u new-session -s "$session_name"
         fi
 
         # Set tmux status bar color based on hostname for SSH sessions
