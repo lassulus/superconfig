@@ -1217,10 +1217,10 @@ index 8089b5e..754d44a 100644
              </TooltipProvider>
 diff --git a/src/app/features/room/ThreadBrowser.tsx b/src/app/features/room/ThreadBrowser.tsx
 new file mode 100644
-index 0000000..7a50495
+index 0000000..9f724e4
 --- /dev/null
 +++ b/src/app/features/room/ThreadBrowser.tsx
-@@ -0,0 +1,396 @@
+@@ -0,0 +1,411 @@
 +import React, {
 +  ChangeEventHandler,
 +  MouseEventHandler,
@@ -1279,11 +1279,28 @@ index 0000000..7a50495
 +} from '../../plugins/react-custom-html-parser';
 +import { EncryptedContent } from './message';
 +import * as css from './ThreadDrawer.css';
++import { getThreadTimelines } from './ThreadDrawer';
 +
-+// Time of the thread's latest reply (the SDK's replyToEvent: the server's
-+// bundled latest_event until the thread timeline is loaded), else the root.
++// The thread's replies from all its timelines. thread.events and the SDK's
++// replyToEvent only read the live timeline, which a gappy sync resets to an
++// empty one for every thread whose replies were loaded before.
++const getThreadReplies = (thread: Thread): MatrixEvent[] =>
++  getThreadTimelines(thread)
++    .flatMap((timeline) => timeline.getEvents())
++    .filter((ev) => ev.getId() !== thread.id && !reactionOrEditEvent(ev));
++
++// The thread's latest reply: the newest of the loaded replies and the SDK's
++// replyToEvent (pending local echo, or the server's bundled latest_event while
++// the thread isn't loaded).
++const getLatestReply = (thread: Thread): MatrixEvent | undefined =>
++  [...getThreadReplies(thread), thread.replyToEvent].reduce<MatrixEvent | undefined>(
++    (latest, ev) => (ev && (!latest || ev.getTs() >= latest.getTs()) ? ev : latest),
++    undefined
++  );
++
++// Time of the thread's latest reply, else the root.
 +const getThreadActivityTs = (thread: Thread): number =>
-+  (thread.replyToEvent ?? thread.rootEvent)?.getTs() ?? 0;
++  (getLatestReply(thread) ?? thread.rootEvent)?.getTs() ?? 0;
 +
 +type ThreadPreviewProps = {
 +  room: Room;
@@ -1341,11 +1358,9 @@ index 0000000..7a50495
 +  const senderAvatarMxc = getMemberAvatarMxc(room, senderId);
 +  const getContent = (() => rootEvent.getContent()) as GetContentCallback;
 +
-+  const replyCount = thread.events.filter(
-+    (ev: MatrixEvent) => ev.getId() !== thread.id && !reactionOrEditEvent(ev)
-+  ).length;
++  const replyCount = getThreadReplies(thread).length;
 +
-+  const lastReply = thread.replyToEvent;
++  const lastReply = getLatestReply(thread);
 +  const lastSenderId = lastReply?.getSender() ?? '';
 +  const lastDisplayName =
 +    getMemberDisplayName(room, lastSenderId) ?? getMxIdLocalPart(lastSenderId) ?? lastSenderId;
@@ -1692,7 +1707,7 @@ index 0000000..b579e74
 +});
 diff --git a/src/app/features/room/ThreadDrawer.tsx b/src/app/features/room/ThreadDrawer.tsx
 new file mode 100644
-index 0000000..7f649da
+index 0000000..c26c3b0
 --- /dev/null
 +++ b/src/app/features/room/ThreadDrawer.tsx
 @@ -0,0 +1,811 @@
@@ -1757,7 +1772,7 @@ index 0000000..7f649da
 +// timeline, but a gappy sync resets it (Room.resetLiveTimeline resets every
 +// thread) and keeps the known events in the old timeline; back-paginating the
 +// new live timeline links it to the old one instead of moving them over.
-+const getThreadTimelines = (thread: Thread): EventTimeline[] => {
++export const getThreadTimelines = (thread: Thread): EventTimeline[] => {
 +  const timelines: EventTimeline[] = [];
 +  let timeline: EventTimeline | null = thread.liveTimeline;
 +  while (timeline) {
