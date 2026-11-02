@@ -10,6 +10,8 @@ name: tangled-prs
 # evaluated and built by Nix, and nothing is pushed to cache.lassul.us
 # (master's CI does that after the merge).
 on:
+  push:
+    branches: [exp/tangled-pr-ci]
   schedule:
     - cron: "*/5 * * * *"
   workflow_dispatch:
