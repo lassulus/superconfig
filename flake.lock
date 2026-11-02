@@ -180,11 +180,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1793353613,
-        "narHash": "sha256-vwon0FS+I6KY3s4xdFeFBIjFaaHOD3sSNpDzqI1Jj6M=",
+        "lastModified": 1793662974,
+        "narHash": "sha256-cNVkzD7a8gCmaPJNGXmY9B4sLGZA21bocPV4JvadxGU=",
         "owner": "lassulus",
         "repo": "droid-nix",
-        "rev": "7f2dca3f30bfba0289745f9eaf5322bebfe75e73",
+        "rev": "68793663550d07c0fa56bf84fc83693c9fc46030",
         "type": "github"
       },
       "original": {
