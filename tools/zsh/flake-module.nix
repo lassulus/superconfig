@@ -284,7 +284,7 @@
                 continue
               fi
               if [[ -n "$chosen_name" && "$chosen_name" != ">>> new session <<<" ]]; then
-                exec tmux -u attach -t "$chosen_name"
+                tmux -u attach -t "$chosen_name" && exit
               fi
               break
             done
@@ -301,8 +301,9 @@
             }/bin/workspace-manager workspace 2>/dev/null)
             [[ -n "$_ws_name" ]] && session_name="''${_ws_name}-''${session_name}"
           fi
-          # Start tmux with the generated session name
-          exec tmux -u new-session -s "$session_name"
+          # Start tmux with the generated session name; if tmux fails, stay in
+          # this shell instead of ending the session
+          tmux -u new-session -s "$session_name" && exit
         fi
 
         # Set tmux status bar color based on hostname for SSH sessions
