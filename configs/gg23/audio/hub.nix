@@ -1,7 +1,8 @@
 # Low-latency audio hub on acheron: audio-matrix (./matrix.py) links each
 # received source to the ROC sinks of the rooms switched on for it in Home
 # Assistant (MQTT), which also sets a volume per room. Sources: any LAN
-# machine via ROC (while `gg23-audio` from tools/gg23-audio runs), barnacle
+# machine via ROC (while `gg23-audio` from tools/gg23-audio runs), the TV
+# (Kodi on styx, ../tv.nix) via its own ROC stream, barnacle
 # via AirPlay 2 (shairport-sync + nqptp), phones via Bluetooth A2DP (paired
 # during the window opened by the "Bluetooth pairing" button) and
 # radio.lassul.us. Rooms run ./room.nix.
@@ -49,6 +50,11 @@ let
         lan = {
           node = "roc-lan";
           label = "LAN";
+        };
+        tv = {
+          node = "roc-tv";
+          label = "TV";
+          rooms = [ "styx" ];
         };
         # where Snapcast played it before
         radio = {
@@ -120,7 +126,7 @@ let
     ++ map roomHeader roomNames
     ++ [
       "{% for e in states.switch | selectattr('entity_id', 'search', '^switch\\\\.audio_route_.*_${anchor}$') | sort(attribute='attributes.source') | sort(attribute='attributes.kind') %}"
-      "{% set icon = {'bluetooth': 'mdi:bluetooth', 'airplay': 'mdi:cast-audio', 'lan': 'mdi:lan', 'radio': 'mdi:radio'}.get(e.attributes.kind, 'mdi:music') %}"
+      "{% set icon = {'bluetooth': 'mdi:bluetooth', 'airplay': 'mdi:cast-audio', 'lan': 'mdi:lan', 'radio': 'mdi:radio', 'tv': 'mdi:television'}.get(e.attributes.kind, 'mdi:music') %}"
       # switch.audio_route_<key>_<anchor>
       "{% set k = e.entity_id[${toString (builtins.stringLength "switch.audio_route_")}:-${toString (builtins.stringLength "_${anchor}")}] %}"
       "{% set row = [${
@@ -155,7 +161,7 @@ let
               {
                 type = "markdown";
                 text_only = true;
-                content = "Tap a speaker to send that source there. Bluetooth `gg23`, AirPlay `gg23`, LAN via `s gg23-audio` and the radio; Bluetooth devices appear while connected.";
+                content = "Tap a speaker to send that source there. Bluetooth `gg23`, AirPlay `gg23`, LAN via `s gg23-audio`, the TV and the radio; Bluetooth devices appear while connected.";
               }
               {
                 type = "custom:auto-entities";
@@ -212,6 +218,9 @@ in
     "10001" = "roc-source";
     "10002" = "roc-repair";
     "10003" = "roc-control";
+    "10004" = "roc-tv-source";
+    "10005" = "roc-tv-repair";
+    "10006" = "roc-tv-control";
     # AirPlay 2 RTSP, fixed in shairport-sync
     "7000" = "shairport-sync";
     # PTP event and general messages, fixed in nqptp
@@ -255,6 +264,23 @@ in
             "source.name" = "roc-lan";
             "source.props" = {
               "node.description" = "LAN (ROC)";
+              "node.autoconnect" = false;
+            };
+          };
+        }
+        {
+          # Kodi on styx (../tv.nix), apart from roc-lan so the TV has its own row
+          name = "libpipewire-module-roc-source";
+          args = {
+            "local.ip" = "0.0.0.0";
+            "local.source.port" = config.lass.servicePorts.roc-tv-source;
+            "local.repair.port" = config.lass.servicePorts.roc-tv-repair;
+            "local.control.port" = config.lass.servicePorts.roc-tv-control;
+            "fec.code" = "disable";
+            "sess.latency.msec" = 30;
+            "source.name" = "roc-tv";
+            "source.props" = {
+              "node.description" = "TV (ROC from styx)";
               "node.autoconnect" = false;
             };
           };
