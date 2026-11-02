@@ -1707,11 +1707,19 @@ index 0000000..b579e74
 +});
 diff --git a/src/app/features/room/ThreadDrawer.tsx b/src/app/features/room/ThreadDrawer.tsx
 new file mode 100644
-index 0000000..c26c3b0
+index 0000000..18b4965
 --- /dev/null
 +++ b/src/app/features/room/ThreadDrawer.tsx
-@@ -0,0 +1,811 @@
-+import React, { MouseEventHandler, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+@@ -0,0 +1,829 @@
++import React, {
++  MouseEventHandler,
++  useCallback,
++  useEffect,
++  useLayoutEffect,
++  useMemo,
++  useRef,
++  useState,
++} from 'react';
 +import { Box, Header, Icon, IconButton, Icons, Scroll, Text, config } from 'folds';
 +import { Direction, EventTimeline } from 'matrix-js-sdk/lib/models/event-timeline';
 +import { RelationType } from 'matrix-js-sdk/lib/@types/event';
@@ -1981,7 +1989,8 @@ index 0000000..c26c3b0
 +  const [editId, setEditId] = useState<string | undefined>(undefined);
 +  const [jumpToEventId, setJumpToEventId] = useState<string | undefined>(undefined);
 +  const scrollRef = useRef<HTMLDivElement>(null);
-+  const prevReplyCountRef = useRef(0);
++  const prevLastReplyIdRef = useRef<string>();
++  const distanceFromBottomRef = useRef(0);
 +  const replyEventsRef = useRef<MatrixEvent[]>([]);
 +  const useAuthentication = useMediaAuthentication();
 +  const mentionClickHandler = useMentionClickHandler(room.roomId);
@@ -2223,16 +2232,21 @@ index 0000000..c26c3b0
 +    markThreadAsRead();
 +  }, [mx, room, threadRootId, replyEvents.length, hideActivity]);
 +
-+  // Auto-scroll to bottom when event count grows (if the user is near the bottom).
-+  useEffect(() => {
++  // Follow new replies only while the user is at the bottom, and keep the
++  // view in place while older history is prepended (the drawer loads the
++  // whole thread page by page; not every browser anchors the scroll position,
++  // and re-checking "near the bottom" on every page pulled the user back down).
++  const firstReplyId = replyEvents[0]?.getId();
++  const lastReplyId = replyEvents[replyEvents.length - 1]?.getId();
++  useLayoutEffect(() => {
 +    const el = scrollRef.current;
 +    if (!el) return;
-+    const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
-+    if (prevReplyCountRef.current === 0 || isAtBottom) {
-+      el.scrollTop = el.scrollHeight;
-+    }
-+    prevReplyCountRef.current = replyEvents.length;
-+  }, [replyEvents.length]);
++    const lastChanged = lastReplyId !== prevLastReplyIdRef.current;
++    prevLastReplyIdRef.current = lastReplyId;
++    if (lastChanged && distanceFromBottomRef.current >= 150) return;
++    el.scrollTop =
++      el.scrollHeight - el.clientHeight - (lastChanged ? 0 : distanceFromBottomRef.current);
++  }, [firstReplyId, lastReplyId]);
 +
 +  const handleUserClick: MouseEventHandler<HTMLButtonElement> = useCallback(
 +    (evt) => {
@@ -2443,6 +2457,10 @@ index 0000000..c26c3b0
 +          direction="Vertical"
 +          hideTrack
 +          style={{ flexGrow: 1 }}
++          onScroll={(evt: React.UIEvent<HTMLDivElement>) => {
++            const el = evt.currentTarget;
++            distanceFromBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight;
++          }}
 +        >
 +          {replyEvents.length === 0 ? (
 +            <Box
