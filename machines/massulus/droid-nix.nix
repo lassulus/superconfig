@@ -19,6 +19,9 @@
     gnused
     findutils
     procps
+    (writeShellScriptBin "update" ''
+      exec droid-nix switch --flake github:lassulus/superconfig#massulus --refresh "$@"
+    '')
   ];
 
   user.shell = "${self.packages.${pkgs.stdenv.hostPlatform.system}.zsh}/bin/zsh";
