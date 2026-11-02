@@ -1,15 +1,41 @@
 name: CI
 
+# Builds master after every push (the mirror from the knot) and pushes the
+# results to cache.lassul.us. tangled-prs.yml calls it for each new round of
+# a tangled.org PR (inputs url/sha/pr): the PR commit is fetched into ./src
+# (.github/fetch-pr.sh) and built, workflows and scripts stay master's,
+# nothing is pushed to cache.lassul.us (CI_PUSH) and the ci job comments the
+# result on the PR.
 on:
   push:
     branches: [master]
-  pull_request:
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      pr:
+        type: string
+        default: ""
+      sha:
+        type: string
+        default: ""
+      url:
+        description: git URL of the PR's source repo (knot + repo DID)
+        type: string
+        default: ""
+    secrets:
+      TANGLED_APP_PASSWORD:
+        required: false
 
-# A newer run for the same ref replaces a running one.
+# A newer run for the same ref (or PR) replaces a running one.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.ref }}-${{ inputs.pr }}
   cancel-in-progress: true
+
+env:
+  FLAKE: ${{ inputs.url && './src' || '.' }}
+  CI_PUSH: ${{ !inputs.url }}
+  NIX_CONFIG: |
+    accept-flake-config = false
 
 # One job per check shows failing checks in the run overview, the same for
 # the NixOS machines, see the eval job.
@@ -24,11 +50,21 @@ jobs:
           # Fetch all history for git-based operations
           fetch-depth: 0
 
+      - if: inputs.url
+        env:
+          URL: ${{ inputs.url }}
+          SHA: ${{ inputs.sha }}
+        run: .github/fetch-pr.sh
+      - if: inputs.url
+        env:
+          URL: ${{ inputs.url }}
+          SHA: ${{ inputs.sha }}
+        run: .github/fetch-pr.sh
       - uses: cachix/install-nix-action@v31
 
       - id: list
         run: |
-          checks=$(nix eval --json .#checks.x86_64-linux --apply builtins.attrNames)
+          checks=$(nix eval --json "$FLAKE#checks.x86_64-linux" --apply builtins.attrNames)
           echo "checks=$checks" >> "$GITHUB_OUTPUT"
 
   check:
@@ -45,9 +81,16 @@ jobs:
           # Fetch all history for git-based operations
           fetch-depth: 0
 
+      - if: inputs.url
+        env:
+          URL: ${{ inputs.url }}
+          SHA: ${{ inputs.sha }}
+        run: .github/fetch-pr.sh
       - uses: cachix/install-nix-action@v31
 
-      - run: nix build -L --no-link '.#checks.x86_64-linux.${{ matrix.check }}'
+      - env:
+          CHECK: ${{ matrix.check }}
+        run: nix build -L --no-link "$FLAKE#checks.x86_64-linux.$CHECK"
 
   outputs:
     name: packages and devShells
@@ -64,7 +107,7 @@ jobs:
           for output in packages devShells; do
             echo "$output:"
             # shellcheck disable=SC2016 # ${...} is Nix interpolation
-            nix eval --raw ".#$output.x86_64-linux" --apply 'xs: builtins.deepSeq (builtins.mapAttrs (_: x: x.drvPath) xs) "${toString (builtins.length (builtins.attrNames xs))} evaluated\n"'
+            nix eval --raw "$FLAKE#$output.x86_64-linux" --apply 'xs: builtins.deepSeq (builtins.mapAttrs (_: x: x.drvPath) xs) "${toString (builtins.length (builtins.attrNames xs))} evaluated\n"'
           done
 
   # The NixOS machines, built on plain runners with hestia (the GitHub Actions
@@ -96,6 +139,11 @@ jobs:
       lazy-store: ${{ steps.tools.outputs.lazy-store }}
     steps:
       - uses: actions/checkout@v4
+      - if: inputs.url
+        env:
+          URL: ${{ inputs.url }}
+          SHA: ${{ inputs.sha }}
+        run: .github/fetch-pr.sh
       - uses: cachix/install-nix-action@v31
         with:
           extra_nix_config: |
@@ -124,7 +172,7 @@ jobs:
       - id: matrix
         uses: Mic92/hestia/matrix@v3
         with:
-          flake: ".#ciToplevels"
+          flake: "${{ env.FLAKE }}#ciToplevels"
           nix-eval-jobs: "${{ steps.tools.outputs.iets }} eval-jobs --workers 4 --max-memory-size 3072"
       - env:
           MATRIX: ${{ steps.matrix.outputs.matrix }}
@@ -278,6 +326,11 @@ jobs:
       id-token: write # niks3 push
     steps:
       - uses: actions/checkout@v4
+      - if: inputs.url
+        env:
+          URL: ${{ inputs.url }}
+          SHA: ${{ inputs.sha }}
+        run: .github/fetch-pr.sh
       - uses: cachix/install-nix-action@v31
         with:
           extra_nix_config: |
@@ -288,16 +341,38 @@ jobs:
           niks3=$(nix build --no-link --print-out-paths .#niks3)
           echo "$niks3/bin" >> "$GITHUB_PATH"
           PATH=$niks3/bin:$PATH .github/niks3-push.sh "$niks3"
-      - run: .github/ci-build.sh .#droidNixConfigurations.massulus.activationPackage
+      - run: .github/ci-build.sh "$FLAKE#droidNixConfigurations.massulus.activationPackage"
 
-  # Fixed-name summary of the jobs above, the required status check for
-  # merging into master (the matrix job names change with the hosts).
-  # Skipped: no machine to build, or a job it needs failed.
+  # Summary of the jobs above; for a tangled.org PR it also comments the
+  # result there (as hermes.pds.lassul.us). Skipped jobs: no machine to
+  # build, or a job they need failed.
   ci:
     needs: [list, check, outputs, eval, shared, build, massulus]
     if: always()
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read # the run's job results
     steps:
+      - if: inputs.pr
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - if: inputs.pr
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            extra-substituters = https://cache.lassul.us
+            extra-trusted-public-keys = cache.lassul.us-1:aOMEO5TU6eLvhyPi0jmgjR2sVlGjMq3rK0MeACjTcQ0=
+      - if: inputs.pr
+        env:
+          PR: ${{ inputs.pr }}
+          SHA: ${{ inputs.sha }}
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+          ANY_JOBS: ${{ needs.eval.outputs.any-jobs }}
+          GH_TOKEN: ${{ github.token }}
+          TANGLED_APP_PASSWORD: ${{ secrets.TANGLED_APP_PASSWORD }}
+        run: .github/tangled-pr-report.sh
       - env:
           RESULTS: ${{ join(needs.*.result, ' ') }}
         run: |

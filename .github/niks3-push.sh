@@ -7,8 +7,14 @@
 # Usage: niks3-push.sh PATH...
 #        niks3-push.sh --stdin   the paths from stdin
 #        niks3-push.sh --token   the token, as niks3's --auth-token-script
+#        CI_PUSH=false: push nothing (ci.yml building a tangled.org PR)
 set -euo pipefail
 url=https://niks3.lassul.us
+
+if [ "${CI_PUSH:-true}" = false ]; then
+  echo "niks3-push: PR build, not pushing to cache.lassul.us" >&2
+  exit 0
+fi
 
 if [ "${1:-}" = --token ]; then
   curl -fsS --retry 4 --retry-all-errors \
