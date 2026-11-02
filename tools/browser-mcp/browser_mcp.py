@@ -29,7 +29,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP, Image
+from mcp.server.mcpserver import Image, MCPServer
 
 PROTOCOL_LIMIT = 64 * 1024 * 1024  # screenshots can be several MB
 
@@ -219,7 +219,7 @@ def as_text(value: Any) -> str:
 
 
 def run_server() -> None:
-    mcp = FastMCP(
+    mcp = MCPServer(
         "browser",
         instructions=(
             "Controls the user's own running Firefox through an extension "
