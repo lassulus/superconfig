@@ -11,6 +11,8 @@ name: tangled-prs
 # without pushing to cache.lassul.us (master's CI does that after the
 # merge).
 on:
+  push:
+    branches: [exp/tangled-pr-ci]
   schedule:
     - cron: "*/5 * * * *"
   workflow_dispatch:
