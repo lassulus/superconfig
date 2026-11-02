@@ -1,0 +1,181 @@
+name: tangled-pr-build
+
+# Builds one round of a tangled.org PR (called by tangled-prs.yml) the way
+# ci.yml builds master: the checks, then one job per NixOS machine whose
+# toplevel is in neither cache, with hestia (GitHub Actions cache) as binary
+# cache. Then comments the result on the Tangled PR.
+#
+# Untrusted PR code: this file and every script come from master (the
+# caller's ref); the PR commit is fetched into ./src and only evaluated and
+# built by Nix (pure eval, build sandbox, flake nixConfig ignored). No job
+# that touches it gets a secret or an OIDC token, and nothing is pushed to
+# cache.lassul.us. Only the report job sees TANGLED_APP_PASSWORD.
+on:
+  workflow_call:
+    inputs:
+      pr:
+        type: string
+        required: true
+      sha:
+        type: string
+        required: true
+      url:
+        description: git URL of the source repo (knot + repo DID)
+        type: string
+        required: true
+    secrets:
+      TANGLED_APP_PASSWORD:
+        required: true
+
+permissions: {}
+
+env:
+  NIX_CONFIG: |
+    accept-flake-config = false
+  # the PR commit, fetched by the fetch steps below (a relative path: iets
+  # rejects git+file with shallow=1, and the clone is shallow)
+  FLAKE: ./src
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+      any-jobs: ${{ steps.matrix.outputs.any-jobs }}
+      manifest-version: ${{ steps.matrix.outputs.manifest-version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: fetch the PR commit
+        env:
+          URL: ${{ inputs.url }}
+          SHA: ${{ inputs.sha }}
+        run: |
+          git init -q src
+          git -C src fetch -q --depth=1 "$URL" "$SHA"
+          git -C src checkout -q FETCH_HEAD
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            trusted-users = root runner
+            extra-substituters = https://cache.lassul.us
+            extra-trusted-public-keys = cache.lassul.us-1:aOMEO5TU6eLvhyPi0jmgjR2sVlGjMq3rK0MeACjTcQ0=
+      - uses: Mic92/hestia@v3
+        with:
+          upstream-cache-filter: true
+          upstream-cache-key-names: cache.nixos.org-1 cache.lassul.us-1
+          filter-drv-closures: true
+      # iets from master, not from the PR
+      - id: tools
+        run: echo "iets=$(nix build --no-link --print-out-paths .#iets)/bin/iets" >> "$GITHUB_OUTPUT"
+      - id: matrix
+        uses: Mic92/hestia/matrix@v3
+        with:
+          flake: "${{ env.FLAKE }}#ciToplevels"
+          nix-eval-jobs: "${{ steps.tools.outputs.iets }} eval-jobs --workers 4 --max-memory-size 3072"
+      - env:
+          MATRIX: ${{ steps.matrix.outputs.matrix }}
+        run: |
+          echo "not cached: $(jq -r '[.include[].name] | join(" ")' <<<"$MATRIX")" |
+            tee -a "$GITHUB_STEP_SUMMARY"
+
+  checks:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: fetch the PR commit
+        env:
+          URL: ${{ inputs.url }}
+          SHA: ${{ inputs.sha }}
+        run: |
+          git init -q src
+          git -C src fetch -q --depth=1 "$URL" "$SHA"
+          git -C src checkout -q FETCH_HEAD
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            extra-substituters = https://cache.lassul.us
+            extra-trusted-public-keys = cache.lassul.us-1:aOMEO5TU6eLvhyPi0jmgjR2sVlGjMq3rK0MeACjTcQ0=
+      - run: |
+          mapfile -t checks < <(nix eval --json "$FLAKE#checks.x86_64-linux" --apply builtins.attrNames | jq -r '.[]')
+          nix build -L --no-link --keep-going "${checks[@]/#/$FLAKE#checks.x86_64-linux.}"
+
+  build:
+    needs: eval
+    if: needs.eval.outputs.any-jobs == 'true'
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.eval.outputs.matrix) }}
+    steps:
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            trusted-users = root runner
+            extra-substituters = https://cache.lassul.us
+            extra-trusted-public-keys = cache.lassul.us-1:aOMEO5TU6eLvhyPi0jmgjR2sVlGjMq3rK0MeACjTcQ0=
+      - uses: Mic92/hestia@v3
+        with:
+          upstream-cache-filter: true
+          upstream-cache-key-names: cache.nixos.org-1 cache.lassul.us-1
+          wait-manifest-version: ${{ needs.eval.outputs.manifest-version }}
+      # the drvs were evaluated from the PR and are in hestia; building them
+      # needs no checkout
+      - env:
+          INSTALLABLES: ${{ matrix.installables }}
+        run: |
+          read -ra installables <<<"$INSTALLABLES"
+          "$HESTIA_BIN" prefetch "${installables[@]}"
+          nix build -L --no-link --keep-going "${installables[@]}"
+
+  report:
+    needs: [eval, checks, build]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read # the run's job results
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            extra-substituters = https://cache.lassul.us
+            extra-trusted-public-keys = cache.lassul.us-1:aOMEO5TU6eLvhyPi0jmgjR2sVlGjMq3rK0MeACjTcQ0=
+      - env:
+          PR: ${{ inputs.pr }}
+          SHA: ${{ inputs.sha }}
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+          ANY_JOBS: ${{ needs.eval.outputs.any-jobs }}
+          GH_TOKEN: ${{ github.token }}
+          TANGLED_APP_PASSWORD: ${{ secrets.TANGLED_APP_PASSWORD }}
+        run: |
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          ok=true
+          for r in $RESULTS; do
+            [ "$r" = success ] || [ "$r" = skipped ] || ok=false
+          done
+          if $ok; then
+            if [ "$ANY_JOBS" = true ]; then what="checks and changed machines built"; else what="checks built, no machine changed"; fi
+            body="CI ✓ \`${SHA:0:12}\`: $what. [run]($run_url)"
+          else
+            failed=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs" \
+              -q '.jobs[] | select(.conclusion == "failure" or .conclusion == "cancelled") | .name' |
+              sed 's|.* / ||' | sort -u | paste -sd, - | sed 's/,/, /g')
+            body="CI ✗ \`${SHA:0:12}\`: failed: ${failed:-see run}. [run]($run_url)"
+          fi
+          echo "$body" | tee -a "$GITHUB_STEP_SUMMARY"
+          tg=$(nix build --no-link --print-out-paths .#tg)/bin/tg
+          "$tg" auth login hermes.pds.lassul.us --insecure --password-stdin <<<"$TANGLED_APP_PASSWORD" >/dev/null
+          "$tg" pr comment "$PR" -R lass.pds.lassul.us/superconfig -b "$body"

@@ -1,0 +1,58 @@
+name: tangled-prs
+
+# Builds open superconfig PRs on tangled.org before they are merged: the PRs
+# live on knot.lassul.us, not here, so this polls tangled.org every 5 minutes
+# (and on demand) for rounds not built yet (.github/tangled-prs.sh) and runs
+# tangled-pr-build.yml for each. The result is posted as a comment on the
+# Tangled PR (as hermes.pds.lassul.us).
+#
+# The PR code is untrusted: workflows and scripts always come from master,
+# the PR commit is only evaluated and built by Nix, without secrets and
+# without pushing to cache.lassul.us (master's CI does that after the
+# merge).
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Tangled PR number to (re)build; empty = all open PRs with a new round
+        required: false
+
+permissions: {}
+
+concurrency:
+  group: tangled-prs
+  cancel-in-progress: false
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # refs/tangled-ci/<sha>: rounds already started
+    outputs:
+      matrix: ${{ steps.list.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: list
+        env:
+          PR: ${{ inputs.pr }}
+        run: echo "matrix=$(.github/tangled-prs.sh)" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: poll
+    if: fromJSON(needs.poll.outputs.matrix).include[0] != null
+    name: PR ${{ matrix.pr }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.poll.outputs.matrix) }}
+    permissions:
+      contents: read
+      actions: read # hestia: detect evicted cache entries upfront
+    uses: ./.github/workflows/tangled-pr-build.yml
+    with:
+      pr: ${{ matrix.pr }}
+      sha: ${{ matrix.sha }}
+      url: ${{ matrix.url }}
+    secrets:
+      TANGLED_APP_PASSWORD: ${{ secrets.TANGLED_APP_PASSWORD }}
