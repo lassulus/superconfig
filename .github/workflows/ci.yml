@@ -318,11 +318,13 @@ jobs:
 
   # The phone massulus (droid-nix, machines/massulus/droid-nix.nix), built
   # natively on an arm runner and pushed to cache.lassul.us for the phone to
-  # substitute. Its own niks3, the eval job's is x86_64.
+  # substitute. Its own niks3, the eval job's is x86_64. hestia keeps what a
+  # PR run built, so master's run after the merge substitutes it.
   massulus:
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
+      actions: read # hestia: detect evicted cache entries upfront
       id-token: write # niks3 push
     steps:
       - uses: actions/checkout@v4
@@ -337,6 +339,10 @@ jobs:
             trusted-users = root runner
             extra-substituters = https://cache.lassul.us
             extra-trusted-public-keys = cache.lassul.us-1:aOMEO5TU6eLvhyPi0jmgjR2sVlGjMq3rK0MeACjTcQ0=
+      - uses: Mic92/hestia@v3
+        with:
+          upstream-cache-filter: true
+          upstream-cache-key-names: cache.nixos.org-1 cache.lassul.us-1
       - run: |
           niks3=$(nix build --no-link --print-out-paths .#niks3)
           echo "$niks3/bin" >> "$GITHUB_PATH"
