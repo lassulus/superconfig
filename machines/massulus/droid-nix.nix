@@ -21,6 +21,8 @@
     procps
   ];
 
+  user.shell = "${self.packages.${pkgs.stdenv.hostPlatform.system}.zsh}/bin/zsh";
+
   services.sshd.enable = true;
   services.sshd.authorizedKeys = with self.keys.ssh; [
     barnacle.public
