@@ -8,7 +8,7 @@
 }:
 
 let
-  version = "0-unstable-2026-10-28";
+  version = "0-unstable-2026-11-02";
 
   # self-host.patch (AGPL-3.0 §13: this directory is the corresponding source
   # linked from the footer and the landing page):
@@ -24,8 +24,8 @@ let
     src = fetchFromGitHub {
       owner = "schej-it";
       repo = "timeful.app";
-      rev = "6d220e46d961a52809fe5bf3d049c980142db341";
-      hash = "sha256-StlWY+FZtyS+vFtNPA059MqZZDYyntOHowsT07jt96c=";
+      rev = "8153a1c35fb5d588b93f091bc5b35f0ed0069e02";
+      hash = "sha256-vfQZuT9xcvTY+WceTgYuK3CtJ1fiZo9NyXP41lb/IXk=";
     };
     patches = [ ./self-host.patch ];
   };
