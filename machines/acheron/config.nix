@@ -7,6 +7,7 @@
     ../../configs/hass
     ../../configs/gg23/audio/hub.nix
     ../../configs/gg23/internet.nix
+    ../../configs/gg23/tv-hass.nix
     ./backup.nix
   ];
 
