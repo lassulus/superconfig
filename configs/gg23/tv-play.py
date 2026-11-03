@@ -7,8 +7,12 @@
 # inputstream.adaptive: Kodi's ffmpeg demuxer opens every variant while
 # probing and gives up after 30 s. Else the best single file with both audio
 # and video. Kodi opens a one-entry .m3u written here: JSON-RPC can't set a
-# title or an inputstream, #EXTINF and #KODIPROP lines can. Answers 200 with
-# the video's title, or 4xx/5xx with the reason as text. Usage:
+# title or an inputstream, #EXTINF and #KODIPROP lines can. Livestreams are
+# the exception: YouTube serves their audio as a separate HLS track, which
+# inputstream.adaptive stalls on after a few seconds ("stream stalled"), so
+# for those ffmpeg copies the best video and audio track into one MPEG-TS
+# stream that Kodi reads from GET /live.ts here. Answers 200 with the
+# video's title, or 4xx/5xx with the reason as text. Usage:
 # tv-play PORT KODI_URL KODI_PASSWORD_FILE M3U_FILE
 import base64
 import json
@@ -23,6 +27,24 @@ kodi_url = sys.argv[2]
 with open(sys.argv[3]) as f:
     kodi_auth = "Basic " + base64.b64encode(b"kodi:" + f.read().strip().encode()).decode()
 playlist = sys.argv[4]
+live_ts = f"http://127.0.0.1:{port}/live.ts"
+# input URLs of the current livestream, for GET /live.ts
+live_inputs = []
+
+
+def live_tracks(formats):
+    """stream URLs of the best video and, if that has none, the best audio track"""
+    hls = [f for f in formats if f.get("protocol") in ("m3u8", "m3u8_native") and f.get("url")]
+    video = [f for f in hls if f.get("vcodec") not in (None, "none")]
+    if not video:
+        raise ValueError("livestream without a video track")
+    best = max(video, key=lambda f: (f.get("height") or 0, f.get("tbr") or 0))
+    if best.get("acodec") not in (None, "none"):
+        return [best["url"]]
+    audio = [f for f in hls if f.get("vcodec") == "none"]
+    if not audio:
+        raise ValueError("livestream without an audio track")
+    return [best["url"], max(audio, key=lambda f: f.get("tbr") or 0)["url"]]
 
 
 def resolve(link):
@@ -38,6 +60,9 @@ def resolve(link):
     info = json.loads(out.stdout)
     title = " ".join((info.get("title") or link).split())
     formats = info.get("formats") or []
+    if info.get("is_live"):
+        live_inputs[:] = live_tracks(formats)
+        return title, live_ts, False
     for f in formats:
         if f.get("protocol") in ("m3u8", "m3u8_native") and f.get("manifest_url"):
             return title, f["manifest_url"], True
@@ -88,6 +113,26 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
+
+    def do_GET(self):
+        if self.path != "/live.ts" or not live_inputs:
+            return self.answer(404, "not found")
+        args = ["ffmpeg", "-nostdin", "-loglevel", "error"]
+        for url in live_inputs:
+            args += ["-i", url]
+        args += ["-map", "0:v:0", "-map", f"{len(live_inputs) - 1}:a:0", "-c", "copy", "-f", "mpegts", "pipe:1"]
+        ffmpeg = subprocess.Popen(args, stdout=subprocess.PIPE)
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "video/mp2t")
+            self.end_headers()
+            while chunk := ffmpeg.stdout.read1(65536):
+                self.wfile.write(chunk)
+        except OSError:
+            pass  # Kodi stopped or switched streams
+        finally:
+            ffmpeg.kill()
+            ffmpeg.wait()
 
     def do_POST(self):
         if self.path != "/play":

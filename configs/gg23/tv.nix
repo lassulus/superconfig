@@ -248,12 +248,16 @@ in
   };
 
   # video links from Home Assistant: yt-dlp resolves them, Kodi plays the
-  # stream; yt-dlp runs here so the stream URLs fit styx's address
+  # stream; yt-dlp runs here so the stream URLs fit styx's address; ffmpeg
+  # joins the video and audio tracks of livestreams
   systemd.services.tv-play = {
     wantedBy = [ "multi-user.target" ];
     after = [ "network-online.target" ];
     wants = [ "network-online.target" ];
-    path = [ pkgs.yt-dlp ];
+    path = [
+      pkgs.yt-dlp
+      pkgs.ffmpeg-headless
+    ];
     serviceConfig = {
       ExecStart = "${
         pkgs.writers.writePython3 "tv-play" { flakeIgnore = [ "E501" ]; } ./tv-play.py
