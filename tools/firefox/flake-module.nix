@@ -29,6 +29,8 @@
             lockPref("xpinstall.signatures.required", false);
             lockPref("browser.startup.page", 0);
             lockPref("browser.sessionstore.resume_from_crash", false);
+            // WebGPU is still off by default on Linux (needed e.g. for nfsu2.xyz)
+            defaultPref("dom.webgpu.enabled", true);
           '')
         ];
       };
