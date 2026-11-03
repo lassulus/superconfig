@@ -53,6 +53,8 @@
   # the flix-oidc var of yellow.
   lass.zitadel.projects.flix = {
     access = "managed";
+    # Jellyfin admin (sso.nix), added to a user's grant in the console.
+    roles = [ "admin" ];
     apps.jellyfin = {
       redirectUris = [ "https://flix.lassul.us/sso/OID/redirect/id.lassul.us" ];
       authMethod = "none";

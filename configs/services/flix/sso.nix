@@ -17,13 +17,19 @@ let
       pluginConfig = "${pluginsDir}/configurations/SSO-Auth.xml";
       brandingConfig = "${config.services.jellyfin.configDir}/branding.xml";
       clientIdFile = config.clan.core.vars.generators.flix-oidc.files.client-id.path;
-      # Public client with PKCE, so no OidSecret. Permissions stay as they
-      # are in Jellyfin (no role mapping); the first login of an unlinked
-      # identity takes over the account whose username equals the
+      # Public client with PKCE, so no OidSecret. The first login of an
+      # unlinked identity takes over the account whose username equals the
       # preferred_username claim, else creates a new one.
       oid = {
         OidEndpoint = "https://${provider}";
-        EnableAuthorization = false;
+        # Admin rights follow the Zitadel role `admin` of project flix
+        # (proxy.nix), given in the console: each SSO login grants or
+        # revokes Jellyfin's IsAdministrator. Library access stays open
+        # to every user. Password logins are not touched.
+        EnableAuthorization = true;
+        RoleClaim = "urn:zitadel:iam:org:project:roles";
+        AdminRoles = [ "admin" ];
+        EnableAllFolders = true;
         # Jellyfin sees plain http from the proxy on neoprism.
         SchemeOverride = "https";
       };
