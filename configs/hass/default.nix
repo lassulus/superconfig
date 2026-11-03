@@ -74,4 +74,29 @@
 
   # retained messages; mosquitto.db is replaced atomically on every save
   lass.backup.state.mosquitto.folders = [ config.services.mosquitto.dataDir ];
+
+  # The container's /config: config entries and the rest of .storage (UI
+  # setup, dashboards, users), HACS and what it installed, automations. The
+  # recorder database is dumped consistently instead of copied live; logs,
+  # caches and TTS files are left out.
+  lass.backup.state.homeassistant =
+    let
+      dir = "/var/lib/containers/storage/volumes/home-assistant/_data";
+    in
+    {
+      folders = [ dir ];
+      exclude = [
+        "${dir}/home-assistant_v2.db*"
+        "${dir}/home-assistant.log*"
+        "${dir}/.cache"
+        "${dir}/tts"
+      ];
+      preBackup = ''
+        rm -rf /var/backup/homeassistant
+        mkdir -p /var/backup/homeassistant
+        ${pkgs.sqlite}/bin/sqlite3 -cmd ".timeout 60000" ${dir}/home-assistant_v2.db ".backup '/var/backup/homeassistant/home-assistant_v2.db'"
+      '';
+      # sqlite needs the -shm next to the WAL database
+      readWritePaths = [ dir ];
+    };
 }
