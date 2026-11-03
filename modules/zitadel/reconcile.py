@@ -198,22 +198,32 @@ def write_file(path, uid, content):
 
 projects = search("/management/v1/projects/_search")
 for project_name, project in config["projects"].items():
-    check = project["access"] != "public"
+    settings = {
+        "projectRoleCheck": project["access"] != "public",
+        "projectRoleAssertion": project["roles"] != [],
+    }
     existing = by_name(projects, project_name)
     if existing is None:
         project_id = call("POST", "/management/v1/projects", {
             "name": project_name,
-            "projectRoleCheck": check,
+            **settings,
         })["id"]
         print(f"project {project_name}: created")
     else:
         project_id = existing["id"]
-        if differs(existing, {"projectRoleCheck": check}):
+        if differs(existing, settings):
             call("PUT", f"/management/v1/projects/{project_id}", {
                 **existing,
-                "projectRoleCheck": check,
+                **settings,
             })
-            print(f"project {project_name}: projectRoleCheck={check}")
+            print(f"project {project_name}: {settings}")
+
+    roles = f"/management/v1/projects/{project_id}/roles"
+    have = {r["key"] for r in search(f"{roles}/_search")}
+    for role in project["roles"]:
+        if role not in have:
+            call("POST", roles, {"roleKey": role, "displayName": role})
+            print(f"project {project_name}: role {role} created")
 
     base = f"/management/v1/projects/{project_id}/apps"
     apps = search(f"{base}/_search")

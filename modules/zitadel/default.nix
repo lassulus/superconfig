@@ -19,7 +19,7 @@ let
       inherit patFile;
       inherit (cfg) loginPolicy idps smtp;
       projects = lib.mapAttrs (_: project: {
-        inherit (project) access users;
+        inherit (project) access users roles;
         apps = lib.mapAttrs (_: app: {
           inherit (app) redirectUris envFile;
           authMethodType = "OIDC_AUTH_METHOD_TYPE_${lib.toUpper app.authMethod}";
@@ -168,6 +168,18 @@ in
                   names: anyone can register a free one that looks like
                   someone's address. Users who have not registered or
                   verified their address yet are skipped until the next run.
+                '';
+              };
+              roles = lib.mkOption {
+                type = lib.types.listOf lib.types.str;
+                default = [ ];
+                example = [ "admin" ];
+                description = ''
+                  Role keys of the project. Admins give them to users as part
+                  of their user grant in the console. With roles, Zitadel
+                  asserts them on authentication: the userinfo response
+                  carries `urn:zitadel:iam:org:project:roles`. Roles removed
+                  from here are left in Zitadel.
                 '';
               };
               apps = lib.mkOption {
