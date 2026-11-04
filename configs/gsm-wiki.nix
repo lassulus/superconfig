@@ -35,6 +35,7 @@ in
   systemd.services.docs-oauth2-proxy = {
     description = "${domain} login (${issuer})";
     wantedBy = [ "multi-user.target" ];
+    wants = [ "network-online.target" ];
     after = [ "network-online.target" ];
     serviceConfig = {
       ExecStart = lib.escapeShellArgs [
@@ -53,6 +54,7 @@ in
       LoadCredential = "cookie-secret:${
         config.clan.core.vars.generators.docs-oauth2-proxy.files."cookie-secret".path
       }";
+      DynamicUser = true;
       Restart = "on-failure";
       NoNewPrivileges = true;
       PrivateTmp = true;
