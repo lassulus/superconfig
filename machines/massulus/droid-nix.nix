@@ -19,12 +19,19 @@
     gnused
     findutils
     procps
+    mpv-phone
     (writeShellScriptBin "update" ''
       exec droid-nix switch --flake github:lassulus/superconfig#massulus --refresh "$@"
     '')
   ];
 
   user.shell = "${self.packages.${pkgs.stdenv.hostPlatform.system}.zsh}/bin/zsh";
+
+  services.pipewire = {
+    enable = true;
+    package = pkgs.pipewire-phone;
+    wireplumber.package = pkgs.wireplumber-phone;
+  };
 
   services.sshd.enable = true;
   services.sshd.authorizedKeys = with self.keys.ssh; [
