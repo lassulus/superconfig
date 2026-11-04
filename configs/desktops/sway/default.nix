@@ -243,6 +243,10 @@ in
   # a logind sleep-delay inhibitor until the lock is up) and on logind's Lock
   # signal (loginctl lock-session, needs XDG_SESSION_ID imported below); the
   # idle timeout and the keybindings ask it to lock over IPC.
+  #
+  # `idlehint` is what makes swayidle connect to the system bus at all; without
+  # a logind option it never sees logind idle inhibitors (BlockInhibited), so
+  # sway-audio-idle-inhibit and the bar's idle toggle would not stop locking.
   systemd.user.services.swayidle = {
     description = "Idle manager for Wayland";
     documentation = [ "man:swayidle(1)" ];
@@ -253,7 +257,8 @@ in
       ExecStart = ''
         ${pkgs.swayidle}/bin/swayidle -w \
           timeout 120 '${lib.getExe' config.lass.noctalia.package "noctalia"} msg session lock' \
-          timeout 300 '${lib.getExe' pkgs.systemd "systemctl"} suspend-then-hibernate'
+          timeout 300 '${lib.getExe' pkgs.systemd "systemctl"} suspend-then-hibernate' \
+          idlehint 120
       '';
       Restart = "on-failure";
       RestartSec = 1;
