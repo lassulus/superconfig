@@ -1,15 +1,109 @@
-{ pkgs, ... }:
+let
+  domain = "docs.c3gsm.de";
+  oauth2ProxyPort = 4183;
+  oauth2Proxy = "http://127.0.0.1:${toString oauth2ProxyPort}";
+  issuer = "https://auth.0xc0fee.dev";
+in
 {
-  services.nginx.virtualHosts."docs.c3gsm.de" = {
+  config,
+  lib,
+  pkgs,
+  ...
+}:
+{
+  lass.ports.${toString oauth2ProxyPort} = "docs-oauth2-proxy";
+
+  clan.core.vars.generators.docs-oauth2-client = {
+    files.env = { };
+    prompts.client_id = {
+      description = "OIDC client ID for ${domain} at ${issuer} (callback: https://${domain}/oauth2/callback)";
+      persist = true;
+    };
+    prompts.client_secret = {
+      description = "OIDC client secret for ${domain} at ${issuer}";
+      type = "hidden";
+      persist = true;
+    };
+    script = ''
+      {
+        printf 'OAUTH2_PROXY_CLIENT_ID=%s\n' "$(cat "$prompts"/client_id)"
+        printf 'OAUTH2_PROXY_CLIENT_SECRET=%s\n' "$(cat "$prompts"/client_secret)"
+      } > "$out/env"
+    '';
+  };
+
+  systemd.services.docs-oauth2-proxy = {
+    description = "${domain} login (${issuer})";
+    wantedBy = [ "multi-user.target" ];
+    after = [ "network-online.target" ];
+    serviceConfig = {
+      ExecStart = lib.escapeShellArgs [
+        (lib.getExe pkgs.oauth2-proxy)
+        "--provider=oidc"
+        "--oidc-issuer-url=${issuer}"
+        "--redirect-url=https://${domain}/oauth2/callback"
+        "--http-address=${oauth2Proxy}"
+        "--email-domain=*"
+        "--cookie-name=_docs_oauth2"
+        "--cookie-secret-file=%d/cookie-secret"
+        "--cookie-secure=true"
+        "--skip-provider-button=true"
+      ];
+      EnvironmentFile = config.clan.core.vars.generators.docs-oauth2-client.files.env.path;
+      LoadCredential = "cookie-secret:${
+        config.clan.core.vars.generators.docs-oauth2-proxy.files."cookie-secret".path
+      }";
+      Restart = "on-failure";
+      NoNewPrivileges = true;
+      PrivateTmp = true;
+      ProtectSystem = "strict";
+      ProtectHome = true;
+    };
+  };
+
+  clan.core.vars.generators.docs-oauth2-proxy = {
+    files."cookie-secret" = { };
+    runtimeInputs = [
+      pkgs.coreutils
+      pkgs.openssl
+    ];
+    script = ''
+      openssl rand -hex 16 | tr -d '\n' > "$out/cookie-secret"
+    '';
+  };
+
+  services.nginx.virtualHosts.${domain} = {
     forceSSL = true;
     enableACME = true;
-    locations."/".extraConfig = ''
-      auth_basic "Restricted Content";
-      auth_basic_user_file ${pkgs.writeText "c3gsm-user-pass" ''
-        c3gsm:$2y$05$GS87dXPIqbAVb3bOIFMj7.gX.D7c3AEYPrkeIG5s113F22/0p.LD2
-      ''};
-      root /srv/http/docs.c3gsm.de;
+    root = "/srv/http/docs.c3gsm.de";
+    extraConfig = ''
+      auth_request /oauth2/auth;
+      error_page 401 = @login;
     '';
+    locations = {
+      "/oauth2/" = {
+        recommendedProxySettings = true;
+        proxyPass = oauth2Proxy;
+        extraConfig = ''
+          auth_request off;
+        '';
+      };
+      "= /oauth2/auth" = {
+        recommendedProxySettings = true;
+        proxyPass = oauth2Proxy;
+        extraConfig = ''
+          auth_request off;
+          proxy_pass_request_body off;
+          proxy_set_header Content-Length "";
+        '';
+      };
+      "@login" = {
+        return = "307 /oauth2/start?rd=$request_uri";
+        extraConfig = ''
+          auth_request off;
+        '';
+      };
+    };
   };
 
   services.nginx.virtualHosts."c3gsm.de" = {
