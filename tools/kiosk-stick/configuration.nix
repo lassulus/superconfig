@@ -39,8 +39,55 @@ in
 
   users.users.kiosk = {
     isNormalUser = true;
+    # fixed, the media key bindings below address its pipewire by /run/user/<uid>
+    uid = 1000;
     # the networkmanager group may change connections without a polkit prompt
     extraGroups = [ "networkmanager" ];
+  };
+
+  # pipewire runs in the kiosk user's session (cage opens one), Firefox talks
+  # to it through pipewire-pulse
+  security.rtkit.enable = true;
+  services.pipewire = {
+    enable = true;
+    alsa.enable = true;
+    pulse.enable = true;
+  };
+
+  # cage has no key bindings and Firefox ignores the volume keys, so
+  # triggerhappy reads them from /dev/input and runs wpctl as the kiosk user.
+  # "hold" is the key repeat, holding a volume key keeps changing it.
+  services.triggerhappy = {
+    enable = true;
+    user = "kiosk";
+    bindings =
+      let
+        wpctl = "XDG_RUNTIME_DIR=/run/user/1000 ${lib.getExe' pkgs.wireplumber "wpctl"}";
+        volume =
+          key: change:
+          map
+            (event: {
+              keys = [ key ];
+              inherit event;
+              cmd = "${wpctl} set-volume --limit 1.0 @DEFAULT_AUDIO_SINK@ ${change}";
+            })
+            [
+              "press"
+              "hold"
+            ];
+      in
+      volume "VOLUMEUP" "5%+"
+      ++ volume "VOLUMEDOWN" "5%-"
+      ++ [
+        {
+          keys = [ "MUTE" ];
+          cmd = "${wpctl} set-mute @DEFAULT_AUDIO_SINK@ toggle";
+        }
+        {
+          keys = [ "MICMUTE" ];
+          cmd = "${wpctl} set-mute @DEFAULT_AUDIO_SOURCE@ toggle";
+        }
+      ];
   };
 
   services.cage = {
