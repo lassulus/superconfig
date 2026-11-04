@@ -195,6 +195,20 @@ in
   clan.core.vars.generators.zitadel-google =
     idpCredentials "Google" "https://console.cloud.google.com/apis/credentials";
 
+  # The other way round: auth.0xc0fee.dev (Zitadel, the login of
+  # docs.c3gsm.de) offers id.lassul.us as a generic OIDC IdP with this
+  # client. zitadel-reconcile writes its id and secret to
+  # /var/lib/zitadel-apps/auth-0xc0fee-web.env; they go to that instance's
+  # admin. The redirect URIs are the IdP callbacks of its v1 and v2 login.
+  lass.zitadel.projects.auth-0xc0fee = {
+    access = "declarative";
+    users = [ "lass@lassul.us" ];
+    apps.web.redirectUris = [
+      "https://auth.0xc0fee.dev/ui/login/login/externalidp/callback"
+      "https://auth.0xc0fee.dev/idps/callback"
+    ];
+  };
+
   # The database and its owner come from ensureDatabases/ensureUsers, so the
   # zitadel role needs no CREATEROLE/CREATEDB. `zitadel init zitadel` creates
   # only the schemas inside it; start-from-setup then skips the role and
