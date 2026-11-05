@@ -35,13 +35,18 @@
   # prompt and execs sway (a login shell so the wrapped sway + session env from
   # programs.sway are on PATH). default_session with a real user means every
   # (re)start goes directly into the session — there is no greeter.
+  # Virtual screen: without any output sway aborts when a window maps (sway
+  # issue 8811, TV off), and sunray needs a screen to stream.
   services.greetd = {
     enable = true;
     settings.default_session = {
-      command = "${lib.getExe pkgs.bash} --login -c sway";
+      command = "${lib.getExe pkgs.bash} --login -c 'WLR_BACKENDS=drm,libinput,headless WLR_HEADLESS_OUTPUTS=1 sway'";
       user = config.users.users.mainUser.name;
     };
   };
+  environment.etc."sway/config.d/virtual-screen.conf".text = ''
+    output HEADLESS-1 mode 1920x1080
+  '';
 
   # Power off after 10 minutes without keyboard/mouse input, load or nix
   # builds; ssh sessions don't keep it on. swayidle marks input idle after
