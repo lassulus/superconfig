@@ -112,8 +112,9 @@ async def main():
     bases = ",".join(map(str, server.free_bases(addr)))
     with tempfile.TemporaryDirectory() as tmp:
         ctl = f"{tmp}/ctl"
+        # a host that powers off sends no FIN; keepalives let ssh notice
         ssh = await asyncio.create_subprocess_exec(
-            "ssh", "-M", "-S", ctl, args.host,
+            "ssh", "-M", "-S", ctl, "-o", "ServerAliveInterval=5", args.host,
             shlex.join(["python3", "-c", boot, bases, *args.overrides]),
             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
         )
@@ -146,7 +147,12 @@ async def main():
             moonlight = await asyncio.create_subprocess_exec(
                 "moonlight", "stream", f"{addr}:{port}", args.app
             )
-            await moonlight.wait()
+            # ends when the window closes or the host goes away
+            await asyncio.wait([relay, asyncio.create_task(moonlight.wait())],
+                               return_when=asyncio.FIRST_COMPLETED)
+            if moonlight.returncode is None:
+                moonlight.terminate()
+                await moonlight.wait()
             relay.cancel()
         finally:
             ssh.stdin.close()
