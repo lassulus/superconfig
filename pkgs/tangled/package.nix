@@ -16,11 +16,11 @@ rustPlatform.buildRustPackage {
 
   src = fetchgit {
     url = "https://tangled.org/tangled.org/core";
-    rev = "e70f5fce85a442529dff33beb66e83c0af1a51f2";
-    hash = "sha256-mpQadf8V1jkLlWsJxd/r+Z0cW+U9YlJAzUkH3zoxVf8=";
+    rev = "0ca484020863de771f60c42c2c07ce133768206e";
+    hash = "sha256-MvjyNCRypo9GxARFXVCfSMRf1dye8xFGklxYcypVfFI=";
   };
 
-  cargoHash = "sha256-xrFS9bHytj25+Rxx5BPCQOdR2iAbwNqAToPJto2qbxk=";
+  cargoHash = "sha256-cm4kJ4nrdAs7U2Zp+3NCDWSp8MOgPb/9TOn9D3QBnGM=";
   nativeBuildInputs = [
     cmake
     perl
