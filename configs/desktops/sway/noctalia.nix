@@ -50,6 +50,10 @@ in
         pkgs.pulseaudio
         pkgs.networkmanager
         pkgs.wl-clipboard
+        # the launcher starts installed apps by name
+        "/run/wrappers"
+        "/etc/profiles/per-user/%u"
+        "/run/current-system/sw"
       ];
       serviceConfig = {
         ExecStart = "${noctalia}/bin/noctalia";
