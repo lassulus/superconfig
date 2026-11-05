@@ -21,8 +21,9 @@ let
       projects = lib.mapAttrs (_: project: {
         inherit (project) access users roles;
         apps = lib.mapAttrs (_: app: {
-          inherit (app) redirectUris envFile;
+          inherit (app) redirectUris envFile clientIdFile;
           authMethodType = "OIDC_AUTH_METHOD_TYPE_${lib.toUpper app.authMethod}";
+          accessTokenType = "OIDC_TOKEN_TYPE_${lib.toUpper app.accessTokenType}";
           grantTypes = [
             "OIDC_GRANT_TYPE_AUTHORIZATION_CODE"
           ]
@@ -202,6 +203,25 @@ in
                             How the app sends its client secret to the token
                             endpoint; "none" for a public client without a
                             secret, which has to use PKCE.
+                          '';
+                        };
+                        accessTokenType = lib.mkOption {
+                          type = lib.types.enum [
+                            "bearer"
+                            "jwt"
+                          ];
+                          default = "bearer";
+                          description = ''
+                            Opaque bearer access tokens, or JWTs for resource
+                            servers that verify tokens themselves.
+                          '';
+                        };
+                        clientIdFile = lib.mkOption {
+                          type = lib.types.str;
+                          default = "${appsDir}/${project}-${name}.client-id";
+                          description = ''
+                            File with just the client id, owned by envFile.owner,
+                            for consumers that take the id as a file.
                           '';
                         };
                         refreshTokens = lib.mkOption {

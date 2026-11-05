@@ -69,6 +69,7 @@ def by_name(objects, name):
 ZERO = {
     "appType": "OIDC_APP_TYPE_WEB",
     "authMethodType": "OIDC_AUTH_METHOD_TYPE_BASIC",
+    "accessTokenType": "OIDC_TOKEN_TYPE_BEARER",
 }
 
 
@@ -234,6 +235,7 @@ for project_name, project in config["projects"].items():
             "grantTypes": app["grantTypes"],
             "appType": "OIDC_APP_TYPE_WEB",
             "authMethodType": app["authMethodType"],
+            "accessTokenType": app["accessTokenType"],
         }
         state_file = f"{config['stateDir']}/{project_name}-{app_name}.json"
         secret = None
@@ -273,6 +275,7 @@ for project_name, project in config["projects"].items():
         if not public:
             content += f"{env['clientSecretVariable']}={secret}\n"
         write_file(env["path"], uid, content)
+        write_file(app["clientIdFile"], uid, client_id)
 
     if project["access"] != "declarative":
         continue
