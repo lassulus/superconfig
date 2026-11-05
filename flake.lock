@@ -7,15 +7,16 @@
         ]
       },
       "locked": {
-        "lastModified": 1793487101,
-        "narHash": "sha256-IE/B6ZC6YD6U/PtSSB6OyV20n2gdn8qE6e8JkEVolEE=",
+        "lastModified": 1793922889,
+        "narHash": "sha256-Dhg/bYBjQWNUrdcZIcIGgYLhSz+giTEwew1eEIFHA7k=",
         "owner": "lassulus",
         "repo": "agentd",
-        "rev": "478a63a2c8825fd88becc55532c8da85a82158aa",
+        "rev": "2a70e90ec1b6454fde028714aa853f1137696aa7",
         "type": "github"
       },
       "original": {
         "owner": "lassulus",
+        "ref": "web-ui",
         "repo": "agentd",
         "type": "github"
       }
