@@ -130,6 +130,9 @@ async def main():
             for k, v in {
                 "port": base,
                 "bind_address": "127.0.0.1",
+                # sway screencopy; "auto" picks the portal, whose source
+                # picker dialog nobody can answer before the stream exists
+                "capture": "wlr",
                 "origin_web_ui_allowed": "pc",
                 "file_apps": apps,
                 "file_state": state / "sunshine_state.json",
