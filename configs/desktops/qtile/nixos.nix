@@ -99,6 +99,7 @@ in
   environment.systemPackages = [
     pkgs.swaylock-effects # also for the $mod+F11 binding in qtile.py
     pkgs.copyq
+    pkgs.mako # notifications; sway gets them from noctalia
     (pkgs.writers.writeDashBin "qtile-debug-shell" { } ''
       ${pyEnv}/bin/ipython "$@"
     '')

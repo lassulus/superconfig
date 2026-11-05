@@ -93,7 +93,6 @@
     rofi-rbw
     eog
     libnotify
-    mako # notifications
     kanshi # auto-configure display outputs
     wdisplays # buggy with qtile?
     wlr-randr
