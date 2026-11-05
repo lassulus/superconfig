@@ -217,6 +217,7 @@ in
   };
   imports = [
     ../lib/wayland.nix
+    ../../sunray.nix
     ./noctalia.nix
   ];
   programs.sway = {
