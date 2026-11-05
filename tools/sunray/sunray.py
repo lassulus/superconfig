@@ -109,11 +109,12 @@ async def main():
     code = base64.b64encode(Path(server.__file__).read_bytes()).decode()
     boot = f"import base64;exec(base64.b64decode('{code}'))"
     addr = loopback(args.host)
+    bases = ",".join(map(str, server.free_bases(addr)))
     with tempfile.TemporaryDirectory() as tmp:
         ctl = f"{tmp}/ctl"
         ssh = await asyncio.create_subprocess_exec(
             "ssh", "-M", "-S", ctl, args.host,
-            shlex.join(["python3", "-c", boot, *args.overrides]),
+            shlex.join(["python3", "-c", boot, bases, *args.overrides]),
             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
         )
         try:
@@ -127,8 +128,9 @@ async def main():
             forwards = []
             for o in server.TCP_OFFSETS:
                 forwards += ["-L", f"{addr}:{port + o}:127.0.0.1:{port + o}"]
-            subprocess.run(["ssh", "-S", ctl, "-O", "forward", *forwards, args.host],
-                           check=True, stderr=subprocess.DEVNULL)
+            if subprocess.run(["ssh", "-S", ctl, "-O", "forward", *forwards, args.host],
+                              stderr=subprocess.DEVNULL).returncode:
+                raise SystemExit("sunray: ssh port forwarding failed")
 
             loop = asyncio.get_running_loop()
             udp = {}

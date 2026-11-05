@@ -1,7 +1,8 @@
 """sunray host side: runs one private Sunshine and relays its UDP over stdio.
 
-Started by the sunray client as `python3 -c <this file> [key=value ...]`
-over ssh; the arguments are passed to Sunshine as config overrides.
+Started by the sunray client as
+`python3 -c <this file> <base,base,...> [key=value ...]` over ssh: the port
+bases free on the client, then Sunshine config overrides.
 Stdout carries one JSON line, then frames; stdin carries frames.
 """
 
@@ -48,25 +49,35 @@ async def stdio():
     return reader, writer
 
 
-def free(port, kind):
+def free(port, kind, addr="127.0.0.1"):
     with socket.socket(socket.AF_INET, kind) as s:
         # like Sunshine's own listeners: TIME_WAIT leftovers don't count
         if kind == socket.SOCK_STREAM:
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
-            s.bind(("127.0.0.1", port))
+            s.bind((addr, port))
         except OSError:
             return False
     return True
 
 
-def pick_base():
-    for base in range(47989, 65514, 100):
-        if all(free(base + o, socket.SOCK_STREAM) for o in TCP_OFFSETS) and all(
-            free(base + o, socket.SOCK_DGRAM) for o in UDP_OFFSETS
-        ):
+def free_bases(addr="127.0.0.1"):
+    """Port bases whose Sunshine ports are all free on addr."""
+    return [
+        base
+        for base in range(47989, 65514, 100)
+        if all(free(base + o, socket.SOCK_STREAM, addr) for o in TCP_OFFSETS)
+        and all(free(base + o, socket.SOCK_DGRAM, addr) for o in UDP_OFFSETS)
+    ]
+
+
+def pick_base(candidates):
+    """First base free here among those the client has free locally."""
+    here = set(free_bases())
+    for base in candidates:
+        if base in here:
             return base
-    raise SystemExit("sunray: no free Sunshine port range on this host")
+    raise SystemExit("sunray: no Sunshine port range free on both client and host")
 
 
 def session_env():
@@ -108,7 +119,8 @@ async def main():
     if not apps.exists():
         apps.write_text(json.dumps({"env": {}, "apps": [{"name": "Desktop"}]}))
 
-    base = pick_base()
+    bases, *overrides = sys.argv[1:]
+    base = pick_base(int(b) for b in bases.split(","))
     conf = state / f"sunshine-{base}.conf"
     creds = state / f"creds-{base}.json"
     log = state / f"sunshine-{base}.log"
@@ -137,7 +149,7 @@ async def main():
         check=True,
     )
     proc = subprocess.Popen(
-        ["sunshine", conf, *sys.argv[1:]],
+        ["sunshine", conf, *overrides],
         env=env,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
