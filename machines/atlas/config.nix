@@ -33,17 +33,25 @@
 
   # Autostart straight into sway: greetd logs the main user in on boot with no
   # prompt and execs sway (a login shell so the wrapped sway + session env from
-  # programs.sway are on PATH). default_session with a real user means every
-  # (re)start goes directly into the session — there is no greeter.
+  # programs.sway are on PATH). initial_session makes it a real user session
+  # (logind class user, not greeter), so polkit treats processes of the user
+  # (noctalia's shutdown button) as local and active. default_session runs
+  # the same command after sway exits, so there is no greeter (that session
+  # is class greeter again until the next boot).
   # Virtual screen: without any output sway aborts when a window maps (sway
   # issue 8811, TV off), and sunray needs a screen to stream.
-  services.greetd = {
-    enable = true;
-    settings.default_session = {
-      command = "${lib.getExe pkgs.bash} --login -c 'WLR_BACKENDS=drm,libinput,headless WLR_HEADLESS_OUTPUTS=1 sway'";
-      user = config.users.users.mainUser.name;
+  services.greetd =
+    let
+      session = {
+        command = "${lib.getExe pkgs.bash} --login -c 'WLR_BACKENDS=drm,libinput,headless WLR_HEADLESS_OUTPUTS=1 sway'";
+        user = config.users.users.mainUser.name;
+      };
+    in
+    {
+      enable = true;
+      settings.initial_session = session;
+      settings.default_session = session;
     };
-  };
   environment.etc."sway/config.d/virtual-screen.conf".text = ''
     output HEADLESS-1 mode 1920x1080
   '';
