@@ -25,8 +25,13 @@ echo "$body" | tee -a "$GITHUB_STEP_SUMMARY"
 # inside that round), written to the repo's knot with service auth from
 # Hermes's PDS
 repo=did:plc:xtz34eivhh2bcj7pgvoipkn5
-ticket=$(curl -fsS "https://api.tangled.org/xrpc/org.tangled.repo.listPulls?subject=$repo&limit=100" |
-  jq -ce --arg u "at://$repo/org.tangled.track.ticket/$PR" '.items[] | select(.uri == $u) | {uri, cid}')
+ticket='' cursor=''
+while [ -z "$ticket" ]; do
+  page=$(curl -fsS "https://api.tangled.org/xrpc/org.tangled.repo.listPulls?subject=$repo&limit=100${cursor:+&cursor=$cursor}")
+  ticket=$(jq -c --arg u "at://$repo/org.tangled.track.ticket/$PR" '.items[] | select(.uri == $u) | {uri, cid}' <<<"$page")
+  cursor=$(jq -r '.cursor // empty' <<<"$page")
+  [ -n "$ticket" ] || [ -n "$cursor" ] || { echo "PR $PR not found" >&2; exit 1; }
+done
 access=$(jq -n --arg p "$TANGLED_APP_PASSWORD" '{identifier: "hermes.pds.lassul.us", password: $p}' |
   curl -fsS -H 'Content-Type: application/json' -d @- https://pds.lassul.us/xrpc/com.atproto.server.createSession | jq -r .accessJwt)
 token=$(curl -fsS -H "Authorization: Bearer $access" \
