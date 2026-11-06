@@ -12,7 +12,17 @@ in
   services.mautrix-signal = {
     enable = true;
     # use pure-Go olm implementation to avoid the insecure libolm dependency
-    package = pkgs.mautrix-signal.override { withGoolm = true; };
+    package = (pkgs.mautrix-signal.override { withGoolm = true; }).overrideAttrs (old: {
+      patches = (old.patches or [ ]) ++ [
+        # Signal now answers 400 to /v4/attachments/form/upload without
+        # uploadLength, so every Matrix -> Signal attachment failed with
+        # "failed to decode upload attributes". Drop once nixpkgs has > 26.10.
+        (pkgs.fetchpatch {
+          url = "https://github.com/mautrix/signal/commit/e2e994f99f8dfffe5ad1cc88a2d36449639a609e.patch";
+          hash = "sha256-xz9POxxL4zUfKpx9AEZFDwhKxRbQFHp3mdB3y7bONqY=";
+        })
+      ];
+    });
     environmentFile = config.clan.core.vars.generators.mautrix-signal.files.env.path;
     settings = {
       homeserver = {
