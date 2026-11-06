@@ -22,6 +22,8 @@ in
     extraConfig = ''
       $config['product_name'] = 'lassulus webmail';
       $config['default_list_mode'] = 'threads';
+      // default is 10 minutes of inactivity
+      $config['session_lifetime'] = 24 * 60;
       $config['imap_host'] = 'ssl://${domain}:${toString config.lass.servicePorts.dovecot-imaps}';
       $config['smtp_host'] = 'ssl://${domain}:${toString config.lass.servicePorts.postfix-submissions}';
       $config['managesieve_host'] = 'tls://${domain}:${toString config.lass.servicePorts.dovecot-managesieve}';
