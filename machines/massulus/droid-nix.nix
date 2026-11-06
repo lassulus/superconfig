@@ -41,6 +41,7 @@
     yubi1.public
     yubi2.public
     solo2.public
+    phonetpm_massulus.public
   ];
 
   android-integration = {
