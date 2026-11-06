@@ -48,8 +48,11 @@ s deploy --flake . --yes <MACHINE_NAME>
 # Format code
 nix fmt
 
-# Build NixOS configuration
-nix build .#nixosConfigurations.<machine-name>.config.system.build.toplevel
+# Agents: NEVER build a whole system toplevel to check a change. It takes
+# forever, fills the store and proves nothing beyond what CI builds anyway.
+# Build only the changed thing, e.g. a package via its option path, or eval:
+nix build .#nixosConfigurations.<machine-name>.config.services.<svc>.package
+nix eval .#nixosConfigurations.<machine-name>.config.<option.path>
 
 # Build Darwin configuration
 nix build .#darwinConfigurations.barnacle.system
