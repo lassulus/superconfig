@@ -183,6 +183,8 @@ in
       hermes-notify
       # tangled.org PRs on superconfig (instead of crit reviews)
       self.packages.${pkgs.stdenv.hostPlatform.system}.tg
+      # GitHub PRs and CI logs for the cron scripts (heartbeat, update-PR fixer)
+      pkgs.gh
     ];
 
     # Home Assistant (acheron, configs/hass) left hermes core for the
