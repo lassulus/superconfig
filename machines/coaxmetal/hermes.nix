@@ -122,7 +122,6 @@ in
   imports = [
     self.inputs.hermes-agent.nixosModules.default
     ../../configs/hermes-mail-vars.nix
-    ../../configs/agentd-neoprism-hermes-vars.nix
     # Phone-approved ssh for the agent: the phonetpm user service runs in the
     # hermes user manager (the module sets linger), see SSH_AUTH_SOCK below.
     ../../configs/phonetpm.nix
@@ -698,7 +697,6 @@ in
       "hermes-mail"
       "hermes-homeassistant"
       "agentd"
-      "agentd-neoprism-hermes"
     ];
     files."hermes.env" = { };
     # clan regenerates a var only when its validation changes, not when the
@@ -716,7 +714,6 @@ in
       EMAIL_PASSWORD=$(cat "$in"/hermes-mail/password)
       HASS_TOKEN=$(cat "$in"/hermes-homeassistant/token)
       AGENTD_TOKEN=$(cat "$in"/agentd/hermes-token)
-      AGENTD_NEOPRISM_TOKEN=$(cat "$in"/agentd-neoprism-hermes/hermes-token)
       EOF
     '';
   };

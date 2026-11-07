@@ -7,7 +7,7 @@
 # one-time login: `runuser -u agentd -- omp`, then /login). coaxmetal's
 # agentd can be added to `backends` once it accepts these tokens too.
 # Hermes (coaxmetal) drives the local agentd over retiolum
-# (http://neoprism.r:8790) with an API token (agentd-neoprism-hermes-vars.nix).
+# (http://neoprism.r:8790) with an API token (agentd var below).
 {
   config,
   pkgs,
@@ -22,10 +22,7 @@ let
   issuer = "https://id.lassul.us";
 in
 {
-  imports = [
-    self.inputs.agentd.nixosModules.default
-    ../../agentd-neoprism-hermes-vars.nix
-  ];
+  imports = [ self.inputs.agentd.nixosModules.default ];
 
   lass.ports."8790" = "agentd";
   lass.ports."8792" = "agentd-web";
@@ -56,10 +53,25 @@ in
     };
     # lass's Zitadel user id: Zitadel access tokens have no email claim.
     users = [ "395780385822936760" ];
-    auth.tokensFile = config.clan.core.vars.generators.agentd-neoprism-hermes.files.tokens.path;
+    auth.tokensFile = config.clan.core.vars.generators.agentd.files.tokens.path;
   };
 
   networking.firewall.interfaces.retiolum.allowedTCPPorts = [ agentdPort ];
+
+  # API token for Hermes: agentd only gets its sha256, the raw token stays in
+  # the vars store (Hermes reads it from there).
+  clan.core.vars.generators.agentd = {
+    files.hermes-token.deploy = false;
+    files.tokens = { };
+    runtimeInputs = [
+      pkgs.coreutils
+      pkgs.openssl
+    ];
+    script = ''
+      openssl rand -hex 32 | tr -d '\n' > "$out/hermes-token"
+      printf 'hermes %s\n' "$(sha256sum < "$out/hermes-token" | cut -d' ' -f1)" > "$out/tokens"
+    '';
+  };
 
   services.agentd-web = {
     enable = true;
