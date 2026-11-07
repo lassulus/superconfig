@@ -52,6 +52,21 @@ in
     # nix, so agents can build and test (and deploy a dev agentd)
     path = options.services.agentd.path.default ++ [ config.nix.package ];
     auth.tokensFile = config.clan.core.vars.generators.agentd.files.tokens.path;
+    # Pending permissions and questions go to Matrix via Hermes' webhook
+    # (route below), signed with the key Hermes checks webhooks against.
+    notify = [
+      {
+        url = "http://127.0.0.1:${toString config.lass.servicePorts.hermes-webhook}/webhooks/agentd";
+        secretFile = config.clan.core.vars.generators.hermes-api.files."api_key".path;
+      }
+    ];
+  };
+
+  # deliver_only: posted to the Matrix home room as is, no agent turn.
+  services.hermes-agent.settings.platforms.webhook.extra.routes.agentd = {
+    deliver = "matrix";
+    deliver_only = true;
+    prompt = "agentd {agent.name} ({agent.id}) in {agent.cwd} waits:\n\n{text}";
   };
 
   # Restart onto a new dev build. Watching the directory, not the link:
