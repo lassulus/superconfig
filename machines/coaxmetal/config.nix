@@ -16,8 +16,6 @@
     ../../configs/wine.nix
     ../../configs/review.nix
     ../../configs/rad.nix
-    ../../configs/orca/ide.nix
-    ../../configs/orca/server.nix
     ../../configs/crit.nix
     ../../configs/services/agentd
     ../../configs/monitoring/server.nix
