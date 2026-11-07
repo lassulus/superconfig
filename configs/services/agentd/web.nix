@@ -6,6 +6,8 @@
 # Backends: a local agentd on neoprism (its own `agentd` user; omp needs a
 # one-time login: `runuser -u agentd -- omp`, then /login). coaxmetal's
 # agentd can be added to `backends` once it accepts these tokens too.
+# Hermes (coaxmetal) drives the local agentd over retiolum
+# (http://neoprism.r:8790) with an API token (agentd-neoprism-hermes-vars.nix).
 {
   config,
   pkgs,
@@ -20,7 +22,10 @@ let
   issuer = "https://id.lassul.us";
 in
 {
-  imports = [ self.inputs.agentd.nixosModules.default ];
+  imports = [
+    self.inputs.agentd.nixosModules.default
+    ../../agentd-neoprism-hermes-vars.nix
+  ];
 
   lass.ports."8790" = "agentd";
   lass.ports."8792" = "agentd-web";
@@ -39,7 +44,7 @@ in
 
   services.agentd = {
     enable = true;
-    listen = "127.0.0.1:${toString agentdPort}";
+    listen = "0.0.0.0:${toString agentdPort}";
     harnesses.omp.command = [
       "${pkgs.omp}/bin/omp"
       "acp"
@@ -51,7 +56,10 @@ in
     };
     # lass's Zitadel user id: Zitadel access tokens have no email claim.
     users = [ "395780385822936760" ];
+    auth.tokensFile = config.clan.core.vars.generators.agentd-neoprism-hermes.files.tokens.path;
   };
+
+  networking.firewall.interfaces.retiolum.allowedTCPPorts = [ agentdPort ];
 
   services.agentd-web = {
     enable = true;
