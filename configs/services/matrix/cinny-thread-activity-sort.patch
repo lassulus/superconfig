@@ -1,0 +1,38 @@
+--- a/src/app/utils/sort.ts
++++ b/src/app/utils/sort.ts
+@@ -1,18 +1,25 @@
+-import { MatrixClient } from 'matrix-js-sdk';
++import { MatrixClient, Room } from 'matrix-js-sdk';
+ 
+ export type SortFunc<T> = (a: T, b: T) => number;
+ 
++// getLastActiveTimestamp only looks at the live timeline. With threadSupport,
++// thread replies go to their thread instead, so a room whose recent events are
++// all thread replies has an empty live timeline after a reload and would sort
++// last. Count the latest thread reply as activity too.
++const getLastActivity = (room: Room | null): number => {
++  if (!room) return Number.MIN_SAFE_INTEGER;
++  return room
++    .getThreads()
++    .reduce(
++      (ts, thread) => Math.max(ts, thread.replyToEvent?.getTs() ?? Number.MIN_SAFE_INTEGER),
++      room.getLastActiveTimestamp()
++    );
++};
++
+ export const factoryRoomIdByActivity =
+   (mx: MatrixClient): SortFunc<string> =>
+-  (a, b) => {
+-    const room1 = mx.getRoom(a);
+-    const room2 = mx.getRoom(b);
+-
+-    return (
+-      (room2?.getLastActiveTimestamp() ?? Number.MIN_SAFE_INTEGER) -
+-      (room1?.getLastActiveTimestamp() ?? Number.MIN_SAFE_INTEGER)
+-    );
+-  };
++  (a, b) =>
++    getLastActivity(mx.getRoom(b)) - getLastActivity(mx.getRoom(a));
+ 
+ export const factoryRoomIdByAtoZ =
+   (mx: MatrixClient): SortFunc<string> =>

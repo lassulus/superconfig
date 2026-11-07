@@ -20,6 +20,11 @@ let
         # starts with an empty live timeline and opened at the oldest events of
         # the first back pagination. Show the latest events instead.
         ./cinny-empty-live-timeline.patch
+        # getLastActiveTimestamp only sees the live timeline, so after a reload
+        # a DM whose recent events are all thread replies (hermes, with
+        # MATRIX_DM_AUTO_THREAD) sorted last in the room lists, out of view.
+        # Count the latest thread reply as activity.
+        ./cinny-thread-activity-sort.patch
       ];
       # Quack (https://www.youtube.com/watch?v=Fw3RB7xnb80) instead of the
       # stock chime; vite content-hashes it into assets/ at build time.
