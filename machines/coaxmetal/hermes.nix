@@ -105,7 +105,10 @@ let
               # pm-runtime.nix loads a second workspace without hermes-agent.
               lib.optionalAttrs (prev ? hermes-agent) {
                 hermes-agent = prev.hermes-agent.overrideAttrs (old: {
-                  patches = (old.patches or [ ]) ++ [ ./hermes-cron-matrix-dm-seed.patch ];
+                  patches = (old.patches or [ ]) ++ [
+                    ./hermes-cron-matrix-dm-seed.patch
+                    ./hermes-oauth-alias-bridge-args.patch
+                  ];
                 });
               }
             );
@@ -152,6 +155,9 @@ in
     # Matrix DM cron briefs are seeded under the group session key, so the
     # in-thread reply never sees the brief (hermes-agent#141429); drop once
     # upstream fixes #141429.
+    # On Anthropic OAuth the tool catalog names session_search by its wire
+    # alias chat_history_lookup, which tool_describe/tool_call did not map
+    # back (local fix, not upstream).
     package =
       self.inputs.hermes-agent.packages.${pkgs.stdenv.hostPlatform.system}.default.override
         (old: {

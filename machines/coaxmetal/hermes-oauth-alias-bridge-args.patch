@@ -1,0 +1,70 @@
+From 05ae0a2d3637e9d007f7fb1d86704e4f904755f8 Mon Sep 17 00:00:00 2001
+From: Hermes <hermes@lassul.us>
+Date: Sat, 7 Nov 2026 16:29:06 +0100
+Subject: [PATCH] fix(anthropic): resolve OAuth aliases named in
+ tool_describe/tool_call args
+
+On the OAuth wire session_search is aliased to chat_history_lookup, also
+in prose, so the deferred-tool catalog lists the alias. The model then
+passes chat_history_lookup to tool_describe/tool_call; normalize_response
+only reversed the tool_use name, so the bridge reported the tool as
+not_found and session_search was unreachable on subscription sessions.
+
+Reverse the alias for tool names inside those bridge arguments too, with
+the same registered-tool-wins rule.
+---
+ agent/transports/anthropic.py | 29 +++++++++++++++++++++++++++--
+ 1 file changed, 27 insertions(+), 2 deletions(-)
+
+diff --git a/agent/transports/anthropic.py b/agent/transports/anthropic.py
+index a0dca6f080..a8b7a25765 100644
+--- a/agent/transports/anthropic.py
++++ b/agent/transports/anthropic.py
+@@ -23,6 +23,30 @@ def _unprefix_oauth_tool_name(name: str) -> str:
+     return _OAUTH_TOOL_NAME_REVERSE_ALIASES.get(bare, name)
+ 
+ 
++def _unalias_bridge_arguments(name: str, args: Any) -> Any:
++    """The deferred-tool catalog reaches the model as prose, so it lists ``session_search`` under
++    its OAuth wire alias; the model then passes that alias as an argument to ``tool_describe`` or
++    ``tool_call``, where no tool by that name exists. Map those names back like tool_use names."""
++    from agent.anthropic_adapter import _OAUTH_TOOL_NAME_REVERSE_ALIASES
++    from tools.registry import registry as _tool_registry
++    from tools.tool_search_catalog import TOOL_CALL_NAME, TOOL_DESCRIBE_NAME
++
++    def unalias(tool: Any) -> Any:
++        if not isinstance(tool, str) or _tool_registry.get_entry(tool):
++            return tool
++        return _OAUTH_TOOL_NAME_REVERSE_ALIASES.get(tool, tool)
++
++    if not isinstance(args, dict):
++        return args
++    if name == TOOL_DESCRIBE_NAME:
++        names = args.get("names")
++        return {**args, "names": [unalias(n) for n in names] if isinstance(names, list) else unalias(names)}
++    if name == TOOL_CALL_NAME and isinstance(args.get("calls"), list):
++        return {**args, "calls": [{**c, "name": unalias(c.get("name"))} if isinstance(c, dict) else c
++                                  for c in args["calls"]]}
++    return args
++
++
+ # build_kwargs params forwarded to build_anthropic_kwargs, with the defaults applied when absent.
+ _BUILD_KWARG_DEFAULTS = {
+     "max_tokens": 16384, "reasoning_config": None, "tool_choice": None, "is_oauth": False, "preserve_dots": False,
+@@ -86,10 +110,11 @@ class AnthropicTransport(ProviderTransport):
+                 if isinstance(detail, dict):
+                     reasoning_details.append(detail)
+             elif block.type == "tool_use":
+-                name = block.name
++                name, args = block.name, block.input
+                 if strip_tool_prefix and name.startswith(_MCP_PREFIX):
+                     name = _unprefix_oauth_tool_name(name)
+-                tool_calls.append(ToolCall(id=block.id, name=name, arguments=json.dumps(block.input)))
++                    args = _unalias_bridge_arguments(name, args)
++                tool_calls.append(ToolCall(id=block.id, name=name, arguments=json.dumps(args)))
+         provider_data = {"reasoning_details": reasoning_details} if reasoning_details else {}
+         stop_details = _to_plain_data(getattr(response, "stop_details", None))
+         if stop_details is not None:
+-- 
+2.56.0
+
