@@ -15,8 +15,8 @@ buildGoModule {
 
   src = fetchgit {
     url = "https://tangled.org/aly.codes/tg";
-    rev = "b62e0dceadb6efaf7f9e6f6193ac05ddeeeb8b86";
-    hash = "sha256-N2tD4Mh+fl3+EE2rcxYR6MEV4EYZat3G9xYT4Cb7nO8=";
+    rev = "0df8c8114baa9213124ef2064b6c3f107bd60a86";
+    hash = "sha256-Hp8rh4YTyACksRZzgFXb1koMIuAEjra7pjrI9cxsGE4=";
   };
 
   proxyVendor = true;
