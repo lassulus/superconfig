@@ -348,17 +348,16 @@
         "nixpkgs": [
           "nixpkgs"
         ],
-        "npm-lockfile-fix": "npm-lockfile-fix",
         "pyproject-build-systems": "pyproject-build-systems",
         "pyproject-nix": "pyproject-nix",
         "uv2nix": "uv2nix"
       },
       "locked": {
-        "lastModified": 1793930133,
-        "narHash": "sha256-6PU+KrZ2KMSxiUhnX6Rg8lGyNmIUHQPRPsN3IKAF1bk=",
+        "lastModified": 1794017383,
+        "narHash": "sha256-IxPGwggWteAQKKHmGjnfvsxiGJwDo2D/U3sD75bGpJg=",
         "owner": "nousresearch",
         "repo": "hermes-agent",
-        "rev": "74915d7af8d3115c3eb821893f3c01ab783146a5",
+        "rev": "20b3d477328fae773a1725ab6b28ba374962755f",
         "type": "github"
       },
       "original": {
@@ -396,11 +395,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1793876660,
-        "narHash": "sha256-ETtzzDELjbn7WoMm7JW5h6JRTpUQmrJhUdqx/TSpClk=",
+        "lastModified": 1794002605,
+        "narHash": "sha256-RdC/th6UsZ+QBbtgrs2nFXhFX3sY/lAxTbd4B+vhDz8=",
         "owner": "numtide",
         "repo": "iets",
-        "rev": "ac6d2d885170a560432babbfa957483d3ff1ef29",
+        "rev": "5e9589e7570bfdf7997e5583d08533f0b95b5393",
         "type": "github"
       },
       "original": {
@@ -452,11 +451,11 @@
         "treefmt-nix": "treefmt-nix_3"
       },
       "locked": {
-        "lastModified": 1793924293,
-        "narHash": "sha256-63wxsZgMONe7PlnlAf7da/1pFlUdepPzMgOcUMHCOAI=",
+        "lastModified": 1794009285,
+        "narHash": "sha256-eheXUFjbw6txzeNpeBA1Cuurqoj+gtGYaeWumq+edOY=",
         "owner": "numtide",
         "repo": "llm-agents.nix",
-        "rev": "fb975ebe2da5ba2ce754d3a43306a21fefa032d5",
+        "rev": "2add2fd83bf01a23357d401ba24155e35d9d93d2",
         "type": "github"
       },
       "original": {
@@ -673,27 +672,6 @@
       "original": {
         "owner": "nix-community",
         "repo": "nixvim",
-        "type": "github"
-      }
-    },
-    "npm-lockfile-fix": {
-      "inputs": {
-        "nixpkgs": [
-          "hermes-agent",
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "lastModified": 1775903712,
-        "narHash": "sha256-2GV79U6iVH4gKAPWYrxUReB0S41ty/Y3dBLquU8AlaA=",
-        "owner": "jeslie0",
-        "repo": "npm-lockfile-fix",
-        "rev": "c6093acb0c0548e0f9b8b3d82918823721930fe8",
-        "type": "github"
-      },
-      "original": {
-        "owner": "jeslie0",
-        "repo": "npm-lockfile-fix",
         "type": "github"
       }
     },
