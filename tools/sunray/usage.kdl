@@ -1,7 +1,6 @@
 bin "sunray"
-about "Stream a host's desktop to Moonlight; ssh does the auth and carries the stream"
+about "Stream a host's desktop to Moonlight; pairs once over ssh, then streams directly"
 
-flag "-o <key=value>" help="Sunshine config override on the host (repeatable)" var=#true
 flag "-h --help" help="Show help message"
 
 arg "<host>" help="Host to stream from, anything ssh accepts"

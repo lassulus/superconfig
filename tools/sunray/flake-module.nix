@@ -6,13 +6,11 @@
         (pkgs.writeShellApplication {
           name = "sunray";
           runtimeInputs = [
-            pkgs.python3
             pkgs.openssh
             pkgs.moonlight-qt
+            pkgs.gawk
           ];
-          text = ''
-            exec python3 ${./.}/sunray.py "$@"
-          '';
+          text = builtins.readFile ./sunray.sh;
         }).overrideAttrs
           { passthru.usage = builtins.readFile ./usage.kdl; };
     };
