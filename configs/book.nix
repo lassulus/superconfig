@@ -30,7 +30,7 @@ let
     ];
     hours = lib.genAttrs [ "mon" "tue" "wed" "thu" "fri" ] (_: [ "10:00-18:00" ]);
     slotStep = 30;
-    bufferMinutes = 15;
+    bufferMinutes = 30;
     minNoticeHours = 24;
     horizonDays = 28;
     # lass/calendar is the only calendar (configs/radicale.nix): free/busy is
