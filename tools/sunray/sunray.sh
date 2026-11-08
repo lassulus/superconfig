@@ -6,11 +6,16 @@ set -euo pipefail
 # pairing, so a client that can ssh in gets paired once and then streams
 # directly.
 if [ $# -lt 1 ] || [ "$1" = -h ] || [ "$1" = --help ]; then
-  echo "usage: sunray <host> [app]" >&2
+  echo "usage: sunray <host> [app] [moonlight stream options...]" >&2
   exit 1
 fi
 host=$1
-app=${2:-Desktop}
+shift
+app=Desktop
+if [ $# -gt 0 ] && [[ $1 != -* ]]; then
+  app=$1
+  shift
+fi
 # the address behind ssh config aliases, which Moonlight connects to
 target=$(ssh -G "$host" | awk '$1 == "hostname" { print $2 }')
 
@@ -40,4 +45,4 @@ if ! moonlight list "$target" >/dev/null 2>&1; then
   kill "$pair"
 fi
 
-exec moonlight stream "$target" "$app"
+exec moonlight stream "$target" "$app" "$@"

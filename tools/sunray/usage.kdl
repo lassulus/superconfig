@@ -5,3 +5,4 @@ flag "-h --help" help="Show help message"
 
 arg "<host>" help="Host to stream from, anything ssh accepts"
 arg "[app]" help="Sunshine app to start (default: Desktop)"
+arg "[moonlight_args...]" help="Options for moonlight stream, e.g. --bitrate 80000" var=#true
