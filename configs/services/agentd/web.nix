@@ -22,7 +22,10 @@ let
   issuer = "https://id.lassul.us";
 in
 {
-  imports = [ self.inputs.agentd.nixosModules.default ];
+  imports = [
+    self.inputs.agentd.nixosModules.default
+    ./token.nix
+  ];
 
   lass.ports."8790" = "agentd";
   lass.ports."8792" = "agentd-web";
@@ -57,21 +60,6 @@ in
   };
 
   networking.firewall.interfaces.retiolum.allowedTCPPorts = [ agentdPort ];
-
-  # API token for Hermes: agentd only gets its sha256, the raw token stays in
-  # the vars store (Hermes reads it from there).
-  clan.core.vars.generators.agentd = {
-    files.hermes-token.deploy = false;
-    files.tokens = { };
-    runtimeInputs = [
-      pkgs.coreutils
-      pkgs.openssl
-    ];
-    script = ''
-      openssl rand -hex 32 | tr -d '\n' > "$out/hermes-token"
-      printf 'hermes %s\n' "$(sha256sum < "$out/hermes-token" | cut -d' ' -f1)" > "$out/tokens"
-    '';
-  };
 
   services.agentd-web = {
     enable = true;

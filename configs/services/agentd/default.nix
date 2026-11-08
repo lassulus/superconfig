@@ -30,7 +30,10 @@ let
   pinned = self.inputs.agentd.packages.${pkgs.stdenv.hostPlatform.system}.default;
 in
 {
-  imports = [ self.inputs.agentd.nixosModules.default ];
+  imports = [
+    self.inputs.agentd.nixosModules.default
+    ./token.nix
+  ];
 
   lass.ports."8791" = "agentd";
 
@@ -123,21 +126,6 @@ in
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBZ368b3nf45MzdgNQC4EkRpQTsssdhj3IEOoo4GdaX2";
 
   networking.firewall.interfaces.retiolum.allowedTCPPorts = [ port ];
-
-  # API token for Hermes: the raw token goes into Hermes' .env
-  # (machines/coaxmetal/hermes.nix), agentd only gets its sha256.
-  clan.core.vars.generators.agentd = {
-    files.hermes-token = { };
-    files.tokens = { };
-    runtimeInputs = [
-      pkgs.coreutils
-      pkgs.openssl
-    ];
-    script = ''
-      openssl rand -hex 32 | tr -d '\n' > "$out/hermes-token"
-      printf 'hermes %s\n' "$(sha256sum < "$out/hermes-token" | cut -d' ' -f1)" > "$out/tokens"
-    '';
-  };
 
   lass.backup.state.agentd = {
     folders = [ "/var/lib/agentd" ];
