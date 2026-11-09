@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Tracks our fork's integration branch (upstream main + tunnel-address gate +
-# Mic92/tincr#140); switch back to Mic92/main once merged.
-owner=Lassulus
+owner=Mic92
 repo=tincr
-branch=lassulus/fixes-rebased
+branch=main
 attr=tincr
 
 # Run by update-pkgs from the flake root ($0 is a read-only store copy).

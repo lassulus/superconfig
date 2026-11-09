@@ -141,11 +141,11 @@
     },
     "crane_2": {
       "locked": {
-        "lastModified": 1791754810,
-        "narHash": "sha256-cN0Mgk+sQtCJcGWs9H4M0CnLRAuC4I8aCwiBTcBJs6E=",
+        "lastModified": 1793836618,
+        "narHash": "sha256-TREenflwEjxOSq292FYwbc3kEm7TDRtXCZRNWEdjBmg=",
         "owner": "ipetkov",
         "repo": "crane",
-        "rev": "bd63bf1d0a0f6dcacd7549c714a671ee63b0db6a",
+        "rev": "79fd63528501446749c09f08cad486a58c7d173e",
         "type": "github"
       },
       "original": {
@@ -203,11 +203,11 @@
         "rust-analyzer-src": "rust-analyzer-src"
       },
       "locked": {
-        "lastModified": 1792062577,
-        "narHash": "sha256-HrXmKzV5mOZsug7SUrSX+ud1fXurTjw0R+G0qDzL15Q=",
+        "lastModified": 1793277514,
+        "narHash": "sha256-oazTcfIGr1pFdY8oNZ9A5yEsNBa5fzsV3w5bEdXmJl4=",
         "owner": "nix-community",
         "repo": "fenix",
-        "rev": "fd5ea49da0ae244caac8872e32f3af90df79e065",
+        "rev": "cf57f8966c3c129e31caaf29790caf8a6a93e0a6",
         "type": "github"
       },
       "original": {
@@ -752,11 +752,11 @@
     "rust-analyzer-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1791835614,
-        "narHash": "sha256-CMXY9x3W43sVW8G7IhXAi3vNqkbWwbsxtKldef8Jar0=",
+        "lastModified": 1793114798,
+        "narHash": "sha256-UtdQwK4PBKyXYRtopcJbBWZ9lPr7eRICTzrBQ+NNyf0=",
         "owner": "rust-lang",
         "repo": "rust-analyzer",
-        "rev": "dd5ed69d4b5b26fe7f91013b1d02608cd37ae199",
+        "rev": "889bb47e853003f62b0a593b955ab9afc97e7885",
         "type": "github"
       },
       "original": {
@@ -847,16 +847,15 @@
         ]
       },
       "locked": {
-        "lastModified": 1793170003,
-        "narHash": "sha256-MTxzkgMJaZSnV3nyl4CB40VdCiRwJNcxmF6NssgaL1M=",
-        "owner": "Lassulus",
+        "lastModified": 1794172477,
+        "narHash": "sha256-Uh+haWoIh/yl1Z+k1GRHR7fFewXDCQcVUV7xIlf8bdU=",
+        "owner": "Mic92",
         "repo": "tincr",
-        "rev": "b84b88b2b5e18d4ca326467e582d41ea98d5ec5c",
+        "rev": "07c455524c55a40819da3fb75ee1cf72c4cb96cb",
         "type": "github"
       },
       "original": {
-        "owner": "Lassulus",
-        "ref": "lassulus/fixes-rebased",
+        "owner": "Mic92",
         "repo": "tincr",
         "type": "github"
       }

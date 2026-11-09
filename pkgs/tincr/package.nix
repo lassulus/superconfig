@@ -9,18 +9,16 @@
 
 rustPlatform.buildRustPackage {
   pname = "tincr";
-  version = "0-unstable-2026-10-28";
+  version = "0-unstable-2026-11-08";
 
-  # Our fork's integration branch: upstream main + tunnel-address gate +
-  # forgetting only the refused UDP address + clearing the fast-path address.
   src = fetchFromGitHub {
-    owner = "Lassulus";
+    owner = "Mic92";
     repo = "tincr";
-    rev = "b84b88b2b5e18d4ca326467e582d41ea98d5ec5c";
-    hash = "sha256-MTxzkgMJaZSnV3nyl4CB40VdCiRwJNcxmF6NssgaL1M=";
+    rev = "07c455524c55a40819da3fb75ee1cf72c4cb96cb";
+    hash = "sha256-Uh+haWoIh/yl1Z+k1GRHR7fFewXDCQcVUV7xIlf8bdU=";
   };
 
-  cargoHash = "sha256-a5OSMPumZahV+HdOuRgIlnaZJz7C0uo+AtBepTIqYV0=";
+  cargoHash = "sha256-fXW+8t4QuD1cuHjI9t6B/fCvmYYWgPdFz5iLnr/3JSo=";
 
   # Just the deployable bin crates; --workspace would pull tinc-ffi's cc.
   cargoBuildFlags = [

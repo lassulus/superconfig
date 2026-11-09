@@ -38,8 +38,8 @@
     kartei.inputs.fenix.follows = "tincr/fenix";
 
     # Only for darwinModules.tincr (launchd plumbing); the package comes
-    # from pkgs/tincr, which pins the same fork branch.
-    tincr.url = "github:Lassulus/tincr/lassulus/fixes-rebased";
+    # from pkgs/tincr, which pins the same upstream branch.
+    tincr.url = "github:Mic92/tincr";
     tincr.inputs.nixpkgs.follows = "nixpkgs";
     tincr.inputs.treefmt-nix.follows = "treefmt-nix";
 
