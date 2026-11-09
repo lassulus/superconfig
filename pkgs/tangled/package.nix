@@ -16,8 +16,8 @@ rustPlatform.buildRustPackage {
 
   src = fetchgit {
     url = "https://tangled.org/tangled.org/core";
-    rev = "6149fd1cfce64003ca9ffdbbb1c0c65449c24a52";
-    hash = "sha256-wLloeEH66HGZYvpjqPhINuR83VefcD95r9QrUYQXd5Q=";
+    rev = "f70c71c7696a1cb0caaf472cca950bbbc74f174f";
+    hash = "sha256-jRgXaKHAmtx352F2VCdn9nbAF/mdk2hyDHZEKosaiWs=";
   };
 
   cargoHash = "sha256-jZVbyGohaoZYytg+Z0ZpmXjd9xtr5KoeC41mVhBP378=";
