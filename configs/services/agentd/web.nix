@@ -2,15 +2,14 @@
 # instances at agents.lassul.us, with login via id.lassul.us. The UI forwards
 # the user's access token (a JWT) to each backend, which checks it against
 # its own auth.oidc and users (oidc.nix).
+# The agentd-web options come with the agentd module that default.nix
+# imports (via neoprism.nix); importing it here again would define its
+# package defaults twice.
 #
-# Backends: a local agentd (its own `agentd` user; omp needs a one-time
-# login: `runuser -u agentd -- omp`, then /login) and the other agentd hosts
-# over retiolum. Hermes drives the local agentd over retiolum with an API
-# token (token.nix).
+# Backends: the local agentd (neoprism.nix) and the other agentd hosts over
+# retiolum.
 {
   config,
-  pkgs,
-  self,
   ...
 }:
 let
@@ -21,13 +20,6 @@ let
   issuer = "https://id.lassul.us";
 in
 {
-  imports = [
-    self.inputs.agentd.nixosModules.default
-    ./token.nix
-    ./oidc.nix
-  ];
-
-  lass.ports."8790" = "agentd";
   lass.ports."8792" = "agentd-web";
 
   # Only lass can log in (declarative grant), and his tokens are JWTs so the
@@ -41,21 +33,6 @@ in
       accessTokenType = "jwt";
     };
   };
-
-  services.agentd = {
-    enable = true;
-    listen = "0.0.0.0:${toString agentdPort}";
-    harnesses.omp.command = [
-      "${pkgs.omp}/bin/omp"
-      "acp"
-      # like interactive omp: in ACP mode omp asks for every bash call
-      # unless yolo is set explicitly
-      "--yolo"
-    ];
-    auth.tokensFile = config.clan.core.vars.generators.agentd.files.tokens.path;
-  };
-
-  networking.firewall.interfaces.retiolum.allowedTCPPorts = [ agentdPort ];
 
   services.agentd-web = {
     enable = true;
@@ -76,7 +53,7 @@ in
     };
   };
 
-  # Reads the client id that reconcile writes.
+  # reads the client id that reconcile writes
   systemd.services.agentd-web = {
     wants = [ "zitadel-reconcile.service" ];
     after = [ "zitadel-reconcile.service" ];

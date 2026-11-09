@@ -17,7 +17,7 @@
     ../../configs/review.nix
     ../../configs/rad.nix
     ../../configs/crit.nix
-    ../../configs/services/agentd
+    ../../configs/services/agentd/coaxmetal.nix
     ../../configs/monitoring/server.nix
     ./strom.nix
     ./hermes.nix

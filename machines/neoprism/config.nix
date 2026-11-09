@@ -24,6 +24,7 @@
     ../../configs/services/paint
     ../../configs/services/ntfy
     ../../configs/services/paperless
+    ../../configs/services/agentd/neoprism.nix
     ../../configs/services/agentd/web.nix
 
     ../../configs/hass/proxy.nix
