@@ -1,5 +1,5 @@
-# Hermes' API token for agentd, one for every agentd host (coaxmetal,
-# neoprism): shared, so the token in Hermes' .env (hermes-env generator in
+# Hermes' API token for agentd, one for every agentd host: shared, so the
+# token in Hermes' .env (hermes-env generator in
 # machines/coaxmetal/hermes.nix) is the one each agentd checks. agentd only
 # gets its sha256; the raw token is only read at generation time.
 { pkgs, ... }:

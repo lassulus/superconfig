@@ -1,13 +1,12 @@
 # agentd-web (github:lassulus/agentd, cmd/agentd-web): web UI for agentd
 # instances at agents.lassul.us, with login via id.lassul.us. The UI forwards
 # the user's access token (a JWT) to each backend, which checks it against
-# its own auth.oidc and users.
+# its own auth.oidc and users (oidc.nix).
 #
-# Backends: a local agentd on neoprism (its own `agentd` user; omp needs a
-# one-time login: `runuser -u agentd -- omp`, then /login) and coaxmetal's
-# agentd over retiolum (default.nix, with this app's client id copied in).
-# Hermes (coaxmetal) drives the local agentd over retiolum
-# (http://neoprism.r:8790) with an API token (agentd var below).
+# Backends: a local agentd (its own `agentd` user; omp needs a one-time
+# login: `runuser -u agentd -- omp`, then /login) and the other agentd hosts
+# over retiolum. Hermes drives the local agentd over retiolum with an API
+# token (token.nix).
 {
   config,
   pkgs,
@@ -25,6 +24,7 @@ in
   imports = [
     self.inputs.agentd.nixosModules.default
     ./token.nix
+    ./oidc.nix
   ];
 
   lass.ports."8790" = "agentd";
@@ -49,13 +49,6 @@ in
       "${pkgs.omp}/bin/omp"
       "acp"
     ];
-    # Zitadel puts every client id of the project into the token's aud.
-    auth.oidc = {
-      inherit issuer;
-      audienceFile = clientIdFile;
-    };
-    # lass's Zitadel user id: Zitadel access tokens have no email claim.
-    users = [ "395780385822936760" ];
     auth.tokensFile = config.clan.core.vars.generators.agentd.files.tokens.path;
   };
 
@@ -80,11 +73,7 @@ in
     };
   };
 
-  # Both read the client id that reconcile writes.
-  systemd.services.agentd = {
-    wants = [ "zitadel-reconcile.service" ];
-    after = [ "zitadel-reconcile.service" ];
-  };
+  # Reads the client id that reconcile writes.
   systemd.services.agentd-web = {
     wants = [ "zitadel-reconcile.service" ];
     after = [ "zitadel-reconcile.service" ];

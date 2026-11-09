@@ -2,8 +2,9 @@
 # REST API. Runs as its own `agentd` user; the harness logins (~/.omp, ...)
 # live in /var/lib/agentd. Clones are in ~/src, and every agent works in its
 # own git worktree in ~/worktrees (omp/skills/git-worktrees, omp/RULES.md).
-# Reachable only over retiolum (http://coaxmetal.r:8791) and locally;
-# Hermes is a client with the API token from the `agentd` vars generator.
+# Reachable only over retiolum (port 8791) and locally; Hermes is a client
+# with the API token from the `agentd` vars generator, agentd-web (web.nix)
+# with the user's id.lassul.us login (oidc.nix).
 # omp needs a one-time login: `runuser -u agentd -- omp`, then /login.
 #
 # Dev mode: agentd runs ~/dev/agentd/bin/agentd when that link exists, else
@@ -33,6 +34,7 @@ in
   imports = [
     self.inputs.agentd.nixosModules.default
     ./token.nix
+    ./oidc.nix
   ];
 
   lass.ports."8791" = "agentd";
@@ -55,14 +57,6 @@ in
     # nix, so agents can build and test (and deploy a dev agentd)
     path = options.services.agentd.path.default ++ [ config.nix.package ];
     auth.tokensFile = config.clan.core.vars.generators.agentd.files.tokens.path;
-    # lass's logins from agents.lassul.us (web.nix on neoprism). The audience
-    # is the web app's client id, which Zitadel generated on neoprism; this
-    # host cannot read that file, so it is copied here.
-    auth.oidc = {
-      issuer = "https://id.lassul.us";
-      audience = "398273726845619896";
-    };
-    users = [ "395780385822936760" ];
     # Pending permissions and questions go to Matrix via Hermes' webhook
     # (route below), signed with the key Hermes checks webhooks against.
     notify = [
