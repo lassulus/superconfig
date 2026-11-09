@@ -100,7 +100,7 @@ in
     access = "declarative";
     users = [
       "lass@lassul.us"
-      # agentd's account (configs/services/agentd/coaxmetal.nix), forks and PRs on
+      # agentd's account (machines/coaxmetal/agentd.nix), forks and PRs on
       # knot.lassul.us
       "slop@lassul.us"
       # Hermes' account: its PRs from its fork (instead of crit reviews),

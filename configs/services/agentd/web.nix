@@ -3,10 +3,10 @@
 # the user's access token (a JWT) to each backend, which checks it against
 # its own auth.oidc and users (oidc.nix).
 # The agentd-web options come with the agentd module that default.nix
-# imports (via neoprism.nix); importing it here again would define its
+# imports; importing it here again would define its
 # package defaults twice.
 #
-# Backends: the local agentd (neoprism.nix) and the other agentd hosts over
+# Backends: the local agentd (default.nix) and the other agentd hosts over
 # retiolum.
 {
   config,

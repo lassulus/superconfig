@@ -1,4 +1,4 @@
-# coaxmetal's agentd (base in default.nix), http://coaxmetal.r:8791.
+# coaxmetal's agentd (base in configs/services/agentd), http://coaxmetal.r:8791.
 # Clones are in ~/src, and every agent works in its own git worktree in
 # ~/worktrees (omp/skills/git-worktrees, omp/RULES.md).
 #
@@ -25,8 +25,6 @@ let
   pinned = self.inputs.agentd.packages.${pkgs.stdenv.hostPlatform.system}.default;
 in
 {
-  imports = [ ./default.nix ];
-
   lass.ports."8791" = "agentd";
 
   services.agentd = {
@@ -88,8 +86,8 @@ in
     "d ${home}/dev 0700 agentd agentd -"
     "d ${home}/.omp 0700 agentd agentd -"
     "d ${home}/.omp/agent 0700 agentd agentd -"
-    "L+ ${home}/.omp/agent/skills - - - - ${./omp/skills}"
-    "L+ ${home}/.omp/agent/RULES.md - - - - ${./omp/RULES.md}"
+    "L+ ${home}/.omp/agent/skills - - - - ${../../configs/services/agentd/omp/skills}"
+    "L+ ${home}/.omp/agent/RULES.md - - - - ${../../configs/services/agentd/omp/RULES.md}"
     "d ${home}/.ssh 0700 agentd agentd -"
     "L+ ${home}/.ssh/config - - - - ${sshConfig}"
   ];

@@ -1,5 +1,6 @@
 # agentd (github:lassulus/agentd): coding agents (ACP harnesses) behind a
-# REST API, on every agentd host (coaxmetal.nix, neoprism.nix import this).
+# REST API, the base every agentd host imports; its port and host-specific
+# extras live in that machine's config.
 # Runs as its own `agentd` user; the harness logins (~/.omp, ...) live in
 # /var/lib/agentd. omp needs a one-time login per host:
 # `runuser -u agentd -- omp`, then /login.
