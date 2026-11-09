@@ -156,9 +156,6 @@
     ip saddr 95.217.192.52 accept
   '';
 
-  # agentd's port (8790 is hermes-voice on coaxmetal, so it uses 8791 there)
-  lass.ports."8790" = "agentd";
-
   # not defined by any module
   lass.backup.state.bot-home = {
     folders = [ "/home/bot" ];

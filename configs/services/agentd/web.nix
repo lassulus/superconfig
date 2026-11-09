@@ -45,7 +45,7 @@ in
       }
       {
         name = "coaxmetal";
-        url = "http://coaxmetal.r:8791";
+        url = "http://coaxmetal.r:${toString agentdPort}";
       }
     ];
     oidc = {
