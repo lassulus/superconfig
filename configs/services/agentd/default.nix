@@ -53,6 +53,9 @@ in
     harnesses.omp.command = [
       "${pkgs.omp}/bin/omp"
       "acp"
+      # like interactive omp: in ACP mode omp asks for every bash call
+      # unless yolo is set explicitly
+      "--yolo"
     ];
     # nix, so agents can build and test (and deploy a dev agentd)
     path = options.services.agentd.path.default ++ [ config.nix.package ];

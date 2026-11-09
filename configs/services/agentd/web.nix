@@ -48,6 +48,9 @@ in
     harnesses.omp.command = [
       "${pkgs.omp}/bin/omp"
       "acp"
+      # like interactive omp: in ACP mode omp asks for every bash call
+      # unless yolo is set explicitly
+      "--yolo"
     ];
     auth.tokensFile = config.clan.core.vars.generators.agentd.files.tokens.path;
   };
