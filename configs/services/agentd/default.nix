@@ -55,6 +55,14 @@ in
     # nix, so agents can build and test (and deploy a dev agentd)
     path = options.services.agentd.path.default ++ [ config.nix.package ];
     auth.tokensFile = config.clan.core.vars.generators.agentd.files.tokens.path;
+    # lass's logins from agents.lassul.us (web.nix on neoprism). The audience
+    # is the web app's client id, which Zitadel generated on neoprism; this
+    # host cannot read that file, so it is copied here.
+    auth.oidc = {
+      issuer = "https://id.lassul.us";
+      audience = "398273726845619896";
+    };
+    users = [ "395780385822936760" ];
     # Pending permissions and questions go to Matrix via Hermes' webhook
     # (route below), signed with the key Hermes checks webhooks against.
     notify = [

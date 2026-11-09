@@ -4,8 +4,8 @@
 # its own auth.oidc and users.
 #
 # Backends: a local agentd on neoprism (its own `agentd` user; omp needs a
-# one-time login: `runuser -u agentd -- omp`, then /login). coaxmetal's
-# agentd can be added to `backends` once it accepts these tokens too.
+# one-time login: `runuser -u agentd -- omp`, then /login) and coaxmetal's
+# agentd over retiolum (default.nix, with this app's client id copied in).
 # Hermes (coaxmetal) drives the local agentd over retiolum
 # (http://neoprism.r:8790) with an API token (agentd var below).
 {
@@ -69,6 +69,10 @@ in
       {
         name = "neoprism";
         url = "http://127.0.0.1:${toString agentdPort}";
+      }
+      {
+        name = "coaxmetal";
+        url = "http://coaxmetal.r:8791";
       }
     ];
     oidc = {
