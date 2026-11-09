@@ -11,12 +11,12 @@
 # tangled.org source; the GitHub mirror's flake lags behind.
 buildGoModule {
   pname = "tg";
-  version = "0-unstable-2026-11-06";
+  version = "0-unstable-2026-11-09";
 
   src = fetchgit {
     url = "https://tangled.org/aly.codes/tg";
-    rev = "0df8c8114baa9213124ef2064b6c3f107bd60a86";
-    hash = "sha256-Hp8rh4YTyACksRZzgFXb1koMIuAEjra7pjrI9cxsGE4=";
+    rev = "b30015edbd8394ec38b5f6338c5ad7a6cbbfe6d5";
+    hash = "sha256-LGpaW2I0zMdM5GryaFl+6nC7KJ3P+nWDQa26YTM+24A=";
   };
 
   proxyVendor = true;
