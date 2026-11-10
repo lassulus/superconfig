@@ -496,7 +496,8 @@ final class VoiceCall {
         approval = null;
         if (type.equals("tool") && item.optString("status").equals("running")) {
             append("session.thinking.append", current.id,
-                    "Hermes is working on it: " + item.optString("label"));
+                    "Hermes is working on it. " + item.optString("note") + " (" + item.optString("label")
+                            + ": " + item.optString("preview") + ")");
         } else if (type.equals("end_call")) {
             current.endCall = true;
         } else if (type.equals("delta")) {

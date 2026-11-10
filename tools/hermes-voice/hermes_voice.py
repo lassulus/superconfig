@@ -138,14 +138,14 @@ Do not delegate to the backend when:
 - The user greets you, makes small talk, or asks you to repeat a result already provided.
 - You need a brief clarification to understand the request.
 
-Delegate before giving an answer that depends on backend work. Emit the delegation first; only together with it may you say briefly and cheerfully that you are on it, then wait for the result. Never say you are on it, say it is done or describe the action without delegating. Do not guess the result while waiting, and never report something as done until the backend result says so.
+Delegate before giving an answer that depends on backend work. Emit the delegation first; only together with it may you say briefly and cheerfully that you are on it, then wait for the result. Never say you are on it, say it is done or describe the action without delegating. Do not guess the result while waiting, and never report something as done until the backend result says so. While waiting you get notes on what Hermes is doing right now (its own words, its current tool and command); when the user asks what is taking so long or what is happening, describe only those notes in plain words, and if there is none yet, say Hermes is still working on it. Never invent what Hermes is doing.
 
 Approval policy:
 Hermes sometimes needs the user's approval before it runs a command. When you are told so, explain in plain words what Hermes wants to do and ask whether to approve or deny it. When the user answers, delegate to the backend so the answer reaches Hermes. Never decide an approval yourself."""
 
 # Ephemeral system prompt for every delegated Hermes turn (Hermes layers system
 # messages on top of its core prompt without storing them).
-BACKEND_NOTE = """This turn is a delegation from a live spoken conversation. The user message is a speech transcript: it may contain mis-hearings, phonetic spellings of technical terms, hesitations and later corrections; use the latest intent. Your reply will be spoken aloud by a friendly voice model that paraphrases it: answer in warm, plain conversational sentences, keep it short (a few sentences unless the user asked for detail), no markdown, no lists, no code blocks, no URLs read out character by character. Do the work with your tools as usual; only the final facts need to be spoken. Report an action as done only after it actually succeeded. The user may hang up before your reply is spoken: when they asked for a result or a question somewhere else, such as their Matrix chat (matrix_dm_send), send it there yourself. When the user says goodbye, says that is all, asks to hang up or says they are leaving, call end_call: only after any work they asked for has been started or handed off (for example a result promised to their Matrix chat), and never while you still need an answer from them, such as an approval. Your reply is still spoken before the call ends, so make it a short confirmation or goodbye."""
+BACKEND_NOTE = """This turn is a delegation from a live spoken conversation. The user message is a speech transcript: it may contain mis-hearings, phonetic spellings of technical terms, hesitations and later corrections; use the latest intent. Your reply will be spoken aloud by a friendly voice model that paraphrases it: answer in warm, plain conversational sentences, keep it short (a few sentences unless the user asked for detail), no markdown, no lists, no code blocks, no URLs read out character by character. Do the work with your tools as usual; only the final facts need to be spoken. Before each tool call, write one short plain sentence saying what you are doing now (for example: Reading the CI logs of pull request 205): the user hears it as progress while waiting. Report an action as done only after it actually succeeded. The user may hang up before your reply is spoken: when they asked for a result or a question somewhere else, such as their Matrix chat (matrix_dm_send), send it there yourself. When the user says goodbye, says that is all, asks to hang up or says they are leaving, call end_call: only after any work they asked for has been started or handed off (for example a result promised to their Matrix chat), and never while you still need an answer from them, such as an approval. Your reply is still spoken before the call ends, so make it a short confirmation or goodbye."""
 
 # Instead of BACKEND_NOTE for what the user said right before hanging up, when
 # the voice model had not delegated it yet.
@@ -340,10 +340,14 @@ def hermes_follow_run(config, run_id):
     with hermes_request(
         config, "GET", f"/v1/runs/{run_id}/events", timeout=EVENTS_READ_TIMEOUT
     ) as response:
+        # Text Hermes writes before a tool call says what it is doing now.
+        note = ""
         for _, data in iter_sse(response):
             payload = json.loads(data)
             event = payload.get("event", "")
-            if payload.get("tool") == END_CALL_TOOL:
+            if event == "message.delta":
+                note += payload.get("delta") or ""
+            elif payload.get("tool") == END_CALL_TOOL:
                 # The plugin's tool fails outside a voice session; the page
                 # closes the call after speaking the reply.
                 if event == "tool.completed" and not payload.get("error"):
@@ -352,7 +356,14 @@ def hermes_follow_run(config, run_id):
                 status = "running" if event == "tool.started" else "completed"
                 if payload.get("error"):
                     status = "error"
-                yield {"type": "tool", "status": status, "label": payload.get("tool")}
+                yield {
+                    "type": "tool",
+                    "status": status,
+                    "label": payload.get("tool"),
+                    "preview": payload.get("preview") or "",
+                    "note": note.strip(),
+                }
+                note = ""
             elif event == "approval.request":
                 # The run blocks until POST /v1/runs/{run_id}/approval answers.
                 # Under the gateway's session authority the request is named

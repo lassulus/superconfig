@@ -404,10 +404,11 @@ class Call {
             this.send({
               type: "session.thinking.append",
               delegation_id: id,
-              content: `Hermes is working on it: ${item.label}`.slice(
-                0,
-                APPEND_CHAR_LIMIT,
-              ),
+              content:
+                `Hermes is working on it. ${item.note} (${item.label}: ${item.preview})`.slice(
+                  0,
+                  APPEND_CHAR_LIMIT,
+                ),
             });
           } else if (item.type === "end_call") {
             endCall = true;
