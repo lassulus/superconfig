@@ -9,6 +9,7 @@
     ../../configs/gg23/internet.nix
     ../../configs/gg23/tv-hass.nix
     ./backup.nix
+    ../../configs/gg23/wan-failover.nix
   ];
 
   services.earlyoom.enable = true;
