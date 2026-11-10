@@ -19,4 +19,5 @@
     "lass"
   ];
   system.stateVersion = "22.05";
+  hardware.bluetooth.enable = false;
 }

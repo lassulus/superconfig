@@ -17,6 +17,7 @@
     ../../configs/power-action.nix
     ../../configs/yubikey.nix
     ../../configs/pipewire.nix
+    ../../configs/bluetooth.nix
     ../../configs/udisks.nix
     ../../configs/browsers.nix
     ../../configs/network-manager.nix

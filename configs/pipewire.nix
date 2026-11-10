@@ -2,22 +2,13 @@
 {
   security.rtkit.enable = true;
 
-  hardware.bluetooth = {
-    enable = true;
-    powerOnBoot = true;
-  };
-
   environment.systemPackages = with pkgs; [
     alsa-utils
     pulseaudio
     ponymix
-    bluetuith
   ];
 
-  users.users.mainUser.extraGroups = [
-    "bluetooth"
-    "pipewire"
-  ];
+  users.users.mainUser.extraGroups = [ "pipewire" ];
 
   services.pipewire = {
     enable = true;

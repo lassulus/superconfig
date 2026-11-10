@@ -10,6 +10,7 @@
     ../../configs
     ../../configs/desktops/sway/default.nix
     ../../configs/pipewire.nix
+    ../../configs/bluetooth.nix
     ../../configs/network-manager.nix
     ../../configs/retiolum.nix
     ../../configs/steam.nix

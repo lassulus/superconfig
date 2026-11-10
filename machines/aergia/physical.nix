@@ -15,7 +15,7 @@
     efiInstallAsRemovable = true;
   };
 
-  # boot.kernelPackages = pkgs.linuxPackages_latest;
+  boot.kernelPackages = pkgs.linuxPackages_latest;
 
   boot.kernelParams = [
     # use less power with pstate

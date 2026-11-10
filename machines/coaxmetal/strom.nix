@@ -161,45 +161,4 @@ in
       ExecStart = "${pkgs.brightnessctl}/bin/brightnessctl set 100%";
     };
   };
-
-  # Xbox Wireless Controllers (Bluetooth). xpadneo for correct rumble/axis
-  # mapping; the two bluez tweaks + disable_ertm are what make Xbox pads
-  # actually bond (without disable_ertm they fail with AuthenticationFailed).
-  # Bluetooth itself (adapter + powerOnBoot) already comes from
-  # configs/pipewire.nix. Pair pads with bluetuith (also from pipewire.nix).
-  hardware.xpadneo.enable = true;
-  # Xbox One/Series controllers pair over Bluetooth only with L2CAP ERTM off.
-  boot.extraModprobeConfig = "options bluetooth disable_ertm=1";
-  hardware.bluetooth.settings.General = {
-    # JustWorksRepairing lets bluez accept fresh pairings without a manual
-    # remove; Privacy = device pins a static host address so the controller's
-    # bond key survives RPA rotation.
-    JustWorksRepairing = "always";
-    Privacy = "device";
-    # Keep page scan always on so a bonded pad reconnects promptly when powered
-    # back on (otherwise bonded pads bond but never re-link). Fine on a
-    # mains-powered kiosk.
-    FastConnectable = true;
-    # In this busy-RF LAN environment the cache fills with hundreds of stray
-    # BLE devices; evict non-bonded ones ~30s after they leave range so they
-    # do not pile up and saturate the adapter.
-    TemporaryTimeout = 30;
-  };
-
-  # Persistent JustWorks pairing agent. Xbox pads pair via JustWorks, and on
-  # reconnect a pad whose bond went stale re-initiates pairing. bluez needs a
-  # registered agent to auto-confirm that; bluetuith only provides one while you
-  # are actively pairing in it, so an autonomous re-pair hits "No agent
-  # available for request type 2" and the link drops. Keep a NoInputNoOutput
-  # agent registered at all times so pairing/re-pairing just works.
-  systemd.services.bt-agent = {
-    wantedBy = [ "multi-user.target" ];
-    after = [ "bluetooth.service" ];
-    requires = [ "bluetooth.service" ];
-    serviceConfig = {
-      ExecStart = "${pkgs.bluez-tools}/bin/bt-agent -c NoInputNoOutput";
-      Restart = "always";
-      RestartSec = 2;
-    };
-  };
 }

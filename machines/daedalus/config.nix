@@ -11,6 +11,7 @@
     ../../configs
     ../../configs/retiolum.nix
     ../../configs/pipewire.nix
+    ../../configs/bluetooth.nix
     ../../configs/autoupdate.nix
     {
       users.mutableUsers = lib.mkForce true;

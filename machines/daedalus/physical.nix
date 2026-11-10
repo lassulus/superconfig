@@ -1,4 +1,9 @@
-{ config, lib, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 let
   kmods = import ../../configs/hw/signed-kmods.nix {
     inherit lib;
@@ -10,6 +15,8 @@ in
     ./config.nix
     ../../configs/boot/coreboot.nix
   ];
+
+  boot.kernelPackages = pkgs.linuxPackages_latest;
 
   fileSystems = {
     "/" = {

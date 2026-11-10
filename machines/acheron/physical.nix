@@ -3,6 +3,7 @@
   modulesPath,
   config,
   lib,
+  pkgs,
   ...
 }:
 {
@@ -19,6 +20,7 @@
   nixpkgs.hostPlatform = lib.mkDefault "x86_64-linux";
   networking.hostId = "ac4e5011";
 
+  boot.kernelPackages = pkgs.linuxPackages_latest;
   boot.loader.systemd-boot.enable = true;
   boot.loader.systemd-boot.configurationLimit = 10;
   boot.loader.efi.canTouchEfiVariables = true;

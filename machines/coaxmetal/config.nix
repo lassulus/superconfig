@@ -61,4 +61,7 @@
   '';
   users.groups.adbusers = { };
   users.users.hermes.extraGroups = [ "adbusers" ];
+  # 6.18 has open Bluetooth CVEs (configs/security-fixes/cve-2026-74533.nix)
+  # and ZFS blocks a newer kernel
+  hardware.bluetooth.enable = false;
 }
