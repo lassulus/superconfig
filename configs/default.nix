@@ -21,7 +21,7 @@ in
 
     # Import individual configurations
     ./security-fixes
-    ./build-fixes.nix
+    ./build-fixes
     ./gc.nix
     ./mc.nix
     ./zsh.nix
