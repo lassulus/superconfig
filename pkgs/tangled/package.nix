@@ -4,6 +4,11 @@
   fetchgit,
   cmake,
   perl,
+  pkg-config,
+  aws-lc,
+  rust-jemalloc-sys,
+  sqlite,
+  zstd,
 }:
 
 # Tangled's knot 2 (knot-rs, https://tangled.org/tangled.org/core) without
@@ -24,6 +29,13 @@ rustPlatform.buildRustPackage {
   nativeBuildInputs = [
     cmake
     perl
+    pkg-config
+  ];
+  buildInputs = [
+    aws-lc
+    rust-jemalloc-sys
+    sqlite
+    zstd
   ];
   dontUseCmakeConfigure = true;
   cargoBuildFlags = [
