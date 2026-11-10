@@ -58,7 +58,8 @@
     llm-agents.url = "github:numtide/llm-agents.nix";
     llm-agents.inputs.nixpkgs.follows = "nixpkgs";
 
-    hermes-agent.url = "github:nousresearch/hermes-agent";
+    # NousResearch/hermes-agent#152542 (patchelf 0.15.2 build fix); back to upstream once merged
+    hermes-agent.url = "github:lassulus/hermes-agent/fix/nix-patchelf-version";
     hermes-agent.inputs.nixpkgs.follows = "nixpkgs";
 
     agentd.url = "github:lassulus/agentd/web-ui";

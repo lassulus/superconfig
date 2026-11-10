@@ -353,15 +353,16 @@
         "uv2nix": "uv2nix"
       },
       "locked": {
-        "lastModified": 1794272848,
-        "narHash": "sha256-dOV98VKPB9euPG5gn/uVSJ0RE0XeY8g8cSXi7PmZTto=",
-        "owner": "nousresearch",
+        "lastModified": 1794301736,
+        "narHash": "sha256-FtcWtITpiYMAMRl3HYVDjchzVOdg+1vl2TcyF/1v6gc=",
+        "owner": "lassulus",
         "repo": "hermes-agent",
-        "rev": "b3746e35ddd32079697728e2df57a9d78f1e9e32",
+        "rev": "cf087401daf0b14939a4bc7acc11e51f81c50522",
         "type": "github"
       },
       "original": {
-        "owner": "nousresearch",
+        "owner": "lassulus",
+        "ref": "fix/nix-patchelf-version",
         "repo": "hermes-agent",
         "type": "github"
       }
