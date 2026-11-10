@@ -246,9 +246,15 @@ jobs:
         run: |
           mapfile -t shared < "$RUNNER_TEMP/plans/shared.drvs"
           "$HESTIA_BIN" prefetch "${shared[@]/%/^*}"
+          # upload what is built so far every 5 minutes: a runner that gets
+          # killed mid-build never reaches the drain below, and the next
+          # attempt substitutes these instead of building them again
+          while sleep 300; do "$HESTIA_BIN" drain --socket "$HESTIA_SOCKET" || true; done &
+          uploader=$!
           # a failed one fails the jobs of the machines that need it
           .github/ci-build.sh "${shared[@]/%/^*}" ||
             echo "::warning::some shared derivations failed to build"
+          kill "$uploader"
           # upload now instead of in the post step, so the machine jobs can
           # wait for the manifest version that contains the shared outputs
           "$HESTIA_BIN" drain --socket "$HESTIA_SOCKET" 2>&1 | tee "$RUNNER_TEMP/drain.txt"
