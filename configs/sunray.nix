@@ -10,6 +10,7 @@
 let
   ports = config.lass.servicePorts;
   password = "\${XDG_CONFIG_HOME:-$HOME/.config}/sunshine/sunray-password";
+  server = config.clan.core.vars.generators.sunshine-server.files;
 
   sunray-pin = pkgs.writeShellApplication {
     name = "sunray-pin";
@@ -78,6 +79,8 @@ in
       origin_web_ui_allowed = "pc";
       lan_encryption_mode = 2;
       wan_encryption_mode = 2;
+      cert = server."cert.pem".path;
+      pkey = server."key.pem".path;
     };
     applications.apps = [
       {
@@ -99,6 +102,21 @@ in
         ${lib.getExe config.services.sunshine.package} --creds sunray "$pw"
         (umask 077 && printf '%s\n' "$pw" > "${password}")
       fi
+    '';
+  };
+
+  # Sunshine's server identity, declared so that clients can know it without
+  # pairing: the shape Sunshine generates itself (RSA 2048, v3 without
+  # extensions but the key id, 20 years; no CA flag, which rustls rejects
+  # for a server cert). Sunshine runs as the desktop user.
+  clan.core.vars.generators.sunshine-server = {
+    files."cert.pem".secret = false;
+    files."key.pem".owner = config.users.users.mainUser.name;
+    runtimeInputs = [ pkgs.openssl ];
+    script = ''
+      printf '[req]\ndistinguished_name = dn\n[dn]\n' > req.cnf
+      openssl req -x509 -config req.cnf -newkey rsa:2048 -nodes -sha256 -days 7300 \
+        -subj "/CN=Sunshine Gamestream Host" -keyout "$out/key.pem" -out "$out/cert.pem"
     '';
   };
 
