@@ -55,6 +55,10 @@ in
         "/etc/profiles/per-user/%u"
         "/run/current-system/sw"
       ];
+      # noctalia holds the ext-session-lock. Restarting it on switch while the
+      # screen is locked leaves sway's abandoned-lock red screen; the new
+      # version is picked up on the next login.
+      restartIfChanged = false;
       serviceConfig = {
         ExecStart = "${noctalia}/bin/noctalia";
         Restart = "on-failure";
