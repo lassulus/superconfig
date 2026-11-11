@@ -27,6 +27,8 @@ rustPlatform.buildRustPackage (finalAttrs: {
   # Static, so that once it serves /nix/store it loads nothing from there.
   # (Not glibc.static in buildInputs: build scripts would link against it.)
   env.RUSTFLAGS = "-C target-feature=+crt-static -L native=${glibc.static}/lib";
+  # Bundled aws-lc/zstd: nixpkgs' system libraries are shared objects.
+  dontCargoUseSystemLibs = true;
 
   doInstallCheck = true;
   installCheckPhase = ''
