@@ -91,17 +91,6 @@
     enableKeyMapping = true;
   };
 
-  # Add skhd for keyboard shortcuts
-  services.skhd = {
-    enable = true;
-    skhdConfig = ''
-      # Test with simpler combo first
-      cmd - f12 : /usr/bin/say "test works"
-      # Open passmenu with Hyper-P
-      ctrl + shift + alt + cmd - p : /run/current-system/sw/bin/passmenu
-    '';
-  };
-
   system.defaults = {
     # minimal dock
     dock = {
