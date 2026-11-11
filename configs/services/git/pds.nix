@@ -66,6 +66,12 @@ in
         enable_caddy_on_demand_tls = false;
       };
       frontend.dir = package.frontend;
+      # upstream default (100) equals postgres' max_connections; after a
+      # postgres restart the pool took 85 slots and starved synapse, niks3 & co
+      database = {
+        max_connections = 10;
+        min_connections = 2;
+      };
       # owner's PLC recovery key (public part)
       secrets.plc_rotation_key = "did:key:zDnaepKZiYEbndTH9NNqoZUa7mvbhdiF3M9g2MCjtnxhijtUS";
       email = {
