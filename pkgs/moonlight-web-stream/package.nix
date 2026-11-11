@@ -57,6 +57,17 @@ rustPlatform.buildRustPackage (finalAttrs: {
 
   cargoHash = "sha256-deoJfH/8CbmPCh1Jf4XETKxhncgF1UZdKuXi7tk7kn4=";
 
+  # moonlight-common-rust can't decrypt video yet (a TODO upstream), so a
+  # Sunshine with mandatory encryption (configs/sunray.nix) sends packets
+  # 32 bytes longer than expected and every stream ends right away with
+  # "a received video rtp packet doesn't have the configured packet size".
+  # The server's video stream only; the frontend's wasm build never
+  # receives video from Sunshine.
+  postPatch = ''
+    patch -p1 -d "$cargoDepsCopy"/source-git-0/moonlight-common-0.1.0 \
+      < ${./video-encryption.patch}
+  '';
+
   npmDeps = fetchNpmDeps {
     inherit (finalAttrs) src;
     hash = "sha256-sUxfnPsvDrzvfTJ2vCJUvFCX1mIzwCsbvG+BSFVUQog=";

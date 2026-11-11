@@ -1,0 +1,193 @@
+diff --git a/src/stream/proto/mod.rs b/src/stream/proto/mod.rs
+index c36cfe7..f019f7a 100644
+--- a/src/stream/proto/mod.rs
++++ b/src/stream/proto/mod.rs
+@@ -469,6 +469,12 @@ impl MoonlightStreamSetup {
+                             // Update sdp video port
+                             sdp.client_sdp.video_port = Some(video_port);
+ 
++                            let encrypted = sdp
++                                .client_sdp
++                                .sunshine_encryption
++                                .unwrap_or(SunshineEncryptionFlags::empty())
++                                .contains(SunshineEncryptionFlags::VIDEO);
++
+                             let video_stream = VideoStream::new(
+                                 self.last_now,
+                                 VideoStreamConfig {
+@@ -482,7 +488,8 @@ impl MoonlightStreamSetup {
+                                     },
+                                     fps: self.client_settings.fps,
+                                     sunshine_ping: video_setup.sunshine_ping.clone(),
+-                                    sunshine_encryption: None, // TODO <--
++                                    sunshine_encryption: encrypted
++                                        .then_some(self.client_config.encryption.aes_key),
+                                 },
+                                 self.crypto_backend.clone(),
+                             );
+diff --git a/src/stream/proto/video/depayloader.rs b/src/stream/proto/video/depayloader.rs
+index 9e58f0b..a9022d0 100644
+--- a/src/stream/proto/video/depayloader.rs
++++ b/src/stream/proto/video/depayloader.rs
+@@ -606,38 +606,9 @@ impl VideoDepayloader {
+ 
+     pub fn handle_packet(&mut self, packet: &[u8]) -> Result<(), VideoDepayloaderError> {
+         // Wolf impl: https://github.com/games-on-whales/wolf/blob/2c15d61107e48ca2fe3d350a703546aecb3eab78/src/moonlight-server/gst-plugin/video.hpp#L234-L268
+-
+-        // TODO: encryption support?
+-        // let data = if let Some(aes_key) = self.aes_key.as_ref() {
+-        //     // https://github.com/moonlight-stream/moonlight-common-c/blob/62687809b1f7410c3db4be2527503a54ae408d70/src/VideoStream.c#L184-L222
+-
+-        //     let encryption_header = EncryptedVideoHeader::deserialize(
+-        //         data[0..EncryptedVideoHeader::SIZE]
+-        //             .as_array::<{ EncryptedVideoHeader::SIZE }>()
+-        //             .unwrap(),
+-        //     );
+-
+-        //     let mut decrypted = vec![0; data.len() - EncryptedVideoHeader::SIZE];
+-
+-        //     let size = self.crypto_backend.decrypt(
+-        //         CipherAlgorithm::Aes128Gcm,
+-        //         &aes_key,
+-        //         &encryption_header.iv,
+-        //         Some(&encryption_header.tag),
+-        //         &data[32..],
+-        //         &mut decrypted,
+-        //     )?;
+-        //     decrypted.resize(size, 0);
+-
+-        //     decrypted
+-        // } else {
+-        //     data.to_vec()
+-        // };
+-
+         let packet_span = debug_span!("video packet");
+         let _enter = packet_span.enter();
+ 
+-        // TODO: for encrypted packets we should first verify the packet and then do any errors
+         if packet.len() != RtpVideoHeader::SIZE + self.config.packet_size {
+             debug!(
+                 got_len = packet.len(),
+diff --git a/src/stream/proto/video/mod.rs b/src/stream/proto/video/mod.rs
+index 14069c3..f4f3157 100644
+--- a/src/stream/proto/video/mod.rs
++++ b/src/stream/proto/video/mod.rs
+@@ -7,7 +7,7 @@ use std::{
+ 
+ use sans_io_time::Instant;
+ 
+-use tracing::{Level, debug, info, instrument, trace};
++use tracing::{Level, debug, info, instrument, trace, warn};
+ 
+ use crate::{
+     error::Error,
+@@ -21,7 +21,7 @@ use crate::{
+             video::{
+                 depayloader::{VideoDepayloader, VideoDepayloaderConfig},
+                 frame::OwnedVideoFrame,
+-                packet::{RtpVideoHeader, VIDEO_RECV_BUFFERED_PACKETS},
++                packet::{EncryptedVideoHeader, RtpVideoHeader, VIDEO_RECV_BUFFERED_PACKETS},
+             },
+         },
+         video::{FrameIndex, ServerFrameType},
+@@ -58,10 +58,11 @@ pub struct VideoStreamConfig {
+ }
+ 
+ pub struct VideoStream {
+-    #[allow(unused)]
+     crypto_backend: DynCryptoBackend,
+-    #[allow(unused)]
++    /// Decrypt every packet with this key if [Some].
+     aes_key: Option<AesKey>,
++    /// Reused buffer for the plaintext of an encrypted packet.
++    decrypted: Vec<u8>,
+     addr: SocketAddr,
+     last_now: Instant,
+     ping_sender: PingSender,
+@@ -85,6 +86,7 @@ impl VideoStream {
+         Self {
+             crypto_backend,
+             aes_key: config.sunshine_encryption,
++            decrypted: Vec::new(),
+             addr: config.addr,
+             last_now: now,
+             ping_sender: PingSender::new(
+@@ -312,7 +314,41 @@ impl UdpStream for VideoStream {
+             self.first_packet = Some(now);
+         }
+ 
+-        self.depayloader.handle_packet(receive.data)?;
++        let packet = match self.aes_key {
++            Some(aes_key) => {
++                // See https://github.com/moonlight-stream/moonlight-common-c/blob/435bc6a5a4852c90cfb037de1378c0334ed36d8e/src/VideoStream.c#L184-L222
++                let Some((header, ciphertext)) = receive
++                    .data
++                    .split_first_chunk::<{ EncryptedVideoHeader::SIZE }>()
++                else {
++                    warn!(
++                        len = receive.data.len(),
++                        "dropping too short encrypted video packet"
++                    );
++                    self.update(now)?;
++                    return Ok(());
++                };
++                let header = EncryptedVideoHeader::deserialize(header);
++
++                self.decrypted.resize(ciphertext.len(), 0);
++                if let Err(err) = self.crypto_backend.decrypt_aes_gcm(
++                    &aes_key,
++                    &header.iv,
++                    ciphertext,
++                    &header.tag,
++                    &mut self.decrypted,
++                ) {
++                    warn!(error = %err, frame_number = header.frame_number, "dropping undecryptable video packet");
++                    self.update(now)?;
++                    return Ok(());
++                }
++
++                &self.decrypted[..]
++            }
++            None => receive.data,
++        };
++
++        self.depayloader.handle_packet(packet)?;
+ 
+         self.update(now)?;
+ 
+@@ -321,6 +357,14 @@ impl UdpStream for VideoStream {
+ 
+     fn recv_buffer_hint(&self) -> Option<usize> {
+         // See https://github.com/moonlight-stream/moonlight-common-c/blob/435bc6a5a4852c90cfb037de1378c0334ed36d8e/src/VideoStream.c#L331-L333
+-        Some(VIDEO_RECV_BUFFERED_PACKETS * (RtpVideoHeader::SIZE + self.depayloader.packet_size()))
++        let encryption_header = if self.aes_key.is_some() {
++            EncryptedVideoHeader::SIZE
++        } else {
++            0
++        };
++        Some(
++            VIDEO_RECV_BUFFERED_PACKETS
++                * (encryption_header + RtpVideoHeader::SIZE + self.depayloader.packet_size()),
++        )
+     }
+ }
+diff --git a/src/stream/proto/video/packet.rs b/src/stream/proto/video/packet.rs
+index 3558772..8731507 100644
+--- a/src/stream/proto/video/packet.rs
++++ b/src/stream/proto/video/packet.rs
+@@ -32,7 +32,6 @@ pub const MAX_VIDEO_FEC_BLOCKS: usize = 4;
+ 
+ /// References:
+ /// - Moonlight: https://github.com/moonlight-stream/moonlight-common-c/blob/b126e481a195fdc7152d211def17190e3434bcce/src/Video.h#L12-L19
+-#[allow(unused)]
+ #[derive(Debug)]
+ pub struct EncryptedVideoHeader {
+     pub iv: [u8; 12],
+@@ -44,7 +43,6 @@ pub struct EncryptedVideoHeader {
+     pub tag: [u8; 16],
+ }
+ 
+-#[allow(unused)]
+ impl EncryptedVideoHeader {
+     pub const SIZE: usize = 32;
+ 
