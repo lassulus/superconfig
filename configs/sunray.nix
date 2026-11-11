@@ -1,16 +1,30 @@
 # Host side of tools/sunray: Sunshine runs in the sway session, and
 # `sunray-pin` approves a client's PIN through Sunshine's local API, so only
-# clients that can ssh in get paired.
+# clients that can ssh in get paired. sunshine.lassul.us
+# (configs/sunshine-web.nix) is paired declaratively instead: Sunshine uses
+# the sunshine-server cert below, which it knows, and trusts its client cert.
 {
   config,
   lib,
   pkgs,
+  self,
   ...
 }:
 let
   ports = config.lass.servicePorts;
   password = "\${XDG_CONFIG_HOME:-$HOME/.config}/sunshine/sunray-password";
+  # Sunshine's file_state (paired clients, also the credentials_file)
+  state = "\${XDG_CONFIG_HOME:-$HOME/.config}/sunshine/sunshine_state.json";
+
   server = config.clan.core.vars.generators.sunshine-server.files;
+  webClient = {
+    name = "sunshine.lassul.us";
+    # fixed, so the preStart below finds its own entry again
+    uuid = "4f0c5a1e-6b2d-4e8a-9c3f-5d7b1a2e8c60";
+    cert =
+      pkgs.writeText "sunshine-web-client.pem"
+        self.nixosConfigurations.neoprism.config.clan.core.vars.generators.sunshine-web-client.files."cert.pem".value;
+  };
 
   sunray-pin = pkgs.writeShellApplication {
     name = "sunray-pin";
@@ -95,17 +109,35 @@ in
     wantedBy = [ "sway-session.target" ];
     partOf = [ "sway-session.target" ];
     after = [ "sway-session.target" ];
-    # API credentials for sunray-pin, created once
+    # API credentials for sunray-pin, created once; then trust the
+    # sunshine.lassul.us client, keeping every other paired client. Sunshine
+    # only reads named_devices from a state file with a root.uniqueid, and
+    # rejects a cert that is in there twice.
     preStart = ''
       if [ ! -s "${password}" ]; then
         pw=$(${pkgs.coreutils}/bin/head -c 24 /dev/urandom | ${pkgs.coreutils}/bin/base64)
         ${lib.getExe config.services.sunshine.package} --creds sunray "$pw"
         (umask 077 && printf '%s\n' "$pw" > "${password}")
       fi
+
+      state="${state}"
+      [ -s "$state" ] || echo '{}' > "$state"
+      tmp=$(${pkgs.coreutils}/bin/mktemp "$state.XXXXXX")
+      ${lib.getExe pkgs.jq} \
+        --arg name ${webClient.name} \
+        --arg uuid ${webClient.uuid} \
+        --rawfile cert ${webClient.cert} \
+        --arg uniqueid "$(${pkgs.coreutils}/bin/cat /proc/sys/kernel/random/uuid)" \
+        '.root.uniqueid //= $uniqueid
+        | .root.named_devices = (
+          [.root.named_devices[]? | select(.uuid != $uuid and .cert != $cert)]
+          + [{name: $name, cert: $cert, uuid: $uuid, enabled: "true"}]
+        )' "$state" > "$tmp"
+      mv "$tmp" "$state"
     '';
   };
 
-  # Sunshine's server identity, declared so that clients can know it without
+  # Sunshine's server identity, so sunshine.lassul.us knows it without
   # pairing: the shape Sunshine generates itself (RSA 2048, v3 without
   # extensions but the key id, 20 years; no CA flag, which rustls rejects
   # for a server cert). Sunshine runs as the desktop user.

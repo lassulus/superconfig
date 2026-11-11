@@ -98,6 +98,9 @@
     # NixCon talk video license consent links (nixcontalks.lassul.us)
     ../../configs/nixcontalks.nix
 
+    # Moonlight in the browser for the sunray hosts (sunshine.lassul.us)
+    ../../configs/sunshine-web.nix
+
     # backups
     ./backup.nix
 
