@@ -1,15 +1,6 @@
 # Room speaker for the acheron audio hub (./hub.nix): plays what the hub
 # sends via ROC on the default output.
-{
-  self,
-  config,
-  lib,
-  ...
-}:
-let
-  kartei = import (self.inputs.kartei + "/modules/retiolum/hosts.nix") { inherit lib; };
-  acheron = kartei.own.acheron.ip4;
-in
+{ config, ... }:
 {
   lass.ports = {
     "10001" = "roc-source";
@@ -41,8 +32,8 @@ in
   # after boot, so start it or the ROC source above never listens
   systemd.services.pipewire.wantedBy = [ "multi-user.target" ];
 
-  # the hub sends over retiolum (see ./hub.nix), accept only acheron
+  # the hub sends over the LAN (see ./hub.nix), accept only acheron
   networking.firewall.extraInputRules = ''
-    iifname "retiolum" ip saddr ${acheron} udp dport ${toString config.lass.servicePorts.roc-source}-${toString config.lass.servicePorts.roc-control} accept
+    ip saddr 10.42.0.1 udp dport ${toString config.lass.servicePorts.roc-source}-${toString config.lass.servicePorts.roc-control} accept
   '';
 }

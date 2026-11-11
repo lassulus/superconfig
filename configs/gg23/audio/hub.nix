@@ -7,17 +7,15 @@
 # during the window opened by the "Bluetooth pairing" button) and
 # radio.lassul.us. Rooms run ./room.nix.
 {
-  self,
   config,
   lib,
   pkgs,
   ...
 }:
 let
-  # Rooms are addressed by their static retiolum IPs (shodan and icarus have
-  # dynamic DHCP leases); tinc's LocalDiscovery keeps that on the LAN.
-  kartei = import (self.inputs.kartei + "/modules/retiolum/hosts.nix") { inherit lib; };
-  ip4 = n: kartei.own.${n}.ip4;
+  # Rooms are addressed by their fixed LAN addresses (../hosts.nix), so the
+  # audio does not go through tinc.
+  ip4 = n: (import ../hosts.nix).${n}.ip4;
 
   # room machine -> speaker name in Home Assistant
   rooms = {
