@@ -1,0 +1,252 @@
+From 1b647f2953c6b9973d9cdb336c77371a5950edc9 Mon Sep 17 00:00:00 2001
+From: Hermes <hermes@lassul.us>
+Date: Wed, 11 Nov 2026 11:09:37 +0100
+Subject: [PATCH] tincd: stop pinning a seen UDP address whose probes go
+ unanswered
+
+An authenticated datagram's source address became the only UDP
+address a node probed, and gossip or relay hints could not replace it,
+until the peer became unreachable. A seen address proves only the
+peer->us leg. When it dies silently (NAT mapping flushed, source
+rewritten on the way), both ends kept probing the dead addresses,
+UDP timed out but was never re-established, and all traffic stayed on
+the relayed TCP path for good.
+
+try_udp now releases a seen address once probes to it went unanswered
+for UDPDiscoveryTimeout. It stays as a hint: choose_udp_address
+explores edge addresses again and new hints may replace it. A new
+authenticated datagram pins it again.
+---
+ crates/tincd/src/daemon/tx_control.rs |   5 +
+ crates/tincd/src/udp_path.rs          |  42 +++++++++
+ crates/tincd/tests/netns/udp_path.rs  | 131 ++++++++++++++++++++++++++
+ 3 files changed, 178 insertions(+)
+
+diff --git a/crates/tincd/src/daemon/tx_control.rs b/crates/tincd/src/daemon/tx_control.rs
+index d6aef0b8..ef995cfc 100644
+--- a/crates/tincd/src/daemon/tx_control.rs
++++ b/crates/tincd/src/daemon/tx_control.rs
+@@ -399,6 +399,11 @@ impl Daemon {
+         }
+ 
+         let tunnel = self.dp.tunnels.entry(target).or_default();
++        if tunnel.path.release_unanswered_seen(now, timeout) {
++            log::info!(target: "tincd::net",
++                       "UDP probes to {target_name} at {} went unanswered; trying other addresses",
++                       tunnel.path.addr().map_or_else(|| "?".to_owned(), |a| a.to_string()));
++        }
+         let udp_confirmed = tunnel.path.confirmed();
+ 
+         // Gratuitous keepalive: a type-2 reply at the largest
+diff --git a/crates/tincd/src/udp_path.rs b/crates/tincd/src/udp_path.rs
+index 12de7d49..bd05b0ec 100644
+--- a/crates/tincd/src/udp_path.rs
++++ b/crates/tincd/src/udp_path.rs
+@@ -180,6 +180,31 @@ impl UdpPath {
+         }
+     }
+ 
++    /// A seen address proves only the peer→us leg. Once our probes to it
++    /// went unanswered for `timeout` (a flushed NAT mapping, a rewritten
++    /// source), it is no better than a hint: release it so edge addresses
++    /// are explored and hints may replace it. It stays the address we probe,
++    /// now as a hint. Returns whether it was released.
++    pub(crate) fn release_unanswered_seen(&mut self, now: Instant, timeout: Duration) -> bool {
++        let Endpoint::Seen { addr, .. } = self.endpoint else {
++            return false;
++        };
++        if self.confirmed() {
++            return false;
++        }
++        let Some(p) = self.pmtu.as_mut() else {
++            return false;
++        };
++        if p.unanswered_since
++            .is_none_or(|t| now.saturating_duration_since(t) < timeout)
++        {
++            return false;
++        }
++        p.unanswered_since = None;
++        self.endpoint = Endpoint::Hint(addr);
++        true
++    }
++
+     /// Gossip or relay hints can't displace a confirmed or seen address,
+     /// which stops forged `REQ_KEY`s redirecting traffic.
+     pub(crate) fn on_addr_hint(&mut self, addr: UnderlayAddr) -> bool {
+@@ -289,6 +314,23 @@ mod tests {
+         assert_eq!(p.minmtu(), 0);
+     }
+ 
++    /// A dead seen address stops pinning once probes to it go unanswered
++    /// for a timeout window, so a hint may replace it.
++    #[test]
++    fn unanswered_seen_addr_is_released() {
++        let now = Instant::now();
++        let timeout = Duration::from_secs(30);
++        let mut p = UdpPath::default();
++        p.on_authenticated_rx(ua("192.0.2.1:655"), 0, now);
++        p.pmtu_mut(now).on_udp_probe_attempt(now, true);
++        assert!(!p.release_unanswered_seen(now + timeout / 2, timeout));
++        assert!(!p.on_addr_hint(ua("198.51.100.7:655")));
++        assert!(p.release_unanswered_seen(now + timeout, timeout));
++        assert!(!p.addr_seen());
++        assert_eq!(p.addr(), Some(addr("192.0.2.1:655")));
++        assert!(p.on_addr_hint(ua("198.51.100.7:655")));
++        assert_eq!(p.addr(), Some(addr("198.51.100.7:655")));
++    }
+     #[test]
+     fn rebinding_moves_the_target() {
+         let now = Instant::now();
+diff --git a/crates/tincd/tests/netns/udp_path.rs b/crates/tincd/tests/netns/udp_path.rs
+index a677acb0..829d5ae3 100644
+--- a/crates/tincd/tests/netns/udp_path.rs
++++ b/crates/tincd/tests/netns/udp_path.rs
+@@ -8,6 +8,8 @@
+ //! regressions should be a new scenario here, not a new file.
+ 
+ use std::fmt;
++use std::fs;
++use std::process::Command;
+ use std::time::Duration;
+ 
+ use super::common::linux::run_ip;
+@@ -377,6 +379,135 @@ fn unreachable_falls_back_to_tcp() {
+     assert!(recovered.is_some(), "UDP never re-confirmed\n{logs}");
+ }
+ 
++/// `iptables`/`ip6tables` `op` (`-I`/`-D`) of rules dropping UDP between
++/// ports `a` and `b`, both directions.
++fn drop_udp_between(xtables: &str, op: &str, a: u16, b: u16) -> bool {
++    let (a, b) = (a.to_string(), b.to_string());
++    [(&a, &b), (&b, &a)].iter().all(|(sport, dport)| {
++        let args = [
++            op, "INPUT", "-p", "udp", "--sport", sport, "--dport", dport, "-j", "DROP",
++        ];
++        let out = Command::new(xtables)
++            .args(args)
++            .output()
++            .expect("spawn xtables");
++        if !out.status.success() {
++            eprintln!(
++                "SKIP: {xtables} {args:?}: {}",
++                String::from_utf8_lossy(&out.stderr).trim()
++            );
++        }
++        out.status.success()
++    })
++}
++
++/// `write_config_multi` pins IPv4; listen on both families.
++fn dual_stack(node: &Node) {
++    let path = node.confbase.join("tinc.conf");
++    let conf = fs::read_to_string(&path).unwrap();
++    fs::write(
++        path,
++        conf.replace("AddressFamily = ipv4", "AddressFamily = any"),
++    )
++    .unwrap();
++}
++
++/// UDP address `node` has for `peer` (`dump nodes` host field).
++fn udp_host(node: &Node, peer: &str) -> Option<String> {
++    node.ctl().dump(3).iter().find_map(|row| {
++        let mut fields = row.strip_prefix("18 3 ")?.split_whitespace();
++        (fields.next()? == peer).then_some(())?;
++        fields.nth(1).map(str::to_owned)
++    })
++}
++
++/// A confirmed UDP path whose address dies silently (a NAT mapping
++/// flushed, a source the peer can no longer be reached at) must not pin
++/// both ends to it forever while another address works.
++///
++/// alice and bob each dial only relay: alice over IPv4, bob over IPv6,
++/// so the edges advertise alice at `127.0.0.1` and bob at `::1`. IPv4
++/// UDP between them is dropped first, so they confirm each other over
++/// IPv6 and each learns the other's `::1` source. Then IPv6 UDP between
++/// them dies and IPv4 opens: bob must find alice's IPv4 edge address
++/// again instead of probing only the dead `::1` one.
++#[test]
++fn dead_seen_address_is_released() {
++    let Some(netns) = enter_netns("udp_path::dead_seen_address_is_released") else {
++        return;
++    };
++    let tmp = tmp!("deadseen");
++    let conf = "AutoConnect = no\nLocalDiscovery = no\nPingInterval = 1\n\
++                UDPDiscoveryTimeout = 3\nUDPDiscoveryKeepaliveInterval = 1\n\
++                UDPDiscoveryInterval = 1\n";
++    let TunPair {
++        netns,
++        mut alice,
++        mut bob,
++    } = TunPair::new(netns, &tmp, conf);
++    let (a, b) = (alice.reserve_port(), bob.reserve_port());
++    let mut relay = Node::new(tmp.path(), "relay", 0xCC).with_conf(conf);
++    relay.write_config_multi(&[&alice, &bob], &[]);
++    dual_stack(&relay);
++    relay.start();
++    alice.write_config_multi(&[&relay, &bob], &[&relay]);
++    bob.write_config_multi(&[&relay, &alice], &[&relay]);
++    let relay_host = bob.confbase.join("hosts/relay");
++    let host = fs::read_to_string(&relay_host).unwrap();
++    fs::write(&relay_host, host.replace("127.0.0.1", "::1")).unwrap();
++    dual_stack(&alice);
++    dual_stack(&bob);
++    if !drop_udp_between("iptables", "-I", a, b) {
++        relay.stop();
++        return;
++    }
++    bob.start();
++    alice.start();
++    netns.place_devices();
++    let pair = TunPair { netns, alice, bob };
++    pair.wait_reachable();
++    let confirmed = |node: &Node, peer| {
++        node_status(&node.ctl().dump(3), peer).is_some_and(|s| s & UDP_CONFIRMED != 0)
++    };
++    let over_v6 = try_poll(Duration::from_secs(15), || {
++        ping_once("10.42.0.2");
++        (confirmed(&pair.alice, "bob") && confirmed(&pair.bob, "alice")).then_some(())
++    });
++    let v6 = Some("::1".to_owned());
++    if over_v6.is_none() || udp_host(&pair.alice, "bob") != v6 || udp_host(&pair.bob, "alice") != v6
++    {
++        relay.stop();
++        let (alice_log, bob_log) = pair.finish();
++        panic!(
++            "no IPv6 UDP path to start from\n=== alice ===\n{alice_log}\n=== bob ===\n{bob_log}"
++        );
++    }
++
++    assert!(drop_udp_between("iptables", "-D", a, b));
++    assert!(drop_udp_between("ip6tables", "-I", a, b));
++
++    // Data keeps flowing over relay meanwhile; it is what drives probing
++    // towards a peer without a meta connection.
++    let recovered = try_poll(Duration::from_secs(30), || {
++        ping_once("10.42.0.2");
++        (confirmed(&pair.alice, "bob")
++            && confirmed(&pair.bob, "alice")
++            && udp_host(&pair.bob, "alice").as_deref() == Some("127.0.0.1"))
++        .then_some(())
++    });
++    let alice_sees = udp_host(&pair.alice, "bob");
++    let bob_sees = udp_host(&pair.bob, "alice");
++    let relay_log = relay.stop();
++    let (alice_log, bob_log) = pair.finish();
++    let logs =
++        format!("=== alice ===\n{alice_log}\n=== relay ===\n{relay_log}\n=== bob ===\n{bob_log}");
++    assert!(
++        recovered.is_some(),
++        "UDP never re-confirmed over IPv4 (alice has bob at {alice_sees:?}, \
++         bob has alice at {bob_sees:?})\n{logs}"
++    );
++}
++
+ #[test]
+ fn pmtu_config_pins_mtu() {
+     let Some(s) = Scenario::start(
+-- 
+2.55.0
+
