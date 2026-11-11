@@ -5,7 +5,10 @@
 # into a video, yt-dlp keeps up with YouTube's changes. Prefers an HLS master
 # playlist (all qualities and the audio in one URL), played through
 # inputstream.adaptive: Kodi's ffmpeg demuxer opens every variant while
-# probing and gives up after 30 s. Else the best single file with both audio
+# probing and gives up after 30 s. YouTube's master lists two audio groups,
+# AAC-LC and HE-AAC, both marked default; Kodi often picks the HE-AAC one and
+# plays no sound, so tv-play serves Kodi a copy of the master without the
+# HE-AAC variants at GET /master.m3u8. Else the best single file with both audio
 # and video. Kodi opens a one-entry .m3u written here: JSON-RPC can't set a
 # title or an inputstream, #EXTINF and #KODIPROP lines can. Livestreams are
 # the exception: YouTube serves their audio as a separate HLS track, which
@@ -17,6 +20,7 @@
 import base64
 import json
 import os
+import re
 import subprocess
 import sys
 import urllib.request
@@ -30,6 +34,32 @@ playlist = sys.argv[4]
 live_ts = f"http://127.0.0.1:{port}/live.ts"
 # input URLs of the current livestream, for GET /live.ts
 live_inputs = []
+master_url = f"http://127.0.0.1:{port}/master.m3u8"
+# the current HLS master playlist, for GET /master.m3u8
+master = ""
+
+
+def without_he_aac(text):
+    """the HLS master without the variants with HE-AAC audio (mp4a.40.5) and the audio groups only they used"""
+    lines = text.splitlines()
+    out = []
+    i = 0
+    while i < len(lines):
+        if lines[i].startswith("#EXT-X-STREAM-INF:") and "mp4a.40.5" in lines[i]:
+            i += 2  # the tag and its URI line
+            continue
+        out.append(lines[i])
+        i += 1
+    variants = [line for line in out if line.startswith("#EXT-X-STREAM-INF:")]
+    if not variants:
+        return text
+    used = set(re.findall(r'AUDIO="([^"]*)"', "\n".join(variants)))
+
+    def unused_audio(line):
+        group = re.search(r'GROUP-ID="([^"]*)"', line)
+        return line.startswith("#EXT-X-MEDIA:") and "TYPE=AUDIO" in line and group and group[1] not in used
+
+    return "\n".join(line for line in out if not unused_audio(line)) + "\n"
 
 
 def live_tracks(formats):
@@ -63,9 +93,12 @@ def resolve(link):
     if info.get("is_live"):
         live_inputs[:] = live_tracks(formats)
         return title, live_ts, False
+    global master
     for f in formats:
         if f.get("protocol") in ("m3u8", "m3u8_native") and f.get("manifest_url"):
-            return title, f["manifest_url"], True
+            with urllib.request.urlopen(f["manifest_url"], timeout=30) as resp:
+                master = without_he_aac(resp.read().decode())
+            return title, master_url, True
     muxed = [
         f
         for f in formats
@@ -115,6 +148,14 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_GET(self):
+        if self.path == "/master.m3u8" and master:
+            data = master.encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/vnd.apple.mpegurl")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
         if self.path != "/live.ts" or not live_inputs:
             return self.answer(404, "not found")
         args = ["ffmpeg", "-nostdin", "-loglevel", "error"]
