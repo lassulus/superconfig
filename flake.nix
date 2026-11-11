@@ -338,7 +338,8 @@
             inputs.llm-agents.packages.${system}
             // lib.optionalAttrs (self.packages.${system} ? orca) { inherit (self.packages.${system}) orca; };
           # Check Darwin configurations can be evaluated (without building).
-          # The NixOS machines are built by .github/workflows/ci.yml (ciToplevels).
+          # CI builds the NixOS machines (ciToplevels) and barnacle
+          # (.github/workflows/ci.yml).
           checks = lib.mapAttrs' (
             name: config:
             lib.nameValuePair "darwin-${name}" (

@@ -359,11 +359,133 @@ jobs:
           PATH=$niks3/bin:$PATH .github/niks3-push.sh "$niks3"
       - run: .github/ci-build.sh "$FLAKE#droidNixConfigurations.massulus.activationPackage"
 
+  # The Mac barnacle (nix-darwin), built on a macOS runner and pushed to
+  # cache.lassul.us for `s deploy` to substitute. Its system includes the
+  # aarch64-linux VM image of nix-rosetta-builder, which macOS can't build:
+  # barnacle-linux builds the Linux derivations that darwin ones depend on
+  # directly and hands them to barnacle through hestia (drained before the
+  # job ends, like the shared job). Both skip the build when nothing would be
+  # built (`nix build --dry-run`), instead of downloading the whole closure.
+  barnacle-linux:
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      actions: read # hestia: detect evicted cache entries upfront
+      id-token: write # niks3 push
+    outputs:
+      manifest-version: ${{ steps.build.outputs.manifest-version }}
+    steps:
+      - uses: actions/checkout@v4
+      - if: inputs.url
+        env:
+          URL: ${{ inputs.url }}
+          SHA: ${{ inputs.sha }}
+        run: .github/fetch-pr.sh
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            trusted-users = root runner
+            extra-substituters = https://cache.lassul.us
+            extra-trusted-public-keys = cache.lassul.us-1:aOMEO5TU6eLvhyPi0jmgjR2sVlGjMq3rK0MeACjTcQ0=
+      - uses: Mic92/hestia@v3
+        with:
+          upstream-cache-filter: true
+          upstream-cache-key-names: cache.nixos.org-1 cache.lassul.us-1
+      - run: |
+          niks3=$(nix build --no-link --print-out-paths .#niks3)
+          echo "$niks3/bin" >> "$GITHUB_PATH"
+          PATH=$niks3/bin:$PATH .github/niks3-push.sh "$niks3"
+      - id: build
+        run: |
+          drv=$(nix eval --raw "$FLAKE#darwinConfigurations.barnacle.system.drvPath")
+          # derivation show: {derivations: {...}} with inputs.drvs since Nix
+          # 2.32, a plain object with inputDrvs before
+          mapfile -t linux < <(nix derivation show -r "$drv" | jq -r '
+            (.derivations // .) | with_entries(.key |= ltrimstr("/nix/store/")) as $d
+            | [$d[] | select(.system != "aarch64-linux")
+               | (.inputs.drvs // .inputDrvs) | keys[] | ltrimstr("/nix/store/")
+               | select($d[.].system == "aarch64-linux")]
+            | unique[] | "/nix/store/\(.)^*"')
+          printf 'Linux derivations of barnacle: %s\n' "${linux[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ ${#linux[@]} -eq 0 ] ||
+            ! nix build --dry-run "${linux[@]}" 2>&1 | grep -q 'will be built'; then
+            echo "nothing to build"
+            exit 0
+          fi
+          .github/ci-build.sh "${linux[@]}"
+          # upload now instead of in the post step, so barnacle can wait for
+          # the manifest version that contains them
+          "$HESTIA_BIN" drain --socket "$HESTIA_SOCKET" 2>&1 | tee "$RUNNER_TEMP/drain.txt"
+          drained=$(sed -nE 's/.*; manifest m[0-9]+#([0-9]+)$/\1/p' "$RUNNER_TEMP/drain.txt")
+          echo "manifest-version=$drained" >> "$GITHUB_OUTPUT"
+
+  barnacle:
+    needs: barnacle-linux
+    runs-on: macos-latest
+    permissions:
+      contents: read
+      actions: read # hestia: detect evicted cache entries upfront
+      id-token: write # niks3 push
+    steps:
+      - uses: actions/checkout@v4
+      - if: inputs.url
+        env:
+          URL: ${{ inputs.url }}
+          SHA: ${{ inputs.sha }}
+        run: .github/fetch-pr.sh
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            trusted-users = root runner
+            extra-substituters = https://cache.lassul.us
+            extra-trusted-public-keys = cache.lassul.us-1:aOMEO5TU6eLvhyPi0jmgjR2sVlGjMq3rK0MeACjTcQ0=
+      - uses: Mic92/hestia@v3
+        with:
+          upstream-cache-filter: true
+          upstream-cache-key-names: cache.nixos.org-1 cache.lassul.us-1
+          wait-manifest-version: ${{ needs.barnacle-linux.outputs.manifest-version }}
+      - id: dry-run
+        run: |
+          if nix build --dry-run "$FLAKE#darwinConfigurations.barnacle.system" 2>&1 | grep -q 'will be built'; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "nothing to build"
+          fi
+      # the closure is about 10 GiB; deleting the runner image's Xcode
+      # bundles other than the selected one and its Android SDK makes room
+      - if: steps.dry-run.outputs.build
+        run: |
+          df -h /System/Volumes/Data
+          keep=$(xcode-select -p | sed 's|/Contents/Developer$||')
+          for app in /Applications/Xcode*.app; do
+            [ "$app" = "$keep" ] || [ -L "$app" ] || sudo rm -rf "$app"
+          done
+          sudo rm -rf "${ANDROID_HOME:-$HOME/Library/Android/sdk}"
+          df -h /System/Volumes/Data
+      - if: steps.dry-run.outputs.build
+        run: |
+          niks3=$(nix build --no-link --print-out-paths .#niks3)
+          echo "$niks3/bin" >> "$GITHUB_PATH"
+          PATH=$niks3/bin:$PATH .github/niks3-push.sh "$niks3"
+      - if: steps.dry-run.outputs.build
+        run: .github/ci-build.sh "$FLAKE#darwinConfigurations.barnacle.system"
+
   # Summary of the jobs above; for a tangled.org PR it also comments the
   # result there (as hermes.pds.lassul.us). Skipped jobs: no machine to
   # build, or a job they need failed.
   ci:
-    needs: [list, check, outputs, eval, shared, build, massulus]
+    needs:
+      [
+        list,
+        check,
+        outputs,
+        eval,
+        shared,
+        build,
+        massulus,
+        barnacle-linux,
+        barnacle,
+      ]
     if: always()
     runs-on: ubuntu-latest
     permissions:
