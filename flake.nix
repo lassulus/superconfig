@@ -48,6 +48,7 @@
     disko.inputs.nixpkgs.follows = "nixpkgs";
 
     nixos-hardware.url = "github:nixos/nixos-hardware";
+    nixos-hardware.inputs.nixpkgs.follows = "nixpkgs";
 
     nix-rosetta-builder.url = "github:cpick/nix-rosetta-builder";
     nix-rosetta-builder.inputs.nixpkgs.follows = "nixpkgs";
@@ -323,7 +324,7 @@
           packages.niks3 = inputs.niks3.packages.${system}.niks3;
           # CI's eval job evaluates ciToplevels with it
           packages.iets = inputs.iets.packages.${system}.default;
-          devShells.default = pkgs.mkShell {
+          devShells.default = pkgs.mkShellNoCC {
             packages = [
               self.packages.${pkgs.system}.pass
               (self.legacyPackages.${system}.bin_shim {

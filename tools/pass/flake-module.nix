@@ -9,7 +9,9 @@
     {
       packages.pass = inputs.wrappers.lib.wrapPackage {
         pkgs = pkgs;
-        package = pkgs.passage;
+        # gitMinimal: full git pulls python3, whose darwin build keeps
+        # apple-sdk and llvm as runtime deps (~1.4 GiB closure)
+        package = pkgs.passage.override { git = pkgs.gitMinimal; };
         runtimeInputs = [
           pkgs.age-plugin-fido2-hmac
           pkgs.age-plugin-yubikey
