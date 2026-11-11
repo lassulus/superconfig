@@ -10,6 +10,8 @@
     self.inputs.nix-index-database.darwinModules.nix-index
     self.inputs.nix-rosetta-builder.darwinModules.default
     ./retiolum.nix
+    # nixpkgs overlays, shared with the NixOS machines (configs/default.nix)
+    ../../configs/build-fixes
   ];
   clan.core.networking.targetHost = "root@localhost";
   programs.nix-index-database.comma.enable = true;
@@ -65,6 +67,14 @@
       extra-experimental-features = [
         "nix-command"
         "flakes"
+      ];
+      # CI builds barnacle and pushes it there (.github/workflows/ci.yml),
+      # the NixOS machines get the same in configs/default.nix
+      extra-substituters = [ "https://cache.lassul.us" ];
+      extra-trusted-public-keys = [
+        (lib.removeSuffix "\n" (
+          builtins.readFile (self + "/vars/per-machine/neoprism/nix-cache-signing/key.pub/value")
+        ))
       ];
     };
   };
