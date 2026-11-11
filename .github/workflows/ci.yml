@@ -387,6 +387,9 @@ jobs:
             trusted-users = root runner
             extra-substituters = https://cache.lassul.us
             extra-trusted-public-keys = cache.lassul.us-1:aOMEO5TU6eLvhyPi0jmgjR2sVlGjMq3rK0MeACjTcQ0=
+            # the VM image needs kvm, which arm runners lack; vmTools'
+            # qemu runs with accel=kvm:tcg, so it builds emulated instead
+            extra-system-features = kvm
       - uses: Mic92/hestia@v3
         with:
           upstream-cache-filter: true
