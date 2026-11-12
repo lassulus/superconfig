@@ -126,6 +126,21 @@
     },
     "crane": {
       "locked": {
+        "lastModified": 1791754810,
+        "narHash": "sha256-cN0Mgk+sQtCJcGWs9H4M0CnLRAuC4I8aCwiBTcBJs6E=",
+        "owner": "ipetkov",
+        "repo": "crane",
+        "rev": "bd63bf1d0a0f6dcacd7549c714a671ee63b0db6a",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ipetkov",
+        "repo": "crane",
+        "type": "github"
+      }
+    },
+    "crane_2": {
+      "locked": {
         "lastModified": 1793836618,
         "narHash": "sha256-TREenflwEjxOSq292FYwbc3kEm7TDRtXCZRNWEdjBmg=",
         "owner": "ipetkov",
@@ -139,7 +154,7 @@
         "type": "github"
       }
     },
-    "crane_2": {
+    "crane_3": {
       "locked": {
         "lastModified": 1793836618,
         "narHash": "sha256-TREenflwEjxOSq292FYwbc3kEm7TDRtXCZRNWEdjBmg=",
@@ -367,6 +382,31 @@
         "type": "github"
       }
     },
+    "hestia": {
+      "inputs": {
+        "crane": "crane",
+        "nixpkgs": [
+          "nixpkgs"
+        ],
+        "treefmt-nix": [
+          "treefmt-nix"
+        ]
+      },
+      "locked": {
+        "lastModified": 1794491817,
+        "narHash": "sha256-1w9H96SXlxGE3lJD7p7QfOVKMFGPASM37dVgG6LSfjc=",
+        "owner": "lassulus",
+        "repo": "hestia",
+        "rev": "68a4a24ab407ca750d2dd2773122be1c9b2584b0",
+        "type": "github"
+      },
+      "original": {
+        "owner": "lassulus",
+        "ref": "substituter-stall-retry",
+        "repo": "hestia",
+        "type": "github"
+      }
+    },
     "home-manager": {
       "inputs": {
         "nixpkgs": [
@@ -390,7 +430,7 @@
     },
     "iets": {
       "inputs": {
-        "crane": "crane",
+        "crane": "crane_2",
         "nixpkgs": [
           "nixpkgs"
         ]
@@ -723,6 +763,7 @@
         "disko": "disko",
         "droid-nix": "droid-nix",
         "hermes-agent": "hermes-agent",
+        "hestia": "hestia",
         "iets": "iets",
         "kartei": "kartei",
         "llm-agents": "llm-agents",
@@ -827,7 +868,7 @@
     },
     "tincr": {
       "inputs": {
-        "crane": "crane_2",
+        "crane": "crane_3",
         "fenix": "fenix",
         "nixpkgs": [
           "nixpkgs"

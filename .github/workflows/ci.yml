@@ -150,8 +150,14 @@ jobs:
             trusted-users = root runner
             extra-substituters = https://cache.lassul.us
             extra-trusted-public-keys = cache.lassul.us-1:aOMEO5TU6eLvhyPi0jmgjR2sVlGjMq3rK0MeACjTcQ0=
+      # hestia from our fork (flake.nix); cache.lassul.us has it once a
+      # master run pushed it with niks3
+      - run: |
+          hestia=$(nix build --no-link --print-out-paths .#hestia)
+          echo "HESTIA=$hestia" >> "$GITHUB_ENV"
       - uses: Mic92/hestia@v3
         with:
+          binary: ${{ env.HESTIA }}/bin/hestia
           upstream-cache-filter: true
           upstream-cache-key-names: cache.nixos.org-1 cache.lassul.us-1
           filter-drv-closures: true
@@ -168,7 +174,7 @@ jobs:
             echo "lazy-store=$lazy"
             echo "iets=$iets/bin/iets"
           } >> "$GITHUB_OUTPUT"
-          PATH=$niks3/bin:$PATH .github/niks3-push.sh "$niks3" "$lazy" "$iets"
+          PATH=$niks3/bin:$PATH .github/niks3-push.sh "$niks3" "$lazy" "$iets" "$HESTIA"
       - id: matrix
         uses: Mic92/hestia/matrix@v3
         with:
@@ -230,8 +236,14 @@ jobs:
             # the 5-minute upload sooner, and big builds (vector, radicle,
             # noctalia) don't share the runner's memory
             max-jobs = 1
+      # hestia from our fork (flake.nix); cache.lassul.us has it once a
+      # master run pushed it with niks3
+      - run: |
+          hestia=$(nix build --no-link --print-out-paths .#hestia)
+          echo "HESTIA=$hestia" >> "$GITHUB_ENV"
       - uses: Mic92/hestia@v3
         with:
+          binary: ${{ env.HESTIA }}/bin/hestia
           upstream-cache-filter: true
           upstream-cache-key-names: cache.nixos.org-1 cache.lassul.us-1
           wait-manifest-version: ${{ needs.eval.outputs.manifest-version }}
@@ -288,8 +300,14 @@ jobs:
             trusted-users = root runner
             extra-substituters = https://cache.lassul.us
             extra-trusted-public-keys = cache.lassul.us-1:aOMEO5TU6eLvhyPi0jmgjR2sVlGjMq3rK0MeACjTcQ0=
+      # hestia from our fork (flake.nix); cache.lassul.us has it once a
+      # master run pushed it with niks3
+      - run: |
+          hestia=$(nix build --no-link --print-out-paths .#hestia)
+          echo "HESTIA=$hestia" >> "$GITHUB_ENV"
       - uses: Mic92/hestia@v3
         with:
+          binary: ${{ env.HESTIA }}/bin/hestia
           upstream-cache-filter: true
           upstream-cache-key-names: cache.nixos.org-1 cache.lassul.us-1
           wait-manifest-version: ${{ needs.shared.outputs.manifest-version || needs.eval.outputs.manifest-version }}
@@ -349,14 +367,20 @@ jobs:
             trusted-users = root runner
             extra-substituters = https://cache.lassul.us
             extra-trusted-public-keys = cache.lassul.us-1:aOMEO5TU6eLvhyPi0jmgjR2sVlGjMq3rK0MeACjTcQ0=
+      # hestia from our fork (flake.nix); cache.lassul.us has it once a
+      # master run pushed it with niks3
+      - run: |
+          hestia=$(nix build --no-link --print-out-paths .#hestia)
+          echo "HESTIA=$hestia" >> "$GITHUB_ENV"
       - uses: Mic92/hestia@v3
         with:
+          binary: ${{ env.HESTIA }}/bin/hestia
           upstream-cache-filter: true
           upstream-cache-key-names: cache.nixos.org-1 cache.lassul.us-1
       - run: |
           niks3=$(nix build --no-link --print-out-paths .#niks3)
           echo "$niks3/bin" >> "$GITHUB_PATH"
-          PATH=$niks3/bin:$PATH .github/niks3-push.sh "$niks3"
+          PATH=$niks3/bin:$PATH .github/niks3-push.sh "$niks3" "$HESTIA"
       - run: .github/ci-build.sh "$FLAKE#droidNixConfigurations.massulus.activationPackage"
 
   # The Mac barnacle (nix-darwin), built on a macOS runner and pushed to
@@ -390,14 +414,20 @@ jobs:
             # the VM image needs kvm, which arm runners lack; vmTools'
             # qemu runs with accel=kvm:tcg, so it builds emulated instead
             extra-system-features = kvm
+      # hestia from our fork (flake.nix); cache.lassul.us has it once a
+      # master run pushed it with niks3
+      - run: |
+          hestia=$(nix build --no-link --print-out-paths .#hestia)
+          echo "HESTIA=$hestia" >> "$GITHUB_ENV"
       - uses: Mic92/hestia@v3
         with:
+          binary: ${{ env.HESTIA }}/bin/hestia
           upstream-cache-filter: true
           upstream-cache-key-names: cache.nixos.org-1 cache.lassul.us-1
       - run: |
           niks3=$(nix build --no-link --print-out-paths .#niks3)
           echo "$niks3/bin" >> "$GITHUB_PATH"
-          PATH=$niks3/bin:$PATH .github/niks3-push.sh "$niks3"
+          PATH=$niks3/bin:$PATH .github/niks3-push.sh "$niks3" "$HESTIA"
       - id: build
         run: |
           drv=$(nix eval --raw "$FLAKE#darwinConfigurations.barnacle.system.drvPath")
@@ -442,8 +472,14 @@ jobs:
             trusted-users = root runner
             extra-substituters = https://cache.lassul.us
             extra-trusted-public-keys = cache.lassul.us-1:aOMEO5TU6eLvhyPi0jmgjR2sVlGjMq3rK0MeACjTcQ0=
+      # hestia from our fork (flake.nix); cache.lassul.us has it once a
+      # master run pushed it with niks3
+      - run: |
+          hestia=$(nix build --no-link --print-out-paths .#hestia)
+          echo "HESTIA=$hestia" >> "$GITHUB_ENV"
       - uses: Mic92/hestia@v3
         with:
+          binary: ${{ env.HESTIA }}/bin/hestia
           upstream-cache-filter: true
           upstream-cache-key-names: cache.nixos.org-1 cache.lassul.us-1
           wait-manifest-version: ${{ needs.barnacle-linux.outputs.manifest-version }}
@@ -469,7 +505,7 @@ jobs:
         run: |
           niks3=$(nix build --no-link --print-out-paths .#niks3)
           echo "$niks3/bin" >> "$GITHUB_PATH"
-          PATH=$niks3/bin:$PATH .github/niks3-push.sh "$niks3"
+          PATH=$niks3/bin:$PATH .github/niks3-push.sh "$niks3" "$HESTIA"
       - id: build
         if: steps.dry-run.outputs.build
         run: .github/ci-build.sh "$FLAKE#darwinConfigurations.barnacle.system"

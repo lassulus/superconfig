@@ -85,6 +85,13 @@
     niks3.inputs.nixpkgs.follows = "nixpkgs";
     niks3.inputs.treefmt-nix.follows = "treefmt-nix";
 
+    # CI's binary cache on the GitHub Actions cache. Fork branch with the
+    # fix for pack reads hanging after an Azure 503 (Mic92/hestia PR 189);
+    # back to the Mic92/hestia@v3 release binary once that is released.
+    hestia.url = "github:lassulus/hestia/substituter-stall-retry";
+    hestia.inputs.nixpkgs.follows = "nixpkgs";
+    hestia.inputs.treefmt-nix.follows = "treefmt-nix";
+
     byoidc.url = "github:lassulus/byoidc";
     byoidc.inputs.nixpkgs.follows = "nixpkgs";
     byoidc.inputs.treefmt-nix.follows = "treefmt-nix";
@@ -322,6 +329,8 @@
               });
           # CI pushes its builds to cache.lassul.us with it (.github/niks3-push.sh)
           packages.niks3 = inputs.niks3.packages.${system}.niks3;
+          # CI's binary cache daemon (the `binary` of the Mic92/hestia action)
+          packages.hestia = inputs.hestia.packages.${system}.default;
           # CI's eval job evaluates ciToplevels with it
           packages.iets = inputs.iets.packages.${system}.default;
           devShells.default = pkgs.mkShellNoCC {
