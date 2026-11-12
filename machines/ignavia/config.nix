@@ -59,11 +59,15 @@
   nix.settings.min-free = 10240 * 1024 * 1024;
   nix.settings.max-free = 20480 * 1024 * 1024;
 
-  # Framework 13 panel (2256x1504). wlroots' HiDPI heuristic auto-picks
+  # Framework 13 panel (2880x1920). wlroots' HiDPI heuristic auto-picks
   # scale 2 on every sway start, which is far too large. Pin the internal
-  # panel to 1.0; external outputs keep sway's default.
-  environment.etc."sway/config.d/scale.conf".text = ''
+  # panel to 1.0.
+  # The external AORUS FO32U2 (4K) comes up at 2560x1440@240 without an
+  # explicit mode; pin native 4K@240. Matched by make/model/serial since
+  # its connector name (DP-3, DP-11, DP-13, ...) changes between plugs.
+  environment.etc."sway/config.d/outputs.conf".text = ''
     output eDP-1 scale 1
+    output "GIGA-BYTE TECHNOLOGY CO., LTD. AORUS FO32U2 24350B005397" mode 3840x2160@240Hz
   '';
 
   documentation.nixos.enable = true;
