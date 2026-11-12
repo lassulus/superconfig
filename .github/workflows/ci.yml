@@ -470,8 +470,13 @@ jobs:
           niks3=$(nix build --no-link --print-out-paths .#niks3)
           echo "$niks3/bin" >> "$GITHUB_PATH"
           PATH=$niks3/bin:$PATH .github/niks3-push.sh "$niks3"
-      - if: steps.dry-run.outputs.build
+      - id: build
+        if: steps.dry-run.outputs.build
         run: .github/ci-build.sh "$FLAKE#darwinConfigurations.barnacle.system"
+      # hestia drops the download of barnacle's VM disk image without a log
+      # line; find out why
+      - if: failure() && steps.build.outcome == 'failure'
+        run: .github/hestia-nar-debug.sh
 
   # Summary of the jobs above; for a tangled.org PR it also comments the
   # result there (as hermes.pds.lassul.us). Skipped jobs: no machine to
