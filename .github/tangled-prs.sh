@@ -32,7 +32,9 @@ for uri in $(get "$api/org.tangled.repo.listPulls?subject=$repo&status=open&limi
     echo "::warning::PR $n: no knot for $src" >&2
     continue
   fi
-  git push -q origin "HEAD:refs/tangled-ci/$sha"
+  # forced: with PR set the marker may exist already, pointing at an older
+  # master that this shallow checkout does not have
+  git push -q -f origin "HEAD:refs/tangled-ci/$sha"
   include=$(jq -c --arg pr "$n" --arg sha "$sha" --arg url "$knot/$src" \
     '. + [{pr: $pr, sha: $sha, url: $url}]' <<<"$include")
   echo "PR $n: $sha from $knot/$src" >&2
