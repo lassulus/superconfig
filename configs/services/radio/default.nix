@@ -158,18 +158,6 @@ in
         ffmpeg
       ];
     };
-    icecast = opkgs.icecast.overrideAttrs (old: rec {
-      version = "2.5-beta3";
-
-      src = pkgs.fetchurl {
-        url = "http://downloads.xiph.org/releases/icecast/icecast-${version}.tar.gz";
-        sha256 = "sha256-4FDokoA9zBDYj8RAO/kuTHaZ6jZYBLSJZiX/IYFaCW8=";
-      };
-
-      NIX_CFLAGS_COMPILE = "-Wno-error=implicit-function-declaration";
-
-      buildInputs = old.buildInputs ++ [ pkgs.pkg-config ];
-    });
   };
   services.icecast = {
     enable = true;
@@ -193,7 +181,7 @@ in
       </mount>
     '';
   };
-  # the 2.5 beta has segfaulted before; the module sets no Restart=
+  # the module sets no Restart=; icecast (2.5 beta) has segfaulted before
   systemd.services.icecast.serviceConfig.Restart = "on-failure";
 
   networking.firewall.interfaces.retiolum.allowedTCPPorts = [
