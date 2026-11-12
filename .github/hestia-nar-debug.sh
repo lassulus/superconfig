@@ -3,11 +3,12 @@
 # from hestia's local substituter for its Linux paths (the VM disk image)
 # and hestia's log shows nothing. Fetch those paths straight from hestia and
 # log their size, the response, and memory and disk while hestia serves them.
+# Runs on macOS's bash 3.2 (no mapfile).
 set -uo pipefail
 
 drv=$(nix eval --raw "$FLAKE#darwinConfigurations.barnacle.system.drvPath")
 # outputs of the Linux derivations barnacle needs (see barnacle-linux)
-mapfile -t paths < <(nix derivation show -r "$drv" | jq -r '
+paths=$(nix derivation show -r "$drv" | jq -r '
   (.derivations // .) | with_entries(.key |= ltrimstr("/nix/store/")) as $d
   | [$d[] | select(.system != "aarch64-linux")
      | (.inputs.drvs // .inputDrvs) | keys[] | ltrimstr("/nix/store/")
@@ -18,7 +19,8 @@ pid=$(pgrep -f "$HESTIA_BIN serve" | head -1)
 sysctl -n hw.memsize | awk '{ printf "memory: %d MiB\n", $1 / 1048576 }'
 df -h /System/Volumes/Data
 
-for path in "${paths[@]}"; do
+# store paths have no spaces
+for path in $paths; do
   [ -e "$path" ] && continue
   hash=$(basename "$path" | cut -c1-32)
   echo "== $path"
