@@ -355,7 +355,11 @@ in
   # re-picking it fails with -16727 until AirPlayXPCHelper restarts).
   services.shairport-sync = {
     enable = true;
-    package = pkgs.shairport-sync-airplay2;
+    # 5.6.2 spins forever in the pipewire backend's delay() while its stream
+    # is not STREAMING (e.g. unlinked by audio-matrix mid-session)
+    package = pkgs.shairport-sync-airplay2.overrideAttrs (old: {
+      patches = (old.patches or [ ]) ++ [ ./shairport-sync-pw-delay-loop.patch ];
+    });
     settings = {
       general = {
         name = "gg23";

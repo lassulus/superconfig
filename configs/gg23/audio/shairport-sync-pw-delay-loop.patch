@@ -1,0 +1,15 @@
+--- a/audio_pw.c	2026-11-13 09:54:45
++++ b/audio_pw.c	2026-11-13 09:54:45
+@@ -1449,9 +1449,9 @@
+       pw_stream_get_time_n(data.stream, &stream_time_info_2, sizeof(struct pw_time));
+ 
+       non_matching = memcmp(&stream_time_info_1, &stream_time_info_2, sizeof(struct pw_time));
+-      if (non_matching != 0) {
+-        loop_count++;
+-      }
++      // count every attempt: pw_stream_get_time_n returns -EIO with stable
++      // pw_time whenever the stream is not STREAMING, which otherwise spins forever
++      loop_count++;
+     } while (((non_matching != 0) || (stream_time_valid_if_zero != 0)) && (loop_count < 10));
+ 
+     if (non_matching != 0) {
