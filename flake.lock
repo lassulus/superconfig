@@ -393,16 +393,16 @@
         ]
       },
       "locked": {
-        "lastModified": 1794491817,
-        "narHash": "sha256-1w9H96SXlxGE3lJD7p7QfOVKMFGPASM37dVgG6LSfjc=",
+        "lastModified": 1794563122,
+        "narHash": "sha256-pwWHcjMuLPUdo3f7rlAqCV6/mZfN6JS2+9BfDVKYcCA=",
         "owner": "lassulus",
         "repo": "hestia",
-        "rev": "68a4a24ab407ca750d2dd2773122be1c9b2584b0",
+        "rev": "084070e0c41b343a1d7065de5165081cdc996e83",
         "type": "github"
       },
       "original": {
         "owner": "lassulus",
-        "ref": "substituter-stall-retry",
+        "ref": "nar-low-memory",
         "repo": "hestia",
         "type": "github"
       }

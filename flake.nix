@@ -86,9 +86,11 @@
     niks3.inputs.treefmt-nix.follows = "treefmt-nix";
 
     # CI's binary cache on the GitHub Actions cache. Fork branch with the
-    # fix for pack reads hanging after an Azure 503 (Mic92/hestia PR 189);
-    # back to the Mic92/hestia@v3 release binary once that is released.
-    hestia.url = "github:lassulus/hestia/substituter-stall-retry";
+    # fix for pack reads hanging after an Azure 503 (Mic92/hestia PR 189)
+    # plus streamed NARs (the barnacle VM image did not fit in a macOS
+    # runner's memory); back to the Mic92/hestia@v3 release binary once
+    # both are released.
+    hestia.url = "github:lassulus/hestia/nar-low-memory";
     hestia.inputs.nixpkgs.follows = "nixpkgs";
     hestia.inputs.treefmt-nix.follows = "treefmt-nix";
 
