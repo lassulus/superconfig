@@ -8,10 +8,16 @@
 # probing and gives up after 30 s. YouTube's master lists two audio groups,
 # AAC-LC and HE-AAC, both marked default; Kodi often picks the HE-AAC one and
 # plays no sound, so tv-play serves Kodi a copy of the master without the
-# HE-AAC variants at GET /master.m3u8. Else the best single file with both audio
-# and video. Kodi opens a one-entry .m3u written here: JSON-RPC can't set a
-# title or an inputstream, #EXTINF and #KODIPROP lines can. Livestreams are
-# the exception: YouTube serves their audio as a separate HLS track, which
+# HE-AAC variants at GET /master.m3u8. YouTube's audio renditions are raw
+# ADTS segments named seg.ts; inputstream.adaptive takes the container from
+# the extension, so it tries its TS reader first, and on some videos it then
+# never delivers an audio sample after falling back to ADTS. So for YouTube
+# the master's audio renditions point at GET /audio/N.m3u8, a copy of each
+# playlist with the segments named seg.aac (googlevideo serves either name).
+# Else the best single file with both audio and video. Kodi opens a one-entry
+# .m3u written here: JSON-RPC can't set a title or an inputstream, #EXTINF and
+# #KODIPROP lines can. Livestreams are the exception: YouTube serves their
+# audio as a separate HLS track, which
 # inputstream.adaptive stalls on after a few seconds ("stream stalled"), so
 # for those ffmpeg copies the best video and audio track into one MPEG-TS
 # stream that Kodi reads from GET /live.ts here. Answers 200 with the
@@ -37,6 +43,8 @@ live_inputs = []
 master_url = f"http://127.0.0.1:{port}/master.m3u8"
 # the current HLS master playlist, for GET /master.m3u8
 master = ""
+# upstream URLs of the current master's audio renditions, for GET /audio/N.m3u8
+audio_playlists = []
 
 
 def without_he_aac(text):
@@ -60,6 +68,28 @@ def without_he_aac(text):
         return line.startswith("#EXT-X-MEDIA:") and "TYPE=AUDIO" in line and group and group[1] not in used
 
     return "\n".join(line for line in out if not unused_audio(line)) + "\n"
+
+
+def local_audio(text):
+    """the HLS master with its audio renditions pointing at GET /audio/N.m3u8, and their upstream URLs"""
+    upstream = []
+
+    def local(m):
+        upstream.append(m[1])
+        return f'URI="http://127.0.0.1:{port}/audio/{len(upstream) - 1}.m3u8"'
+
+    lines = [
+        re.sub(r'URI="([^"]*)"', local, line)
+        if line.startswith("#EXT-X-MEDIA:") and "TYPE=AUDIO" in line
+        else line
+        for line in text.splitlines()
+    ]
+    return "\n".join(lines) + "\n", upstream
+
+
+def as_adts(text):
+    """a YouTube audio playlist with its segments named seg.aac, for inputstream.adaptive's ADTS reader"""
+    return re.sub(r"/file/seg\.ts$", "/file/seg.aac", text, flags=re.M)
 
 
 def live_tracks(formats):
@@ -93,11 +123,15 @@ def resolve(link):
     if info.get("is_live"):
         live_inputs[:] = live_tracks(formats)
         return title, live_ts, False
-    global master
+    global master, audio_playlists
     for f in formats:
         if f.get("protocol") in ("m3u8", "m3u8_native") and f.get("manifest_url"):
             with urllib.request.urlopen(f["manifest_url"], timeout=30) as resp:
-                master = without_he_aac(resp.read().decode())
+                text = without_he_aac(resp.read().decode())
+            upstream = []
+            if info.get("extractor_key") == "Youtube":
+                text, upstream = local_audio(text)
+            master, audio_playlists = text, upstream
             return title, master_url, True
     muxed = [
         f
@@ -139,23 +173,28 @@ def kodi_play(stream):
 
 
 class Handler(BaseHTTPRequestHandler):
-    def answer(self, status, text):
+    def answer(self, status, text, content_type="text/plain; charset=utf-8"):
         data = text.encode()
         self.send_response(status)
-        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
 
     def do_GET(self):
         if self.path == "/master.m3u8" and master:
-            data = master.encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/vnd.apple.mpegurl")
-            self.send_header("Content-Length", str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
-            return
+            return self.answer(200, master, "application/vnd.apple.mpegurl")
+        audio = re.fullmatch(r"/audio/(\d+)\.m3u8", self.path)
+        if audio:
+            n = int(audio[1])
+            if n >= len(audio_playlists):
+                return self.answer(404, "not found")
+            try:
+                with urllib.request.urlopen(audio_playlists[n], timeout=30) as resp:
+                    text = as_adts(resp.read().decode())
+            except OSError as e:
+                return self.answer(502, str(e))
+            return self.answer(200, text, "application/vnd.apple.mpegurl")
         if self.path != "/live.ts" or not live_inputs:
             return self.answer(404, "not found")
         args = ["ffmpeg", "-nostdin", "-loglevel", "error"]
