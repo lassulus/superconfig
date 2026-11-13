@@ -2,8 +2,8 @@
 #
 # wan-failover pings out of et0. After a few failures it puts a low-metric
 # default route via the phone in front of et0's and points dnsmasq at the
-# phone's resolver (the Vodafone Station hijacks DNS to its activation portal
-# while offline). Once et0 answers again for a while, it removes that route
+# phone's resolver (an unprovisioned Vodafone cable modem hijacks DNS to its
+# activation portal). Once et0 answers again for a while, it removes that route
 # and dnsmasq goes back to et0's resolvers.
 { pkgs, ... }:
 let
@@ -61,9 +61,11 @@ in
           ping -q -c1 -W2 -I et0 9.9.9.9 >/dev/null 2>&1
       }
 
-      # DNS servers networkd learned on a link, as resolv.conf.
+      # DNS servers networkd learned on a link, as resolv.conf. resolvectl
+      # wraps long lists onto indented lines, so strip only the
+      # "Link N (iface):" prefix, not everything up to the first colon.
       write_resolv() {
-        resolvectl dns "$1" 2>/dev/null | sed 's/^[^:]*: *//' | tr ' ' '\n' |
+        resolvectl dns "$1" 2>/dev/null | sed -E 's/^Link [0-9]+ \([^)]*\)://' | tr -s ' ' '\n' |
           awk 'NF && !/%/ { print "nameserver " $0 }' > ${resolvFile}.new
         if [ -s ${resolvFile}.new ] && ! cmp -s ${resolvFile}.new ${resolvFile}; then
           mv ${resolvFile}.new ${resolvFile}
