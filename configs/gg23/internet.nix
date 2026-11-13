@@ -1,10 +1,10 @@
 # Why is the gg23 internet slow? Runs on acheron, the gg23 router, whose WAN
-# (et0) sits behind the Vodafone Station (ARRIS TG3442DE cable modem, LAN
-# 192.168.0.1). Exports, via the Vector agent (configs/monitoring/agent.nix)
-# into VictoriaMetrics on the monitoring servers:
-# - the Station's DOCSIS channel power/SNR/lock and its status, scraped from
-#   its web UI (tools/vodafone-station-exporter)
-# - latency and loss to the Station, the CMTS and the internet
+# (et0) sits behind the FRITZ!Box 6670 Cable (LAN 192.168.178.1). Exports,
+# via the Vector agent (configs/monitoring/agent.nix) into VictoriaMetrics on
+# the monitoring servers:
+# - the FRITZ!Box's DOCSIS channel power/SNR/errors and its status, from its
+#   web UI and TR-064 (tools/fritzbox-cable-exporter)
+# - latency and loss to the FRITZ!Box, the CMTS and the internet
 #   (smokeping_prober)
 # - hourly speedtests (./internet-speedtest.nix)
 # WAN throughput is in the host metrics already (et0 on acheron). Grafana
@@ -21,11 +21,11 @@ let
   smokeping = config.services.prometheus.exporters.smokeping;
 
   # target label -> address. `cmts` is the first hop behind the cable modem
-  # (91.64.96.254 = gateway of the WAN 91.64.96.0/24, from mtr). If Vodafone
-  # moves us to another subnet it shows as 100% loss here: update it then.
+  # (83.169.183.45, from mtr behind the FRITZ!Box). If Vodafone moves us to
+  # another subnet it shows as 100% loss here: update it then.
   targets = {
-    station = "192.168.0.1";
-    cmts = "91.64.96.254";
+    router = "192.168.178.1";
+    cmts = "83.169.183.45";
     cloudflare = "1.1.1.1";
     google = "8.8.8.8";
     cloudflare6 = "2606:4700:4700::1111";
@@ -39,31 +39,31 @@ in
   ];
 
   lass.ports = {
-    "9764" = "vodafone-station-exporter";
+    "9764" = "fritzbox-cable-exporter";
     ${toString smokeping.port} = "smokeping-exporter";
   };
 
-  clan.core.vars.generators.vodafone-station.prompts.password = {
-    description = "Vodafone Station (192.168.0.1) web UI admin password, passage admin/gg23/vodafone-router/pass";
+  clan.core.vars.generators.fritzbox.prompts.password = {
+    description = "FRITZ!Box (192.168.178.1) web UI password, passage admin/gg23/fritzbox/pass";
     type = "hidden";
     persist = true;
   };
 
-  systemd.services.vodafone-station-exporter = {
-    description = "Prometheus exporter for the Vodafone Station";
+  systemd.services.fritzbox-cable-exporter = {
+    description = "Prometheus exporter for the FRITZ!Box Cable";
     wantedBy = [ "multi-user.target" ];
     after = [ "network-online.target" ];
     wants = [ "network-online.target" ];
     serviceConfig = {
       ExecStart = lib.escapeShellArgs [
-        (lib.getExe self.packages.${pkgs.stdenv.hostPlatform.system}.vodafone-station-exporter)
+        (lib.getExe self.packages.${pkgs.stdenv.hostPlatform.system}.fritzbox-cable-exporter)
         "--listen"
-        "127.0.0.1:${toString config.lass.servicePorts.vodafone-station-exporter}"
+        "127.0.0.1:${toString config.lass.servicePorts.fritzbox-cable-exporter}"
         "--password-file"
         "%d/password"
       ];
       LoadCredential = [
-        "password:${config.clan.core.vars.generators.vodafone-station.files.password.path}"
+        "password:${config.clan.core.vars.generators.fritzbox.files.password.path}"
       ];
       DynamicUser = true;
       Restart = "on-failure";
@@ -80,12 +80,12 @@ in
   monitoring.extraMetrics = [ "internet_metrics" ];
 
   services.vector.settings = {
-    # The Station is slow: one login + three pages take ~6s. Every scrape
-    # logs in and out again, so keep the interval relaxed.
-    sources.vodafone_station_raw = {
+    # The first scrape logs in (PBKDF2, ~5s with TR-064); later ones reuse
+    # the session.
+    sources.fritzbox_raw = {
       type = "prometheus_scrape";
       endpoints = [
-        "http://127.0.0.1:${toString config.lass.servicePorts.vodafone-station-exporter}/metrics"
+        "http://127.0.0.1:${toString config.lass.servicePorts.fritzbox-cable-exporter}/metrics"
       ];
       scrape_interval_secs = 60;
       scrape_timeout_secs = 45;
@@ -103,7 +103,7 @@ in
     transforms.internet_metrics = {
       type = "remap";
       inputs = [
-        "vodafone_station_raw"
+        "fritzbox_raw"
         "smokeping_raw"
       ];
       source = ''

@@ -144,7 +144,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "vodafone_station_docsis_power_dbmv{host=\"acheron\",direction=\"downstream\"}",
+          "expr": "fritzbox_docsis_power_dbmv{host=\"acheron\",direction=\"downstream\"}",
           "legendFormat": "{{channel_type}} {{frequency_mhz}} MHz"
         }
       ]
@@ -171,7 +171,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "vodafone_station_docsis_snr_db{host=\"acheron\",direction=\"downstream\"}",
+          "expr": "fritzbox_docsis_snr_db{host=\"acheron\",direction=\"downstream\"}",
           "legendFormat": "{{channel_type}} {{frequency_mhz}} MHz"
         }
       ]
@@ -198,7 +198,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "vodafone_station_docsis_power_dbmv{host=\"acheron\",direction=\"upstream\"}",
+          "expr": "fritzbox_docsis_power_dbmv{host=\"acheron\",direction=\"upstream\"}",
           "legendFormat": "{{channel_type}} {{frequency_mhz}} MHz"
         }
       ]
@@ -223,7 +223,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "vodafone_station_docsis_modulation_qam{host=\"acheron\"}",
+          "expr": "fritzbox_docsis_modulation_qam{host=\"acheron\"}",
           "legendFormat": "{{direction}} {{channel_type}} {{frequency_mhz}} MHz"
         }
       ]
@@ -231,7 +231,7 @@
     {
       "id": 9,
       "type": "timeseries",
-      "title": "Station",
+      "title": "FRITZ!Box",
       "gridPos": {
         "x": 12,
         "y": 26,
@@ -248,22 +248,22 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "vodafone_station_up{host=\"acheron\"}",
+          "expr": "fritzbox_up{host=\"acheron\"}",
           "legendFormat": "scrape ok"
         },
         {
           "refId": "B",
-          "expr": "vodafone_station_docsis_online{host=\"acheron\"}",
+          "expr": "fritzbox_docsis_online{host=\"acheron\"}",
           "legendFormat": "DOCSIS online"
         },
         {
           "refId": "C",
-          "expr": "count(vodafone_station_docsis_locked{host=\"acheron\"} == 0) or vector(0)",
-          "legendFormat": "unlocked channels"
+          "expr": "sum(increase(fritzbox_docsis_uncorrectable_errors{host=\"acheron\",direction=\"downstream\"}[1h]))",
+          "legendFormat": "uncorrectable errors / h"
         },
         {
           "refId": "D",
-          "expr": "vodafone_station_uptime_seconds{host=\"acheron\"} / 86400",
+          "expr": "fritzbox_uptime_seconds{host=\"acheron\"} / 86400",
           "legendFormat": "uptime (days)"
         }
       ]

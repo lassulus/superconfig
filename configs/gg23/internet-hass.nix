@@ -27,7 +27,7 @@ let
   };
   internet = ping ''target_name=~"cloudflare|google"'';
   cmts = ping ''target_name="cmts"'';
-  station = ping ''target_name="station"'';
+  router = ping ''target_name="router"'';
   wan = dir: ''rate(host_network_${dir}_bytes_total{host="acheron",device="et0"}[2m]) * 8 / 1e6'';
   docsis = ''{host="acheron",channel_type="SC-QAM"}'';
 
@@ -73,14 +73,14 @@ let
     station_latency = {
       name = "Station latency";
       label = "Latency to the router";
-      query = station.latency;
+      query = router.latency;
       unit = "ms";
       icon = "mdi:router-network";
     };
     station_loss = {
       name = "Station packet loss";
       label = "Packet loss to the router";
-      query = station.loss;
+      query = router.loss;
       unit = "%";
       icon = "mdi:router-network";
     };
@@ -127,56 +127,58 @@ let
     ds_snr_min = {
       name = "Downstream SNR min";
       label = "Downstream SNR min";
-      query = ''min(vodafone_station_docsis_snr_db{direction="downstream",host="acheron"})'';
+      query = ''min(fritzbox_docsis_snr_db{direction="downstream",host="acheron"})'';
       unit = "dB";
       icon = "mdi:signal";
     };
     ds_power_min = {
       name = "Downstream power min";
       label = "Downstream power min";
-      query = ''min(vodafone_station_docsis_power_dbmv{direction="downstream",${lib.removePrefix "{" docsis})'';
+      query = ''min(fritzbox_docsis_power_dbmv{direction="downstream",${lib.removePrefix "{" docsis})'';
       unit = "dBmV";
       icon = "mdi:arrow-down-bold";
     };
     ds_power_max = {
       name = "Downstream power max";
       label = "Downstream power max";
-      query = ''max(vodafone_station_docsis_power_dbmv{direction="downstream",${lib.removePrefix "{" docsis})'';
+      query = ''max(fritzbox_docsis_power_dbmv{direction="downstream",${lib.removePrefix "{" docsis})'';
       unit = "dBmV";
       icon = "mdi:arrow-down-bold";
     };
     us_power_max = {
       name = "Upstream power max";
       label = "Upstream power max";
-      query = ''max(vodafone_station_docsis_power_dbmv{direction="upstream",${lib.removePrefix "{" docsis})'';
+      query = ''max(fritzbox_docsis_power_dbmv{direction="upstream",${lib.removePrefix "{" docsis})'';
       unit = "dBmV";
       icon = "mdi:arrow-up-bold";
     };
-    unlocked = {
-      name = "Unlocked channels";
-      label = "DOCSIS channels not locked";
-      query = ''count(vodafone_station_docsis_locked{host="acheron"} == 0) or vector(0)'';
-      icon = "mdi:lock-open-alert";
+    # The FRITZ!Box lists only the channels it is locked to; codewords lost
+    # despite FEC show a bad line instead.
+    uncorrectable = {
+      name = "Uncorrectable errors";
+      label = "Uncorrectable DOCSIS errors per hour";
+      query = ''sum(increase(fritzbox_docsis_uncorrectable_errors{direction="downstream",host="acheron"}[1h]))'';
+      icon = "mdi:alert-octagon-outline";
       format = "int";
     };
     docsis_online = {
       name = "DOCSIS online";
       label = "Cable modem online";
-      query = ''max(vodafone_station_docsis_online{host="acheron"})'';
+      query = ''max(fritzbox_docsis_online{host="acheron"})'';
       icon = "mdi:cable-data";
       format = "yesno";
     };
     station_up = {
       name = "Station scrape";
       label = "Router stats readable";
-      query = ''max(vodafone_station_up{host="acheron"})'';
+      query = ''max(fritzbox_up{host="acheron"})'';
       icon = "mdi:router-wireless";
       format = "yesno";
     };
     station_uptime = {
       name = "Station uptime";
       label = "Router uptime";
-      query = ''max(vodafone_station_uptime_seconds{host="acheron"})'';
+      query = ''max(fritzbox_uptime_seconds{host="acheron"})'';
       unit = "s";
       device_class = "duration";
       icon = "mdi:restart";
@@ -236,9 +238,6 @@ let
     {%- endif -%}
     {%- if states('${e "station_loss"}') | float(0) > 1 -%}
       {%- set n.p = n.p + ['Packet loss to the router ' ~ states('${e "station_loss"}') ~ '% (LAN cable/port)'] -%}
-    {%- endif -%}
-    {%- if states('${e "unlocked"}') | float(0) > 0 -%}
-      {%- set n.p = n.p + [states('${e "unlocked"}') | int ~ ' DOCSIS channels unlocked'] -%}
     {%- endif -%}
     {%- if states('${e "ds_snr_min"}') | float(99) < 33 -%}
       {%- set n.p = n.p + ['Downstream SNR low (' ~ states('${e "ds_snr_min"}') ~ ' dB)'] -%}
@@ -434,8 +433,8 @@ let
                 entities = [
                   (e "docsis_online")
                   {
-                    entity = e "unlocked";
-                    name = "DOCSIS channels not locked (should be 0)";
+                    entity = e "uncorrectable";
+                    name = "Uncorrectable DOCSIS errors per hour";
                   }
                   {
                     entity = e "ds_snr_min";
