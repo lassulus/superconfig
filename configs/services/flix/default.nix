@@ -21,6 +21,7 @@
     "8080" = "sabnzbd";
     "8096" = "jellyfin";
     "8191" = "flaresolverr";
+    "8787" = "bookshelf";
     "8920" = "jellyfin-https";
     "8989" = "sonarr";
     "9091" = "transmission";
@@ -443,6 +444,21 @@
     user = "download";
     group = "download";
   };
+  # audiobooks: Bookshelf (maintained Readarr fork), web ui on yellow.r:8787
+  services.readarr = {
+    enable = true;
+    package = self.packages.${pkgs.stdenv.hostPlatform.system}.bookshelf;
+    dataDir = "/var/lib/bookshelf";
+    settings.server.port = config.lass.servicePorts.bookshelf;
+    openFirewall = true;
+    user = "download";
+    group = "download";
+  };
+  systemd.tmpfiles.settings.bookshelf."/var/download/audiobooks".d = {
+    user = "download";
+    group = "download";
+    mode = "0775";
+  };
   # games, web ui on yellow.r:6969 (its default 6767 is bazarr's)
   systemd.services.gamarr = {
     environment.GAMARR__SERVER__PORT = toString config.lass.servicePorts.gamarr;
@@ -522,6 +538,7 @@
         jellyseerr = "/var/lib/private/jellyseerr/config/db/db.sqlite3";
         sabnzbd = "/var/lib/sabnzbd/admin/history1.db";
         gamarr = "/var/lib/gamarr/gamarr.db";
+        bookshelf = "${config.services.readarr.dataDir}/readarr.db";
       };
       dirs = [
         "/var/lib/jellyfin"
@@ -531,6 +548,7 @@
         "/var/lib/private/jellyseerr"
         "/var/lib/sabnzbd"
         "/var/lib/gamarr"
+        config.services.readarr.dataDir
       ];
     in
     {
@@ -551,6 +569,8 @@
         "/var/lib/sabnzbd/logs"
         "/var/lib/gamarr/logs"
         "/var/lib/gamarr/MediaCover"
+        "${config.services.readarr.dataDir}/MediaCover"
+        "${config.services.readarr.dataDir}/logs"
       ]
       # the live databases, also the unneeded servarr logs.db
       ++ map (dir: "${dir}/*.db") dirs
