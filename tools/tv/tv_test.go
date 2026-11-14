@@ -385,3 +385,135 @@ func TestLLMPicks(t *testing.T) {
 		}
 	}
 }
+
+func TestRequestMovies(t *testing.T) {
+	var prompts []string
+	var posted []string
+	answer := ""
+	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/") && r.Header.Get("X-Api-Key") != "seer" {
+			http.Error(w, "no key", http.StatusForbidden)
+			return
+		}
+		switch r.URL.Path {
+		case "/Items":
+			if r.URL.Query().Get("Fields") != "ProviderIds" {
+				http.Error(w, "no provider ids", http.StatusBadRequest)
+				return
+			}
+			w.Write([]byte(`{"Items": [
+				{"Id": "a", "Name": "A", "ProviderIds": {"Tmdb": "1"}},
+				{"Id": "b", "Name": "B", "ProviderIds": {"Tmdb": "2"}},
+				{"Id": "c", "Name": "C", "ProviderIds": {"Tmdb": "10"}},
+				{"Id": "d", "Name": "D", "ProviderIds": {}}]}`))
+		case "/api/v1/movie/1/recommendations":
+			w.Write([]byte(`{"results": [
+				{"id": 10, "mediaType": "movie", "title": "In Jellyfin"},
+				{"id": 11, "mediaType": "movie", "title": "Available", "mediaInfo": {"status": 5}},
+				{"id": 12, "mediaType": "movie", "title": "Twelve", "releaseDate": "1999-03-31"},
+				{"id": 13, "mediaType": "movie", "title": "Thirteen", "releaseDate": "2001-05-01"}]}`))
+		case "/api/v1/movie/2/recommendations":
+			w.Write([]byte(`{"results": [
+				{"id": 12, "mediaType": "movie", "title": "Twelve", "releaseDate": "1999-03-31", "voteAverage": 8.2, "overview": "Line one.\nLine two."},
+				{"id": 14, "mediaType": "movie", "title": "Fourteen", "releaseDate": "2010-01-01"}]}`))
+		case "/api/v1/discover/trending":
+			w.Write([]byte(`{"results": [
+				{"id": 15, "mediaType": "tv", "name": "A Series"},
+				{"id": 16, "mediaType": "movie", "title": "Sixteen", "releaseDate": "2020-01-01"},
+				{"id": 18, "mediaType": "movie", "title": "Unreleased", "releaseDate": "2999-01-01"},
+				{"id": 17, "mediaType": "movie", "title": "Pending", "mediaInfo": {"status": 2}}]}`))
+		case "/api/v1/request":
+			b, _ := io.ReadAll(r.Body)
+			posted = append(posted, string(b))
+			w.WriteHeader(http.StatusCreated)
+			w.Write([]byte(`{}`))
+		case "/llm/chat/completions":
+			var req struct {
+				Messages []struct{ Content string }
+			}
+			json.NewDecoder(r.Body).Decode(&req)
+			prompts = append(prompts, req.Messages[1].Content)
+			if answer == "" {
+				http.Error(w, "overloaded", http.StatusServiceUnavailable)
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]string{"content": answer}}}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer stub.Close()
+
+	dir := t.TempDir()
+	write := func(name, content string) string {
+		path := filepath.Join(dir, name)
+		os.WriteFile(path, []byte(content), 0o600)
+		return path
+	}
+	cfg, _ := json.Marshal(config{Listen: "127.0.0.1:0", StateDir: filepath.Join(dir, "state"), CacheDir: filepath.Join(dir, "cache"),
+		SecretFile: write("secret", "s"), JellyfinURL: stub.URL, LLMURL: stub.URL + "/llm/", LookAhead: "3h",
+		JellyseerrURL: stub.URL, JellyseerrKeyFile: write("seer", "seer\n"), RequestsPerDay: 2})
+	cfgPath := write("tv.json", string(cfg))
+	start := func() *server {
+		s, err := newServer(cfgPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+
+	s := start()
+	s.st.History = []played{{ID: "jf:a", Title: "A"}, {ID: "yt:x", Title: "X"}, {ID: "jf:b", Title: "B"}, {ID: "jf:d", Title: "D"}}
+	answer = "```json\n" + `{"ids": ["tmdb:99", "tmdb:10", "tmdb:15", "tmdb:13", "tmdb:13", "tmdb:12", "tmdb:14"]}` + "\n```"
+	s.requestMovies(t.Context())
+	if len(prompts) != 1 {
+		t.Fatalf("%d llm calls, want 1", len(prompts))
+	}
+	var offered []string
+	for _, line := range strings.Split(prompts[0], "\n") {
+		if id, _, ok := strings.Cut(line, " | "); ok && strings.HasPrefix(id, "tmdb:") {
+			offered = append(offered, id)
+		}
+	}
+	// recommendations for the last played movie come first
+	if want := []string{"tmdb:12", "tmdb:14", "tmdb:13", "tmdb:16"}; !reflect.DeepEqual(offered, want) {
+		t.Errorf("offered %v, want %v", offered, want)
+	}
+	if !strings.Contains(prompts[0], "A\nX\nB\nD\n") || !strings.Contains(prompts[0], "tmdb:12 | Twelve | 1999 | 8.2 | Line one. Line two.\n") {
+		t.Errorf("prompt lacks the history or a candidate line:\n%s", prompts[0])
+	}
+	if want := []string{`{"mediaId":13,"mediaType":"movie"}`, `{"mediaId":12,"mediaType":"movie"}`}; !reflect.DeepEqual(posted, want) {
+		t.Errorf("posted %v, want %v", posted, want)
+	}
+	if !reflect.DeepEqual(s.st.RequestedMovies, []int{13, 12}) {
+		t.Errorf("requested %v, want [13 12]", s.st.RequestedMovies)
+	}
+
+	// the same day, also after a restart, nothing happens
+	s.requestMovies(t.Context())
+	s = start()
+	s.requestMovies(t.Context())
+	if len(prompts) != 1 || len(posted) != 2 {
+		t.Errorf("same day: %d llm calls and %d requests, want 1 and 2", len(prompts), len(posted))
+	}
+
+	// a day later a failing LLM means no requests that day
+	s.st.MoviesRequestedAt -= (25 * time.Hour).Milliseconds()
+	answer = ""
+	s.requestMovies(t.Context())
+	if len(prompts) != 2 || len(posted) != 2 {
+		t.Errorf("llm failure: %d llm calls and %d requests, want 2 and 2", len(prompts), len(posted))
+	}
+	s.requestMovies(t.Context())
+	if len(prompts) != 2 {
+		t.Errorf("retried after the llm failure on the same day")
+	}
+
+	// the next day, an answer without known ids requests nothing
+	s.st.MoviesRequestedAt -= (25 * time.Hour).Milliseconds()
+	answer = `{"ids": ["tmdb:13", "16", "tmdb:10"]}`
+	s.requestMovies(t.Context())
+	if len(prompts) != 3 || len(posted) != 2 || strings.Contains(prompts[2], "tmdb:13 |") {
+		t.Errorf("invalid ids: %d llm calls and %d requests, offered again:\n%s", len(prompts), len(posted), prompts[2])
+	}
+}

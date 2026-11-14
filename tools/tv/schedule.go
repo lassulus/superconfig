@@ -40,6 +40,10 @@ type state struct {
 	History  []played `json:"history"`
 	// series id -> id of the last scheduled episode
 	Series map[string]string `json:"series"`
+	// unix ms of the last daily Jellyseerr run
+	MoviesRequestedAt int64 `json:"movies_requested_at,omitempty"`
+	// TMDB ids requested through Jellyseerr
+	RequestedMovies []int `json:"requested_movies,omitempty"`
 }
 
 // upcoming returns the entry playing at t (unix ms), if any, and the ones

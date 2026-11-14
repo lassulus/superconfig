@@ -23,32 +23,36 @@ import (
 var staticFiles embed.FS
 
 type config struct {
-	Listen          string   `json:"listen"`
-	StateDir        string   `json:"state_dir"`
-	CacheDir        string   `json:"cache_dir"`
-	CacheMaxBytes   int64    `json:"cache_max_bytes"`
-	SecretFile      string   `json:"secret_file"`
-	JellyfinURL     string   `json:"jellyfin_url"`
-	JellyfinKeyFile string   `json:"jellyfin_key_file"`
-	YouTubeChannels []string `json:"youtube_channels"`
-	YtDlp           string   `json:"yt_dlp"`
-	YtDlpArgs       []string `json:"yt_dlp_args"`
-	FFmpeg          string   `json:"ffmpeg"`
-	LLMURL          string   `json:"llm_url"`
-	LLMModel        string   `json:"llm_model"`
-	LLMKeyFile      string   `json:"llm_key_file"`
-	LookAhead       string   `json:"look_ahead"`
-	AdminKeyFile    string   `json:"admin_key_file"`
+	Listen            string   `json:"listen"`
+	StateDir          string   `json:"state_dir"`
+	CacheDir          string   `json:"cache_dir"`
+	CacheMaxBytes     int64    `json:"cache_max_bytes"`
+	SecretFile        string   `json:"secret_file"`
+	JellyfinURL       string   `json:"jellyfin_url"`
+	JellyfinKeyFile   string   `json:"jellyfin_key_file"`
+	YouTubeChannels   []string `json:"youtube_channels"`
+	YtDlp             string   `json:"yt_dlp"`
+	YtDlpArgs         []string `json:"yt_dlp_args"`
+	FFmpeg            string   `json:"ffmpeg"`
+	LLMURL            string   `json:"llm_url"`
+	LLMModel          string   `json:"llm_model"`
+	LLMKeyFile        string   `json:"llm_key_file"`
+	LookAhead         string   `json:"look_ahead"`
+	AdminKeyFile      string   `json:"admin_key_file"`
+	JellyseerrURL     string   `json:"jellyseerr_url"`
+	JellyseerrKeyFile string   `json:"jellyseerr_key_file"`
+	RequestsPerDay    int      `json:"requests_per_day"`
 }
 
 type server struct {
-	cfg         config
-	secret      string
-	jellyfinKey string
-	llmKey      string
-	adminKey    string
-	lookAhead   time.Duration
-	statePath   string
+	cfg           config
+	secret        string
+	jellyfinKey   string
+	llmKey        string
+	jellyseerrKey string
+	adminKey      string
+	lookAhead     time.Duration
+	statePath     string
 
 	mu sync.Mutex
 	st state
@@ -74,6 +78,7 @@ func main() {
 	defer stop()
 	go s.run(ctx)
 	go s.serveRequests(ctx)
+	go s.requestMoviesDaily(ctx)
 	srv := &http.Server{Addr: s.cfg.Listen, Handler: s.handler(), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
@@ -122,6 +127,9 @@ func newServer(configPath string) (*server, error) {
 		return nil, err
 	}
 	if s.adminKey, err = readSecret(cfg.AdminKeyFile); err != nil {
+		return nil, err
+	}
+	if s.jellyseerrKey, err = readSecret(cfg.JellyseerrKeyFile); err != nil {
 		return nil, err
 	}
 	for _, dir := range []string{cfg.StateDir, cfg.CacheDir} {

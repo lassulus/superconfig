@@ -122,9 +122,6 @@ func (s *server) randomPicks(cands []candidate) []candidate {
 }
 
 func (s *server) askLLM(ctx context.Context, cands []candidate, history []string) ([]candidate, error) {
-	if s.cfg.LLMURL == "" {
-		return nil, errors.New("no llm_url configured")
-	}
 	var list strings.Builder
 	for _, c := range cands {
 		fmt.Fprintf(&list, "%s | %s | %d min | %s | %s\n", c.ID, c.Kind, (c.Duration+30)/60, c.Group, c.Title)
@@ -135,6 +132,18 @@ func (s *server) askLLM(ctx context.Context, cands []candidate, history []string
 		"that makes a varied, enjoyable channel: mix movies, series episodes and YouTube videos, avoid the same "+
 		"series or channel back to back, and avoid what was played recently. "+
 		`Answer only with JSON: {"ids": ["<candidate id>", ...]}`, s.lookAhead)
+	content, err := s.chat(ctx, system, prompt)
+	if err != nil {
+		return nil, err
+	}
+	return validPicks(content, cands)
+}
+
+// chat sends a system and a user message to the LLM and returns its answer.
+func (s *server) chat(ctx context.Context, system, prompt string) (string, error) {
+	if s.cfg.LLMURL == "" {
+		return "", errors.New("no llm_url configured")
+	}
 	body, _ := json.Marshal(map[string]any{
 		"model": s.cfg.LLMModel,
 		"messages": []map[string]string{
@@ -146,13 +155,13 @@ func (s *server) askLLM(ctx context.Context, cands []candidate, history []string
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, "POST", strings.TrimSuffix(s.cfg.LLMURL, "/")+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+s.llmKey)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	defer resp.Body.Close()
 	var out struct {
@@ -163,19 +172,19 @@ func (s *server) askLLM(ctx context.Context, cands []candidate, history []string
 		} `json:"choices"`
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%s", resp.Status)
+		return "", fmt.Errorf("%s", resp.Status)
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return nil, err
+		return "", err
 	}
 	if len(out.Choices) == 0 {
-		return nil, errors.New("no choices in the answer")
+		return "", errors.New("no choices in the answer")
 	}
-	return validPicks(out.Choices[0].Message.Content, cands)
+	return out.Choices[0].Message.Content, nil
 }
 
-// validPicks keeps the known, distinct ids of an answer in its order.
-func validPicks(content string, cands []candidate) ([]candidate, error) {
+// answerIDs returns the ids of an answer like {"ids": [...]}.
+func answerIDs(content string) ([]string, error) {
 	// models like to wrap JSON in prose or code fences
 	start, end := strings.Index(content, "{"), strings.LastIndex(content, "}")
 	if start < 0 || end < start {
@@ -187,12 +196,21 @@ func validPicks(content string, cands []candidate) ([]candidate, error) {
 	if err := json.Unmarshal([]byte(content[start:end+1]), &answer); err != nil {
 		return nil, err
 	}
+	return answer.IDs, nil
+}
+
+// validPicks keeps the known, distinct ids of an answer in its order.
+func validPicks(content string, cands []candidate) ([]candidate, error) {
+	ids, err := answerIDs(content)
+	if err != nil {
+		return nil, err
+	}
 	byID := map[string]candidate{}
 	for _, c := range cands {
 		byID[c.ID] = c
 	}
 	var picks []candidate
-	for _, id := range answer.IDs {
+	for _, id := range ids {
 		if c, ok := byID[id]; ok {
 			picks = append(picks, c)
 			delete(byID, id)
@@ -209,15 +227,16 @@ func (s *server) jellyfinAuth() string {
 }
 
 type jellyfinItem struct {
-	ID           string `json:"Id"`
-	Name         string `json:"Name"`
-	RunTimeTicks int64  `json:"RunTimeTicks"`
-	SeriesName   string `json:"SeriesName"`
-	Season       int    `json:"ParentIndexNumber"`
-	Episode      int    `json:"IndexNumber"`
-	LocationType string `json:"LocationType"`
-	Type         string `json:"Type"`
-	MediaType    string `json:"MediaType"`
+	ID           string            `json:"Id"`
+	Name         string            `json:"Name"`
+	RunTimeTicks int64             `json:"RunTimeTicks"`
+	SeriesName   string            `json:"SeriesName"`
+	Season       int               `json:"ParentIndexNumber"`
+	Episode      int               `json:"IndexNumber"`
+	LocationType string            `json:"LocationType"`
+	Type         string            `json:"Type"`
+	MediaType    string            `json:"MediaType"`
+	ProviderIDs  map[string]string `json:"ProviderIds"`
 }
 
 func (s *server) jellyfinItems(ctx context.Context, path string, query url.Values) ([]jellyfinItem, error) {
