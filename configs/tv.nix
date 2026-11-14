@@ -48,6 +48,9 @@ let
         # the default clients never ask for a PO token; mweb does and uses it for the media URLs
         "--extractor-args"
         "youtube:player_client=default,mweb"
+        # cookies of a Google account; yt-dlp writes rotated cookies back, so a writable copy
+        "--cookies"
+        "/var/lib/tv/youtube-cookies.txt"
       ];
       ffmpeg = lib.getExe' pkgs.ffmpeg-headless "ffmpeg";
       llm_url = "https://generativelanguage.googleapis.com/v1beta/openai/";
@@ -82,9 +85,18 @@ in
     path = [
       pkgs.deno
       pkgs.nodejs
+      pkgs.diffutils
     ];
     environment.HOME = "/var/cache/tv";
+    # copy the cookies var only when it changed, so cookies rotated by yt-dlp survive restarts
+    preStart = ''
+      if ! cmp -s "$CREDENTIALS_DIRECTORY/youtube" youtube-cookies.var; then
+        install -m 600 "$CREDENTIALS_DIRECTORY/youtube" youtube-cookies.var
+        install -m 600 "$CREDENTIALS_DIRECTORY/youtube" youtube-cookies.txt
+      fi
+    '';
     serviceConfig = {
+      WorkingDirectory = "/var/lib/tv";
       ExecStart = "${lib.getExe self.packages.${pkgs.stdenv.hostPlatform.system}.tv} -config ${tvConfig}";
       DynamicUser = true;
       StateDirectory = "tv";
@@ -95,6 +107,7 @@ in
         "jellyfin:${vars.tv-jellyfin.files.key.path}"
         "admin:${vars.tv-admin.files.key.path}"
         "jellyseerr:${vars.tv-jellyseerr.files.key.path}"
+        "youtube:${vars.tv-youtube.files.cookies.path}"
       ];
       Restart = "on-failure";
       # transcodes take every free core; everything else on neoprism goes first
@@ -148,6 +161,11 @@ in
   clan.core.vars.generators.tv-jellyseerr.prompts.key = {
     description = "Jellyseerr API key for ${domain}'s movie requests (Jellyseerr: Settings > General > API Key)";
     type = "hidden";
+    persist = true;
+  };
+  clan.core.vars.generators.tv-youtube.prompts.cookies = {
+    description = "cookies.txt of the Google account for ${domain}, exported while signed in to YouTube";
+    type = "multiline-hidden";
     persist = true;
   };
   # bearer key for POST /<secret>/api/skip
