@@ -45,6 +45,9 @@ let
         # media downloads without a PO token get 403; the script fetches it through --proxy too
         "--extractor-args"
         "youtubepot-bgutilscript:server_home=${pot}/share/bgutil-ytdlp-pot-provider"
+        # the default clients never ask for a PO token; mweb does and uses it for the media URLs
+        "--extractor-args"
+        "youtube:player_client=default,mweb"
       ];
       ffmpeg = lib.getExe' pkgs.ffmpeg-headless "ffmpeg";
       llm_url = "https://generativelanguage.googleapis.com/v1beta/openai/";
