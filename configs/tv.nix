@@ -42,6 +42,7 @@ let
       llm_model = "gemini-3.5-flash-lite";
       llm_key_file = "/run/credentials/tv.service/gemini";
       look_ahead = "3h";
+      admin_key_file = "/run/credentials/tv.service/admin";
     }
   );
 in
@@ -65,6 +66,7 @@ in
         "secret:${vars.tv-secret.files.secret.path}"
         "gemini:${vars.tv-gemini.files.key.path}"
         "jellyfin:${vars.tv-jellyfin.files.key.path}"
+        "admin:${vars.tv-admin.files.key.path}"
       ];
       Restart = "on-failure";
       # transcodes take every free core; everything else on neoprism goes first
@@ -114,6 +116,17 @@ in
     description = "Jellyfin API key for ${domain} (flix.lassul.us: Dashboard > API Keys)";
     type = "hidden";
     persist = true;
+  };
+  # bearer key for POST /<secret>/api/skip
+  clan.core.vars.generators.tv-admin = {
+    files.key = { };
+    runtimeInputs = [
+      pkgs.coreutils
+      pkgs.openssl
+    ];
+    script = ''
+      openssl rand -base64 64 | tr -dc A-Za-z0-9 | cut -c 1-32 | tr -d '\n' > "$out/key"
+    '';
   };
 
   # Every miss of the 6-character secret is limited to 1/s per IP; requests
