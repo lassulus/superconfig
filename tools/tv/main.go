@@ -42,6 +42,7 @@ type config struct {
 	JellyseerrURL     string   `json:"jellyseerr_url"`
 	JellyseerrKeyFile string   `json:"jellyseerr_key_file"`
 	RequestsPerDay    int      `json:"requests_per_day"`
+	SubtitleLanguages []string `json:"subtitle_languages"`
 }
 
 type server struct {
@@ -185,7 +186,7 @@ func (s *server) handler() http.Handler {
 			s.handleRequest(w, r, true)
 		case strings.HasPrefix(rest, "media/"):
 			name := strings.TrimPrefix(rest, "media/")
-			if name == "" || name != filepath.Base(name) || strings.HasPrefix(name, ".") || !strings.HasSuffix(name, ".mp4") {
+			if name == "" || name != filepath.Base(name) || strings.HasPrefix(name, ".") || !strings.HasSuffix(name, ".mp4") && !strings.HasSuffix(name, ".vtt") {
 				http.NotFound(w, r)
 				return
 			}
@@ -199,6 +200,10 @@ func (s *server) handler() http.Handler {
 			if err != nil {
 				http.NotFound(w, r)
 				return
+			}
+			// Go's built-in MIME table has no .vtt; browsers ignore tracks of other types
+			if strings.HasSuffix(name, ".vtt") {
+				w.Header().Set("Content-Type", "text/vtt; charset=utf-8")
 			}
 			http.ServeContent(w, r, name, fi.ModTime(), f)
 		default:

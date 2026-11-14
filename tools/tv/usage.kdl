@@ -1,6 +1,6 @@
 bin "tv"
 about "Synced 24/7 TV channel: an LLM picks Jellyfin items and new YouTube videos, every browser on /<secret>/ plays the same frame at the same moment"
 
-flag "-config" help="JSON config: listen, state_dir, cache_dir, cache_max_bytes, secret_file, jellyfin_url, jellyfin_key_file, youtube_channels, yt_dlp, yt_dlp_args, ffmpeg, llm_url (OpenAI-compatible), llm_model, llm_key_file, look_ahead (default 3h), admin_key_file (bearer key for POST api/skip), jellyseerr_url, jellyseerr_key_file, requests_per_day (new movies the LLM requests through Jellyseerr once a day, default 0 = off)" required=#true {
+flag "-config" help="JSON config: listen, state_dir, cache_dir, cache_max_bytes, secret_file, jellyfin_url, jellyfin_key_file, youtube_channels, yt_dlp, yt_dlp_args, ffmpeg, llm_url (OpenAI-compatible), llm_model, llm_key_file, look_ahead (default 3h), admin_key_file (bearer key for POST api/skip), jellyseerr_url, jellyseerr_key_file, requests_per_day (new movies the LLM requests through Jellyseerr once a day, default 0 = off), subtitle_languages (YouTube subtitle languages like [\"en\", \"de\"], auto-generated where there is no manual track; Jellyfin items get all their text subtitles)" required=#true {
   arg "<file>"
 }

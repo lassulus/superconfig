@@ -256,7 +256,7 @@ func (s *server) serveRequests(ctx context.Context) {
 			continue
 		}
 		log.Printf("preparing request %s %q", r.c.ID, r.c.Title)
-		dur, err := s.prepare(ctx, r.c, r.file)
+		e, err := s.prepare(ctx, r.c, r.file)
 		s.mu.Lock()
 		now := nowMs()
 		if err != nil {
@@ -264,7 +264,6 @@ func (s *server) serveRequests(ctx context.Context) {
 			r.State, r.Error, r.failedAt = "failed", err.Error(), now
 		} else {
 			s.requests = slices.DeleteFunc(s.requests, func(x *request) bool { return x == r })
-			e := entry{ID: r.c.ID, Source: r.c.source(), Title: r.c.Title, Duration: dur, File: r.file}
 			if r.PlayNow {
 				s.st.playAt(e, now, now+cutoverLead.Milliseconds())
 			} else {

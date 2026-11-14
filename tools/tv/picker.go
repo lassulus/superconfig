@@ -231,12 +231,17 @@ type jellyfinItem struct {
 	Name         string            `json:"Name"`
 	RunTimeTicks int64             `json:"RunTimeTicks"`
 	SeriesName   string            `json:"SeriesName"`
+	SeriesID     string            `json:"SeriesId"`
 	Season       int               `json:"ParentIndexNumber"`
 	Episode      int               `json:"IndexNumber"`
 	LocationType string            `json:"LocationType"`
 	Type         string            `json:"Type"`
 	MediaType    string            `json:"MediaType"`
 	ProviderIDs  map[string]string `json:"ProviderIds"`
+	MediaSources []struct {
+		ID           string        `json:"Id"`
+		MediaStreams []mediaStream `json:"MediaStreams"`
+	} `json:"MediaSources"`
 }
 
 func (s *server) jellyfinItems(ctx context.Context, path string, query url.Values) ([]jellyfinItem, error) {

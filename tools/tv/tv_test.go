@@ -246,8 +246,10 @@ func TestCleanCacheKeepsPending(t *testing.T) {
 	s := &server{cfg: config{CacheDir: dir}, preparing: "jf-p-1.mp4",
 		st:       state{Schedule: []entry{{File: "yt-a-1.mp4"}}},
 		requests: []*request{{file: "yt-q-1.mp4", State: "preparing"}, {file: "yt-n-1.mp4", State: "waiting"}}}
-	keep := []string{"yt-a-1.mp4", "jf-p-1.mp4.part", "yt-q-1.mp4.part", "yt-q-1.mp4.dl/video.webm", "yt-n-1.mp4"}
-	garbage := []string{"yt-old-1.mp4", "yt-old-2.mp4.part", "download/video.mp4", "yt-gone-1.mp4.dl/video.mp4"}
+	keep := []string{"yt-a-1.mp4", "yt-a-1.mp4.0.vtt", "yt-a-1.mp4.1.vtt", "jf-p-1.mp4.part", "jf-p-1.mp4.0.vtt",
+		"yt-q-1.mp4.part", "yt-q-1.mp4.dl/video.webm", "yt-q-1.mp4.dl/sub.en.vtt", "yt-n-1.mp4", "yt-n-1.mp4.0.vtt"}
+	garbage := []string{"yt-old-1.mp4", "yt-old-1.mp4.0.vtt", "yt-old-2.mp4.part", "yt-old-3.mp4.1.vtt",
+		"download/video.mp4", "yt-gone-1.mp4.dl/video.mp4"}
 	for _, f := range append(keep, garbage...) {
 		os.MkdirAll(filepath.Dir(filepath.Join(dir, f)), 0o755)
 		os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o644)
@@ -515,5 +517,137 @@ func TestRequestMovies(t *testing.T) {
 	s.requestMovies(t.Context())
 	if len(prompts) != 3 || len(posted) != 2 || strings.Contains(prompts[2], "tmdb:13 |") {
 		t.Errorf("invalid ids: %d llm calls and %d requests, offered again:\n%s", len(prompts), len(posted), prompts[2])
+	}
+}
+
+func TestItemLink(t *testing.T) {
+	movie := jellyfinItem{Type: "Movie", ProviderIDs: map[string]string{"Tmdb": "603", "Imdb": "tt0133093"}}
+	episode := jellyfinItem{Type: "Episode", Season: 2, Episode: 5, ProviderIDs: map[string]string{"Tmdb": "999", "Imdb": "tt0959621"}}
+	series := jellyfinItem{Type: "Series", ProviderIDs: map[string]string{"Tmdb": "1396"}}
+	jf := candidate{ID: "jf:x", Kind: "movie"}
+	for _, tc := range []struct {
+		name       string
+		c          candidate
+		it, series jellyfinItem
+		want       string
+	}{
+		{"youtube", candidate{ID: "yt:dQw4w9WgXcQ", Kind: "youtube", ref: "https://youtu.be/dQw4w9WgXcQ"}, jellyfinItem{}, jellyfinItem{}, "https://www.youtube.com/watch?v=dQw4w9WgXcQ"},
+		{"movie", jf, movie, jellyfinItem{}, "https://www.themoviedb.org/movie/603"},
+		{"episode", jf, episode, series, "https://www.themoviedb.org/tv/1396/season/2/episode/5"},
+		{"episode without series tmdb", jf, episode, jellyfinItem{}, "https://www.imdb.com/title/tt0959621/"},
+		{"movie with imdb only", jf, jellyfinItem{Type: "Movie", ProviderIDs: map[string]string{"Imdb": "tt1"}}, jellyfinItem{}, "https://www.imdb.com/title/tt1/"},
+		{"none", jf, jellyfinItem{Type: "Movie"}, jellyfinItem{}, ""},
+	} {
+		if got := itemLink(tc.c, tc.it, tc.series); got != tc.want {
+			t.Errorf("%s: %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestJellyfinSubtitles(t *testing.T) {
+	streams := []mediaStream{
+		{Type: "Video", Index: 0},
+		{Type: "Audio", Index: 1, Language: "eng"},
+		{Type: "Subtitle", Index: 2, Language: "eng", IsTextSubtitleStream: true},
+		{Type: "Subtitle", Index: 3, Language: "ger", IsTextSubtitleStream: true},
+		{Type: "Subtitle", Index: 4, Language: "eng", Title: "PGS", IsTextSubtitleStream: false},
+		{Type: "Subtitle", Index: 5, Language: "eng", Title: "SDH", IsTextSubtitleStream: true},
+		{Type: "Subtitle", Index: 6, Language: "eng", Title: "english (forced)", IsTextSubtitleStream: true},
+		{Type: "Subtitle", Index: 7, Language: "fre", IsTextSubtitleStream: true},
+		{Type: "Subtitle", Index: 8, Language: "und", IsTextSubtitleStream: true},
+		{Type: "Subtitle", Index: 9, Language: "tlh", Title: "Klingon", IsTextSubtitleStream: true},
+	}
+	want := []subtitle{
+		{"f.mp4.0.vtt", "en", "English", "2"},
+		{"f.mp4.1.vtt", "de", "Deutsch", "3"},
+		{"f.mp4.2.vtt", "en", "English SDH", "5"},
+		{"f.mp4.3.vtt", "en", "english (forced)", "6"},
+		{"f.mp4.4.vtt", "fr", "Français", "7"},
+		{"f.mp4.5.vtt", "", "Unknown", "8"},
+		{"f.mp4.6.vtt", "tlh", "tlh Klingon", "9"},
+	}
+	if got := jellyfinSubtitles("f.mp4", streams); !reflect.DeepEqual(got, want) {
+		t.Errorf("got  %+v\nwant %+v", got, want)
+	}
+}
+
+func TestPickYouTubeSubtitles(t *testing.T) {
+	keys := func(ks ...string) map[string]json.RawMessage {
+		m := map[string]json.RawMessage{}
+		for _, k := range ks {
+			m[k] = nil
+		}
+		return m
+	}
+	auto := keys("en", "en-orig", "de", "fr")
+	got := pickYouTubeSubtitles("v.mp4", []string{"en", "de", "es"}, keys("en-US", "en-GB", "live_chat"), auto)
+	want := []subtitle{{"v.mp4.0.vtt", "en", "English", "en-GB"}, {"v.mp4.1.vtt", "de", "Deutsch (auto)", "de"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("regional manual and auto:\n got  %+v\nwant %+v", got, want)
+	}
+	got = pickYouTubeSubtitles("v.mp4", []string{"en", "de"}, keys("en-GB", "en", "de"), auto)
+	want = []subtitle{{"v.mp4.0.vtt", "en", "English", "en"}, {"v.mp4.1.vtt", "de", "Deutsch", "de"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("exact manual:\n got  %+v\nwant %+v", got, want)
+	}
+}
+
+func TestJellyfinExtrasSkipsFailedSubtitles(t *testing.T) {
+	jellyfin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path + "?" + r.URL.Query().Get("Ids") {
+		case "/Items?ep":
+			w.Write([]byte(`{"Items": [{"Id": "ep", "Type": "Episode", "SeriesId": "sr", "ParentIndexNumber": 1, "IndexNumber": 3,
+				"MediaSources": [{"Id": "ms", "MediaStreams": [
+					{"Type": "Subtitle", "Index": 2, "Language": "eng", "IsTextSubtitleStream": true},
+					{"Type": "Subtitle", "Index": 3, "Language": "ger", "IsTextSubtitleStream": true},
+					{"Type": "Subtitle", "Index": 4, "Language": "ger", "IsTextSubtitleStream": false}]}]}]}`))
+		case "/Items?sr":
+			w.Write([]byte(`{"Items": [{"Id": "sr", "Type": "Series", "ProviderIds": {"Tmdb": "42"}}]}`))
+		case "/Videos/ep/ms/Subtitles/2/Stream.vtt?":
+			w.Write([]byte("WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nHello\n"))
+		default:
+			http.Error(w, "no", http.StatusInternalServerError)
+		}
+	}))
+	defer jellyfin.Close()
+	dir := t.TempDir()
+	s := &server{cfg: config{CacheDir: dir, JellyfinURL: jellyfin.URL}}
+	it, series, subs := s.jellyfinExtras(t.Context(), "ep", "jf-ep-1.mp4")
+	if want := []subtitle{{"jf-ep-1.mp4.0.vtt", "en", "English", "2"}}; !reflect.DeepEqual(subs, want) {
+		t.Errorf("subtitles %+v, want %+v", subs, want)
+	}
+	if b, err := os.ReadFile(filepath.Join(dir, "jf-ep-1.mp4.0.vtt")); err != nil || !strings.Contains(string(b), "Hello") {
+		t.Errorf("subtitle file: %q, %v", b, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "jf-ep-1.mp4.1.vtt")); err == nil {
+		t.Errorf("the failed track left a file")
+	}
+	if got := itemLink(candidate{Kind: "episode"}, it, series); got != "https://www.themoviedb.org/tv/42/season/1/episode/3" {
+		t.Errorf("link %q", got)
+	}
+}
+
+func TestMediaServesSubtitles(t *testing.T) {
+	dir := t.TempDir()
+	for _, f := range []string{"jf-a-1.mp4", "jf-a-1.mp4.0.vtt", "jf-a-1.mp4.part", ".x.vtt"} {
+		os.WriteFile(filepath.Join(dir, f), []byte("WEBVTT\n"), 0o644)
+	}
+	h := (&server{secret: "s", cfg: config{CacheDir: dir}}).handler()
+	get := func(path string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
+		return rec
+	}
+	rec := get("/s/media/jf-a-1.mp4.0.vtt")
+	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "text/vtt; charset=utf-8" || rec.Body.String() != "WEBVTT\n" {
+		t.Errorf("subtitles: %d %q %q", rec.Code, rec.Header().Get("Content-Type"), rec.Body.String())
+	}
+	if rec := get("/s/media/jf-a-1.mp4"); rec.Code != http.StatusOK {
+		t.Errorf("video: %d", rec.Code)
+	}
+	for _, path := range []string{"/s/media/jf-a-1.mp4.part", "/s/media/.x.vtt", "/s/media/nope.mp4.0.vtt"} {
+		if rec := get(path); rec.Code != http.StatusNotFound {
+			t.Errorf("%s: %d, want 404", path, rec.Code)
+		}
 	}
 }

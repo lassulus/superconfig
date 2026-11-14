@@ -63,10 +63,59 @@ let standby = $("b");
 let started = false;
 let swapTimer = null;
 
+// chosen subtitles as {lang, label}, or null for off
+let subtitleChoice = JSON.parse(localStorage.getItem("subtitles") ?? "null");
+
+// index of the chosen track in e's subtitles, by label first, then language
+function subtitleIndex(e) {
+  const subs = e?.subtitles ?? [];
+  if (!subtitleChoice) return -1;
+  const i = subs.findIndex(
+    (s) => s.lang === subtitleChoice.lang && s.label === subtitleChoice.label,
+  );
+  return i >= 0 ? i : subs.findIndex((s) => s.lang === subtitleChoice.lang);
+}
+
+function showSubtitles(video) {
+  const i = subtitleIndex(video.entry);
+  video.querySelectorAll("track").forEach((t, j) => {
+    t.track.mode = i === j ? "showing" : "disabled";
+  });
+}
+
+function updateCC() {
+  const subs = active.entry?.subtitles ?? [];
+  const i = subtitleIndex(active.entry);
+  $("cc").hidden = subs.length === 0;
+  $("cc").textContent = i < 0 ? "CC: off" : `CC: ${subs[i].label}`;
+}
+
+function cycleSubtitles() {
+  const subs = active.entry?.subtitles ?? [];
+  const i = subtitleIndex(active.entry) + 1;
+  subtitleChoice =
+    i < subs.length ? { lang: subs[i].lang, label: subs[i].label } : null;
+  localStorage.setItem("subtitles", JSON.stringify(subtitleChoice));
+  for (const v of [active, standby]) showSubtitles(v);
+  updateCC();
+}
+
 function load(video, e) {
   video.entry = e;
   video.src = "media/" + encodeURIComponent(e.file);
   video.playbackRate = 1;
+  // tracks follow the element's currentTime, so they stay in sync without help
+  video.replaceChildren(
+    ...(e.subtitles ?? []).map((s) => {
+      const t = document.createElement("track");
+      t.kind = "subtitles";
+      t.src = "media/" + encodeURIComponent(s.file);
+      t.srclang = s.lang;
+      t.label = s.label;
+      return t;
+    }),
+  );
+  showSubtitles(video);
 }
 
 function seek(video) {
@@ -209,6 +258,7 @@ function tick() {
       sync.needsStart = true;
     }
     showInfo();
+    updateCC();
   }
   if (sync.needsStart && active.readyState >= HTMLMediaElement.HAVE_METADATA) {
     sync.needsStart = false;
@@ -238,6 +288,8 @@ function updateInfo() {
   const at = (t) =>
     new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   $("now").textContent = cur ? cur.title : "";
+  if (cur?.link) $("now").href = cur.link;
+  else $("now").removeAttribute("href");
   $("next").textContent = next
     ? `Next at ${at(next.start)}: ${next.title}`
     : "";
@@ -307,6 +359,7 @@ $("start").addEventListener("click", () => {
   tick();
 });
 $("fs").addEventListener("click", toggleFullscreen);
+$("cc").addEventListener("click", cycleSubtitles);
 $("add").addEventListener("click", () => {
   $("queue").hidden = !$("queue").hidden;
   if (!$("queue").hidden) $("url").focus();

@@ -20,13 +20,15 @@ const (
 )
 
 type entry struct {
-	ID       string `json:"id"`
-	Source   string `json:"source"`
-	Title    string `json:"title"`
-	Start    int64  `json:"start"`
-	Duration int64  `json:"duration"`
-	File     string `json:"file"`
-	Queued   bool   `json:"queued,omitempty"`
+	ID        string     `json:"id"`
+	Source    string     `json:"source"`
+	Title     string     `json:"title"`
+	Start     int64      `json:"start"`
+	Duration  int64      `json:"duration"`
+	File      string     `json:"file"`
+	Queued    bool       `json:"queued,omitempty"`
+	Link      string     `json:"link,omitempty"`
+	Subtitles []subtitle `json:"subtitles,omitempty"`
 }
 
 type played struct {
@@ -203,7 +205,7 @@ func (s *server) tick(ctx context.Context) bool {
 	s.mu.Lock()
 	s.preparing = file
 	s.mu.Unlock()
-	dur, err := s.prepare(ctx, c, file)
+	e, err := s.prepare(ctx, c, file)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.preparing = ""
@@ -216,11 +218,12 @@ func (s *server) tick(ctx context.Context) bool {
 		if n := len(s.st.Schedule); n > 0 {
 			start = max(start, s.st.Schedule[n-1].Start+s.st.Schedule[n-1].Duration)
 		}
-		s.st.Schedule = append(s.st.Schedule, entry{ID: c.ID, Source: c.source(), Title: c.Title, Start: start, Duration: dur, File: file})
+		e.Start = start
+		s.st.Schedule = append(s.st.Schedule, e)
 		if c.Series != "" {
 			s.st.Series[c.Series] = c.ref
 		}
-		log.Printf("scheduled %s %q at %s for %s", c.ID, c.Title, time.UnixMilli(start).Format(time.TimeOnly), time.Duration(dur)*time.Millisecond)
+		log.Printf("scheduled %s %q at %s for %s", c.ID, c.Title, time.UnixMilli(start).Format(time.TimeOnly), time.Duration(e.Duration)*time.Millisecond)
 	}
 	s.save()
 	return err == nil
