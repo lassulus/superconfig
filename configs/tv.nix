@@ -67,6 +67,9 @@ in
         "jellyfin:${vars.tv-jellyfin.files.key.path}"
       ];
       Restart = "on-failure";
+      # transcodes take every free core; everything else on neoprism goes first
+      CPUWeight = "idle";
+      Nice = 19;
       CapabilityBoundingSet = "";
       NoNewPrivileges = true;
       PrivateDevices = true;
