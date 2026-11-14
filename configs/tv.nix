@@ -50,6 +50,11 @@ let
         "en"
         "de"
       ];
+      sponsorblock_categories = [
+        "sponsor"
+        "selfpromo"
+        "interaction"
+      ];
     }
   );
 in
