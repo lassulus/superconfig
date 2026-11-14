@@ -81,6 +81,16 @@ in
       };
     };
 
+    aliases = {
+      # copies of Hermes' mail for lass
+      "hermes@lassul.us" = "lass@lassul.us";
+      # Google account for tv.lassul.us's YouTube downloads (configs/tv.nix)
+      "hermes_youtube@lassul.us" = [
+        "hermes@lassul.us"
+        "lass@lassul.us"
+      ];
+    };
+
     # TLS via existing ACME cert
     x509.useACMEHost = "mail.lassul.us";
 
