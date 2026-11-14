@@ -38,6 +38,7 @@ type config struct {
 	LLMModel        string   `json:"llm_model"`
 	LLMKeyFile      string   `json:"llm_key_file"`
 	LookAhead       string   `json:"look_ahead"`
+	AdminKeyFile    string   `json:"admin_key_file"`
 }
 
 type server struct {
@@ -45,11 +46,17 @@ type server struct {
 	secret      string
 	jellyfinKey string
 	llmKey      string
+	adminKey    string
 	lookAhead   time.Duration
 	statePath   string
 
 	mu sync.Mutex
 	st state
+	// queued and play-now items until they are in the schedule
+	requests []*request
+	// file of the picker's running prepare
+	preparing string
+	wake      chan struct{}
 
 	// only used by the scheduler goroutine
 	queue   []candidate
@@ -66,6 +73,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go s.run(ctx)
+	go s.serveRequests(ctx)
 	srv := &http.Server{Addr: s.cfg.Listen, Handler: s.handler(), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
@@ -97,7 +105,7 @@ func newServer(configPath string) (*server, error) {
 	if cfg.Listen == "" || cfg.StateDir == "" || cfg.CacheDir == "" {
 		return nil, errors.New("config: listen, state_dir and cache_dir are required")
 	}
-	s := &server{cfg: cfg, statePath: filepath.Join(cfg.StateDir, "state.json"), ytLists: map[string]ytList{}}
+	s := &server{cfg: cfg, statePath: filepath.Join(cfg.StateDir, "state.json"), ytLists: map[string]ytList{}, wake: make(chan struct{}, 1)}
 	if s.lookAhead, err = time.ParseDuration(cfg.LookAhead); err != nil {
 		return nil, err
 	}
@@ -113,6 +121,9 @@ func newServer(configPath string) (*server, error) {
 	if s.llmKey, err = readSecret(cfg.LLMKeyFile); err != nil {
 		return nil, err
 	}
+	if s.adminKey, err = readSecret(cfg.AdminKeyFile); err != nil {
+		return nil, err
+	}
 	for _, dir := range []string{cfg.StateDir, cfg.CacheDir} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return nil, err
@@ -122,13 +133,13 @@ func newServer(configPath string) (*server, error) {
 		return nil, err
 	}
 	// entries whose file is gone (cache wiped) cannot play
-	var kept []entry
-	for _, e := range s.st.Schedule {
-		if _, err := os.Stat(filepath.Join(cfg.CacheDir, e.File)); err == nil {
-			kept = append(kept, e)
-		}
+	s.st.dropMissing(nowMs(), func(file string) bool {
+		_, err := os.Stat(filepath.Join(cfg.CacheDir, file))
+		return err == nil
+	})
+	if err := saveState(s.statePath, s.st); err != nil {
+		return nil, err
 	}
-	s.st.Schedule = kept
 	return s, nil
 }
 
@@ -153,10 +164,17 @@ func (s *server) handler() http.Handler {
 			now := nowMs()
 			s.mu.Lock()
 			upcoming := append([]entry{}, s.st.upcoming(now)...)
+			pending := s.pending(now)
 			s.mu.Unlock()
-			w.Header().Set("Content-Type", "application/json")
-			w.Header().Set("Cache-Control", "no-store")
-			json.NewEncoder(w).Encode(map[string]any{"entries": upcoming})
+			writeJSON(w, http.StatusOK, map[string]any{"entries": upcoming, "pending": pending})
+		case rest == "api/queue":
+			s.handleRequest(w, r, false)
+		case rest == "api/skip":
+			if !s.isAdmin(r) {
+				writeError(w, http.StatusUnauthorized, "admin key required")
+				return
+			}
+			s.handleRequest(w, r, true)
 		case strings.HasPrefix(rest, "media/"):
 			name := strings.TrimPrefix(rest, "media/")
 			if name == "" || name != filepath.Base(name) || strings.HasPrefix(name, ".") || !strings.HasSuffix(name, ".mp4") {

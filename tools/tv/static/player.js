@@ -23,11 +23,15 @@ async function sampleClock() {
 }
 
 let entries = [];
+let pending = [];
 async function loadSchedule() {
   try {
-    entries = (
-      await (await fetch("api/schedule", { cache: "no-store" })).json()
-    ).entries;
+    const schedule = await (
+      await fetch("api/schedule", { cache: "no-store" })
+    ).json();
+    entries = schedule.entries;
+    pending = schedule.pending;
+    updateInfo();
   } catch (e) {
     console.warn("schedule", e);
   }
@@ -152,9 +156,14 @@ function tick() {
     active.pause();
     return;
   }
+  // skips and insertions move entries while an element holds them
+  for (const v of [active, standby])
+    v.entry = entries.find((e) => e.file === v.entry?.file) ?? v.entry;
   if (active.entry?.file !== cur.file) {
     if (standby.entry?.file === cur.file) {
       swap();
+      // a skip can make the next item start before this client saw it, which must not teach startLead
+      if (now - cur.start > 500) seek(active);
     } else {
       load(active, cur);
       sync.needsStart = true;
@@ -182,7 +191,7 @@ function tick() {
 }
 
 let infoTimer = null;
-function showInfo() {
+function updateInfo() {
   const now = serverNow() + sync.startLead * 1000;
   const cur = entryAt(now);
   const next = entryAfter(now);
@@ -192,12 +201,45 @@ function showInfo() {
   $("next").textContent = next
     ? `Next at ${at(next.start)}: ${next.title}`
     : "";
-  $("info").hidden = !cur;
-  for (const el of [$("info"), $("fs")]) el.classList.remove("faded");
+  $("pending").replaceChildren(
+    ...pending.map((r) => {
+      const div = document.createElement("div");
+      div.textContent =
+        r.state === "failed"
+          ? `Failed: ${r.title}: ${r.error}`
+          : `${r.state === "preparing" ? "Preparing" : "Waiting"}: ${r.title}`;
+      return div;
+    }),
+  );
+  $("info").hidden = !cur && pending.length === 0;
+}
+
+function showInfo() {
+  updateInfo();
+  for (const el of [$("info"), $("controls")]) el.classList.remove("faded");
   clearTimeout(infoTimer);
   infoTimer = setTimeout(() => {
-    for (const el of [$("info"), $("fs")]) el.classList.add("faded");
+    for (const el of [$("info"), $("controls")]) el.classList.add("faded");
   }, 6000);
+}
+
+async function queueURL(ev) {
+  ev.preventDefault();
+  $("queued").textContent = "Checking…";
+  try {
+    const res = await fetch("api/queue", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: $("url").value }),
+    });
+    const out = await res.json();
+    if (!res.ok) throw new Error(out.error);
+    $("queued").textContent = `Queued: ${out.title}`;
+    $("url").value = "";
+    loadSchedule();
+  } catch (e) {
+    $("queued").textContent = `Error: ${e.message}`;
+  }
 }
 
 function toggleFullscreen() {
@@ -225,7 +267,13 @@ $("start").addEventListener("click", () => {
   tick();
 });
 $("fs").addEventListener("click", toggleFullscreen);
+$("add").addEventListener("click", () => {
+  $("queue").hidden = !$("queue").hidden;
+  if (!$("queue").hidden) $("url").focus();
+});
+$("queue").addEventListener("submit", queueURL);
 document.addEventListener("keydown", (ev) => {
+  if (ev.target === $("url")) return;
   if (ev.key === "d") $("debug").hidden = !$("debug").hidden;
   if (ev.key === "f") toggleFullscreen();
 });
@@ -243,7 +291,8 @@ if ("requestVideoFrameCallback" in HTMLVideoElement.prototype) {
   for (let i = 0; i < 10; i++) await sampleClock().catch(() => {});
   setInterval(() => sampleClock().catch(() => {}), 3000);
   await loadSchedule();
-  setInterval(loadSchedule, 10000);
+  // often enough to see a cutover before its start lead runs out
+  setInterval(loadSchedule, 2000);
   setInterval(tick, 50);
   setInterval(() => $("debug").hidden || showDebug(), 250);
 })();

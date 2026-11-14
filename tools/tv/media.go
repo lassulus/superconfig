@@ -56,14 +56,18 @@ func (s *server) probe(ctx context.Context, headers []string, input string) (pro
 	return p, json.Unmarshal(out, &p)
 }
 
-// prepare turns c into one browser-friendly MP4 in the cache dir and returns
-// its file name and duration in ms.
-func (s *server) prepare(ctx context.Context, c candidate) (string, int64, error) {
+// fileName returns a cache file name for c that no other prepare uses.
+func fileName(c candidate) string {
+	return fmt.Sprintf("%s-%d.mp4", strings.NewReplacer(":", "-", "/", "-").Replace(c.ID), time.Now().UnixNano())
+}
+
+// prepare turns c into the browser-friendly MP4 name in the cache dir and
+// returns its duration in ms.
+func (s *server) prepare(ctx context.Context, c candidate, name string) (int64, error) {
 	var input string
 	var headers []string
 	if c.Kind == "youtube" {
-		dir := filepath.Join(s.cfg.CacheDir, "download")
-		os.RemoveAll(dir)
+		dir := filepath.Join(s.cfg.CacheDir, name+".dl")
 		defer os.RemoveAll(dir)
 		args := append(append([]string{}, s.cfg.YtDlpArgs...),
 			"--no-playlist", "--no-progress", "-f", youtubeFormat, "--merge-output-format", "mp4",
@@ -71,7 +75,7 @@ func (s *server) prepare(ctx context.Context, c candidate) (string, int64, error
 			"--print", "after_move:filepath", c.ref)
 		out, err := run(ctx, s.cfg.YtDlp, args...)
 		if err != nil {
-			return "", 0, err
+			return 0, err
 		}
 		input = strings.TrimSpace(string(out))
 	} else {
@@ -81,7 +85,7 @@ func (s *server) prepare(ctx context.Context, c candidate) (string, int64, error
 
 	p, err := s.probe(ctx, headers, input)
 	if err != nil {
-		return "", 0, err
+		return 0, err
 	}
 	videoArgs := []string{"-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p", "-vf", "scale=-2:'min(1080,trunc(ih/2)*2)'"}
 	audioArgs := []string{"-c:a", "aac", "-b:a", "192k", "-ac", "2"}
@@ -101,9 +105,8 @@ func (s *server) prepare(ctx context.Context, c candidate) (string, int64, error
 		}
 	}
 	if !hasVideo {
-		return "", 0, fmt.Errorf("%s has no video stream", input)
+		return 0, fmt.Errorf("%s has no video stream", input)
 	}
-	name := fmt.Sprintf("%s-%d.mp4", strings.NewReplacer(":", "-", "/", "-").Replace(c.ID), time.Now().Unix())
 	part := filepath.Join(s.cfg.CacheDir, name+".part")
 	args := append([]string{"-hide_banner", "-loglevel", "error", "-y"}, headers...)
 	args = append(args, "-i", input, "-map", "0:v:0", "-map", "0:a:0?", "-sn", "-dn")
@@ -111,20 +114,20 @@ func (s *server) prepare(ctx context.Context, c candidate) (string, int64, error
 	args = append(args, "-movflags", "+faststart", "-f", "mp4", part)
 	if _, err := run(ctx, s.cfg.FFmpeg, args...); err != nil {
 		os.Remove(part)
-		return "", 0, err
+		return 0, err
 	}
 	out, err := s.probe(ctx, nil, part)
 	if err != nil {
 		os.Remove(part)
-		return "", 0, err
+		return 0, err
 	}
 	secs, err := strconv.ParseFloat(out.Format.Duration, 64)
 	if err != nil || secs <= 0 {
 		os.Remove(part)
-		return "", 0, fmt.Errorf("no duration for %s", part)
+		return 0, fmt.Errorf("no duration for %s", part)
 	}
 	if err := os.Rename(part, filepath.Join(s.cfg.CacheDir, name)); err != nil {
-		return "", 0, err
+		return 0, err
 	}
-	return name, int64(math.Round(secs * 1000)), nil
+	return int64(math.Round(secs * 1000)), nil
 }

@@ -216,6 +216,8 @@ type jellyfinItem struct {
 	Season       int    `json:"ParentIndexNumber"`
 	Episode      int    `json:"IndexNumber"`
 	LocationType string `json:"LocationType"`
+	Type         string `json:"Type"`
+	MediaType    string `json:"MediaType"`
 }
 
 func (s *server) jellyfinItems(ctx context.Context, path string, query url.Values) ([]jellyfinItem, error) {

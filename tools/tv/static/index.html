@@ -54,24 +54,49 @@
       #now {
         font-size: 1.3em;
       }
-      #next {
+      #next,
+      #pending {
         opacity: 0.8;
         margin-top: 0.3em;
       }
-      #fs {
+      #controls {
         position: absolute;
         top: 1em;
         right: 1em;
+        display: flex;
+        gap: 0.4em;
+        transition: opacity 1s;
+      }
+      #controls.faded {
+        opacity: 0;
+      }
+      #controls button {
         font-size: 1.5em;
         background: rgba(0, 0, 0, 0.5);
         color: #fff;
         border: 0;
         border-radius: 0.3em;
         cursor: pointer;
-        transition: opacity 1s;
       }
-      #fs.faded {
-        opacity: 0;
+      #queue {
+        position: absolute;
+        top: 4em;
+        right: 1em;
+        max-width: 70%;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4em;
+        padding: 0.6em;
+        background: rgba(0, 0, 0, 0.7);
+        border-radius: 0.4em;
+      }
+      #url {
+        flex: 1;
+        min-width: 18em;
+        font-size: 1em;
+      }
+      #queued {
+        width: 100%;
       }
       #debug {
         position: absolute;
@@ -94,8 +119,17 @@
     <div id="info" class="faded">
       <div id="now"></div>
       <div id="next"></div>
+      <div id="pending"></div>
     </div>
-    <button id="fs" title="Fullscreen">⛶</button>
+    <div id="controls">
+      <button id="add" title="Queue a video">+</button>
+      <button id="fs" title="Fullscreen">⛶</button>
+    </div>
+    <form id="queue" hidden>
+      <input id="url" placeholder="YouTube or Jellyfin URL" required />
+      <button>Queue</button>
+      <div id="queued"></div>
+    </form>
     <div id="debug" hidden></div>
     <div id="start" class="screen">Tap to start</div>
     <script src="player.js"></script>
