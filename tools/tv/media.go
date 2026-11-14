@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -22,6 +23,8 @@ import (
 )
 
 const youtubeFormat = "bv*[vcodec^=avc1][height<=1080]+ba[acodec^=mp4a]/b[vcodec^=avc1][acodec^=mp4a][height<=1080]/bv*[height<=1080]+ba/b[height<=1080]/b"
+
+const scaleFilter = "scale=-2:'min(1080,trunc(ih/2)*2)'"
 
 func run(ctx context.Context, name string, args ...string) ([]byte, error) {
 	var stdout, stderr bytes.Buffer
@@ -76,17 +79,29 @@ func (s *server) prepare(ctx context.Context, c candidate, name string) (entry, 
 	var input string
 	var headers []string
 	dir := filepath.Join(s.cfg.CacheDir, name+".dl")
+	var info youtubeInfo
+	var cuts [][2]float64
 	if c.Kind == "youtube" {
 		defer os.RemoveAll(dir)
-		args := append(append([]string{}, s.cfg.YtDlpArgs...),
-			"--no-playlist", "--no-progress", "-f", youtubeFormat, "--merge-output-format", "mp4",
-			"--ffmpeg-location", s.cfg.FFmpeg, "-o", filepath.Join(dir, "video.%(ext)s"),
-			"--write-info-json", "--print", "after_move:filepath", c.ref)
-		out, err := run(ctx, s.cfg.YtDlp, args...)
+		out, err := run(ctx, s.cfg.YtDlp, s.youtubeArgs(c.ref, dir, true)...)
+		if err != nil && len(s.cfg.SponsorblockCategories) > 0 {
+			// yt-dlp fails the whole run when the SponsorBlock API is unreachable
+			log.Printf("%s with SponsorBlock: %v; downloading it uncut", c.ref, err)
+			os.RemoveAll(dir)
+			out, err = run(ctx, s.cfg.YtDlp, s.youtubeArgs(c.ref, dir, false)...)
+		}
 		if err != nil {
 			return e, err
 		}
 		input = strings.TrimSpace(string(out))
+		b, err := os.ReadFile(filepath.Join(dir, "video.info.json"))
+		if err == nil {
+			err = json.Unmarshal(b, &info)
+		}
+		if err != nil {
+			log.Printf("info of %s: %v", c.ref, err)
+		}
+		cuts = info.cuts()
 	} else {
 		input = strings.TrimSuffix(s.cfg.JellyfinURL, "/") + "/Videos/" + c.ref + "/stream?static=true"
 		headers = []string{"-headers", s.jellyfinAuth() + "\r\n"}
@@ -96,19 +111,19 @@ func (s *server) prepare(ctx context.Context, c candidate, name string) (entry, 
 	if err != nil {
 		return e, err
 	}
-	videoArgs := []string{"-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p", "-vf", "scale=-2:'min(1080,trunc(ih/2)*2)'"}
+	videoArgs := []string{"-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p"}
 	audioArgs := []string{"-c:a", "aac", "-b:a", "192k", "-ac", "2"}
 	hasVideo, hasAudio := false, false
 	for _, st := range p.Streams {
 		switch {
 		case st.CodecType == "video" && !hasVideo:
 			hasVideo = true
-			if st.CodecName == "h264" && (st.PixFmt == "yuv420p" || st.PixFmt == "yuvj420p") && st.Height <= 1080 {
+			if st.CodecName == "h264" && (st.PixFmt == "yuv420p" || st.PixFmt == "yuvj420p") && st.Height <= 1080 && len(cuts) == 0 {
 				videoArgs = []string{"-c:v", "copy"}
 			}
 		case st.CodecType == "audio" && !hasAudio:
 			hasAudio = true
-			if st.CodecName == "aac" {
+			if st.CodecName == "aac" && len(cuts) == 0 {
 				audioArgs = []string{"-c:a", "copy"}
 			}
 		}
@@ -118,8 +133,26 @@ func (s *server) prepare(ctx context.Context, c candidate, name string) (entry, 
 	}
 	part := filepath.Join(s.cfg.CacheDir, name+".part")
 	args := append([]string{"-hide_banner", "-loglevel", "error", "-y"}, headers...)
-	args = append(args, "-i", input, "-map", "0:v:0", "-map", "0:a:0?", "-sn", "-dn")
-	args = append(append(args, videoArgs...), audioArgs...)
+	args = append(args, "-i", input)
+	inSecs, _ := strconv.ParseFloat(p.Format.Duration, 64)
+	graph := cutGraph(cuts, inSecs, hasAudio)
+	switch {
+	case graph != "":
+		args = append(args, "-filter_complex", graph, "-map", "[v]")
+		if hasAudio {
+			args = append(args, "-map", "[a]")
+		}
+	case len(cuts) > 0:
+		log.Printf("%s: SponsorBlock segments cover all of it, keeping it uncut", name)
+		cuts = nil
+		fallthrough
+	default:
+		args = append(args, "-map", "0:v:0", "-map", "0:a:0?")
+		if videoArgs[1] != "copy" {
+			args = append(args, "-vf", scaleFilter)
+		}
+	}
+	args = append(append(append(args, "-sn", "-dn"), videoArgs...), audioArgs...)
 	args = append(args, "-movflags", "+faststart", "-f", "mp4", part)
 	if _, err := run(ctx, s.cfg.FFmpeg, args...); err != nil {
 		os.Remove(part)
@@ -139,9 +172,12 @@ func (s *server) prepare(ctx context.Context, c candidate, name string) (entry, 
 		return e, err
 	}
 	e.Duration = int64(math.Round(secs * 1000))
+	if len(s.cfg.SponsorblockCategories) > 0 && c.Kind == "youtube" {
+		log.Printf("%s: removed %d SponsorBlock segments, %.1fs to %.1fs", name, len(cuts), inSecs, secs)
+	}
 	var it, series jellyfinItem
 	if c.Kind == "youtube" {
-		e.Subtitles = s.youtubeSubtitles(ctx, dir, name)
+		e.Subtitles = s.youtubeSubtitles(ctx, dir, name, info, cuts)
 	} else {
 		it, series, e.Subtitles = s.jellyfinExtras(ctx, c.ref, name)
 	}
@@ -290,6 +326,155 @@ func (s *server) jellyfinDownload(ctx context.Context, path, dst string) error {
 	return os.WriteFile(dst, b, 0o644)
 }
 
+// youtubeArgs downloads ref into dir/video.mp4 with its info JSON, which
+// holds the configured SponsorBlock segments if sponsorblock is set.
+func (s *server) youtubeArgs(ref, dir string, sponsorblock bool) []string {
+	args := append(append([]string{}, s.cfg.YtDlpArgs...),
+		"--no-playlist", "--no-progress", "-f", youtubeFormat, "--merge-output-format", "mp4",
+		"--ffmpeg-location", s.cfg.FFmpeg, "-o", filepath.Join(dir, "video.%(ext)s"),
+		"--write-info-json", "--print", "after_move:filepath")
+	if sponsorblock && len(s.cfg.SponsorblockCategories) > 0 {
+		// yt-dlp's own --sponsorblock-remove starts the video late after a cut at 0 and leaves stray frames at joins
+		args = append(args, "--sponsorblock-mark", strings.Join(s.cfg.SponsorblockCategories, ","), "--no-embed-chapters")
+	}
+	return append(args, ref)
+}
+
+type youtubeInfo struct {
+	Subtitles            map[string]json.RawMessage `json:"subtitles"`
+	AutomaticCaptions    map[string]json.RawMessage `json:"automatic_captions"`
+	SponsorblockChapters []struct {
+		StartTime float64 `json:"start_time"`
+		EndTime   float64 `json:"end_time"`
+		Type      string  `json:"type"`
+	} `json:"sponsorblock_chapters"`
+}
+
+// cuts returns the SponsorBlock segments to skip as sorted, merged
+// [start, end] seconds.
+func (i youtubeInfo) cuts() [][2]float64 {
+	var cuts [][2]float64
+	for _, c := range i.SponsorblockChapters {
+		if c.Type == "skip" {
+			cuts = append(cuts, [2]float64{c.StartTime, c.EndTime})
+		}
+	}
+	slices.SortFunc(cuts, func(a, b [2]float64) int { return cmp.Compare(a[0], b[0]) })
+	var merged [][2]float64
+	for _, c := range cuts {
+		if n := len(merged); n > 0 && c[0] <= merged[n-1][1] {
+			merged[n-1][1] = max(merged[n-1][1], c[1])
+			continue
+		}
+		merged = append(merged, c)
+	}
+	return merged
+}
+
+// cutGraph is an ffmpeg filter graph that joins what cuts leave of the
+// duration seconds long input into a scaled [v] and, with audio, [a]; it
+// is empty if no cuts or nothing is left.
+func cutGraph(cuts [][2]float64, duration float64, audio bool) string {
+	var parts [][2]float64
+	start := 0.0
+	for _, c := range cuts {
+		if c[0] > start {
+			parts = append(parts, [2]float64{start, c[0]})
+		}
+		start = c[1]
+	}
+	if start < duration {
+		parts = append(parts, [2]float64{start, duration})
+	}
+	if len(cuts) == 0 || len(parts) == 0 {
+		return ""
+	}
+	var g, pads strings.Builder
+	for i, p := range parts {
+		// the last part runs to the real end, which ffprobe's duration may miss
+		bounds := fmt.Sprintf("start=%.3f", p[0])
+		if p[1] < duration {
+			bounds += fmt.Sprintf(":end=%.3f", p[1])
+		}
+		fmt.Fprintf(&g, "[0:v:0]trim=%s,setpts=PTS-STARTPTS[v%d];", bounds, i)
+		fmt.Fprintf(&pads, "[v%d]", i)
+		if audio {
+			fmt.Fprintf(&g, "[0:a:0]atrim=%s,asetpts=PTS-STARTPTS[a%d];", bounds, i)
+			fmt.Fprintf(&pads, "[a%d]", i)
+		}
+	}
+	a, out := 0, "[cv]"
+	if audio {
+		a, out = 1, "[cv][a]"
+	}
+	fmt.Fprintf(&g, "%sconcat=n=%d:v=1:a=%d%s;[cv]%s[v]", pads.String(), len(parts), a, out, scaleFilter)
+	return g.String()
+}
+
+var (
+	vttTime       = regexp.MustCompile(`(?:(\d+):)?(\d{2}):(\d{2}\.\d{3})`)
+	vttInlineTime = regexp.MustCompile(`<(?:\d+:)?\d{2}:\d{2}\.\d{3}>`)
+)
+
+func vttSeconds(ts string) float64 {
+	m := vttTime.FindStringSubmatch(ts)
+	h, _ := strconv.ParseFloat(m[1], 64)
+	mins, _ := strconv.ParseFloat(m[2], 64)
+	secs, _ := strconv.ParseFloat(m[3], 64)
+	return h*3600 + mins*60 + secs
+}
+
+func vttStamp(t float64) string {
+	ms := int64(math.Round(t * 1000))
+	return fmt.Sprintf("%02d:%02d:%02d.%03d", ms/3600000, ms/60000%60, ms/1000%60, ms%1000)
+}
+
+// cutTime maps t of the uncut video into the cut one; times inside a cut
+// land on its cut point.
+func cutTime(t float64, cuts [][2]float64) float64 {
+	removed := 0.0
+	for _, c := range cuts {
+		if t <= c[0] {
+			break
+		}
+		removed += min(t, c[1]) - c[0]
+	}
+	return t - removed
+}
+
+// cutVTT removes cuts (sorted, disjoint [start, end] seconds) from a WebVTT
+// file: cues inside them go, overlapping ones are trimmed, later ones move
+// earlier by the time removed before them.
+func cutVTT(vtt []byte, cuts [][2]float64) []byte {
+	if len(cuts) == 0 {
+		return vtt
+	}
+	shift := func(ts string) string { return vttStamp(cutTime(vttSeconds(ts), cuts)) }
+	var blocks []string
+	for _, block := range strings.Split(strings.ReplaceAll(string(vtt), "\r\n", "\n"), "\n\n") {
+		lines := strings.Split(block, "\n")
+		i := slices.IndexFunc(lines, func(l string) bool { return strings.Contains(l, "-->") })
+		ts := []string{}
+		if i >= 0 {
+			ts = vttTime.FindAllString(lines[i], 2)
+		}
+		if len(ts) < 2 {
+			blocks = append(blocks, block)
+			continue
+		}
+		if cutTime(vttSeconds(ts[1]), cuts) <= cutTime(vttSeconds(ts[0]), cuts) {
+			continue
+		}
+		lines[i] = vttTime.ReplaceAllStringFunc(lines[i], shift)
+		// auto-generated captions time each word inline
+		for j := i + 1; j < len(lines); j++ {
+			lines[j] = vttInlineTime.ReplaceAllStringFunc(lines[j], func(t string) string { return "<" + shift(t[1:len(t)-1]) + ">" })
+		}
+		blocks = append(blocks, strings.Join(lines, "\n"))
+	}
+	return []byte(strings.Join(blocks, "\n\n"))
+}
+
 // pickYouTubeSubtitles picks for each language its manual track, else the
 // auto-generated one; manual and auto are yt-dlp's subtitle keys.
 func pickYouTubeSubtitles(file string, langs []string, manual, auto map[string]json.RawMessage) []subtitle {
@@ -319,24 +504,13 @@ func pickYouTubeSubtitles(file string, langs []string, manual, auto map[string]j
 }
 
 // youtubeSubtitles fetches the subtitles of the video downloaded into dir,
-// one yt-dlp run per track, since YouTube often refuses auto translations.
-func (s *server) youtubeSubtitles(ctx context.Context, dir, file string) []subtitle {
+// one yt-dlp run per track, since YouTube often refuses auto translations,
+// and removes the cuts yt-dlp made from the video.
+func (s *server) youtubeSubtitles(ctx context.Context, dir, file string, info youtubeInfo, cuts [][2]float64) []subtitle {
 	if len(s.cfg.SubtitleLanguages) == 0 {
 		return nil
 	}
 	infoFile := filepath.Join(dir, "video.info.json")
-	b, err := os.ReadFile(infoFile)
-	var info struct {
-		Subtitles         map[string]json.RawMessage `json:"subtitles"`
-		AutomaticCaptions map[string]json.RawMessage `json:"automatic_captions"`
-	}
-	if err == nil {
-		err = json.Unmarshal(b, &info)
-	}
-	if err != nil {
-		log.Printf("subtitles of %s: %v", file, err)
-		return nil
-	}
 	var subs []subtitle
 	for _, sub := range pickYouTubeSubtitles(file, s.cfg.SubtitleLanguages, info.Subtitles, info.AutomaticCaptions) {
 		ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
@@ -346,8 +520,12 @@ func (s *server) youtubeSubtitles(ctx context.Context, dir, file string) []subti
 			"--ffmpeg-location", s.cfg.FFmpeg, "-o", filepath.Join(dir, "sub.%(ext)s"))
 		_, err := run(ctx, s.cfg.YtDlp, args...)
 		cancel()
+		var b []byte
 		if err == nil {
-			err = os.Rename(filepath.Join(dir, "sub."+sub.src+".vtt"), filepath.Join(s.cfg.CacheDir, sub.File))
+			b, err = os.ReadFile(filepath.Join(dir, "sub."+sub.src+".vtt"))
+		}
+		if err == nil {
+			err = os.WriteFile(filepath.Join(s.cfg.CacheDir, sub.File), cutVTT(b, cuts), 0o644)
 		}
 		if err != nil {
 			log.Printf("subtitles %q of %s: %v", sub.Label, file, err)

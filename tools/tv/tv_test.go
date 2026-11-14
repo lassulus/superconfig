@@ -592,6 +592,84 @@ func TestPickYouTubeSubtitles(t *testing.T) {
 	}
 }
 
+func TestCutVTT(t *testing.T) {
+	vtt := "WEBVTT\nKind: captions\nLanguage: en\n\n" +
+		"00:00:01.000 --> 00:00:04.000\nbefore\n\n" +
+		"00:00:09.000 --> 00:00:12.000 align:start position:0%\noverlaps first cut start\n\n" +
+		"00:00:11.000 --> 00:00:19.000\ninside first cut\n\n" +
+		"00:00:19.000 --> 00:00:22.000\noverlaps first cut end\n\n" +
+		"00:00:25.000 --> 00:00:28.000\nbetween\n\n" +
+		"00:30.000 --> 00:40.000\nspans second cut\n\n" +
+		"cue-id\n00:01:00.000 --> 00:01:02.500\nafter<00:01:01.250><c> both</c>\n"
+	// [10, 20] and [32, 35] removed: 13s
+	got := string(cutVTT([]byte(vtt), [][2]float64{{10, 20}, {32, 35}}))
+	want := "WEBVTT\nKind: captions\nLanguage: en\n\n" +
+		"00:00:01.000 --> 00:00:04.000\nbefore\n\n" +
+		"00:00:09.000 --> 00:00:10.000 align:start position:0%\noverlaps first cut start\n\n" +
+		"00:00:10.000 --> 00:00:12.000\noverlaps first cut end\n\n" +
+		"00:00:15.000 --> 00:00:18.000\nbetween\n\n" +
+		"00:00:20.000 --> 00:00:27.000\nspans second cut\n\n" +
+		"cue-id\n00:00:47.000 --> 00:00:49.500\nafter<00:00:48.250><c> both</c>\n"
+	if got != want {
+		t.Errorf("got\n%s\nwant\n%s", got, want)
+	}
+	if got := string(cutVTT([]byte(vtt), nil)); got != vtt {
+		t.Errorf("no cuts changed the file:\n%s", got)
+	}
+}
+
+func TestYouTubeInfoCuts(t *testing.T) {
+	var info youtubeInfo
+	json.Unmarshal([]byte(`{"sponsorblock_chapters": [
+		{"start_time": 827.821, "end_time": 878.245, "type": "skip"},
+		{"start_time": 0, "end_time": 12, "type": "skip"},
+		{"start_time": 732.147, "end_time": 828.353, "type": "skip"},
+		{"start_time": 100, "end_time": 101, "type": "poi"}]}`), &info)
+	want := [][2]float64{{0, 12}, {732.147, 878.245}}
+	if got := info.cuts(); !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestYouTubeArgsSponsorBlock(t *testing.T) {
+	s := &server{cfg: config{YtDlp: "yt-dlp"}}
+	if args := strings.Join(s.youtubeArgs("ref", "dir", true), " "); strings.Contains(args, "sponsorblock") {
+		t.Errorf("off, got %s", args)
+	}
+	s.cfg.SponsorblockCategories = []string{"sponsor", "selfpromo"}
+	args := strings.Join(s.youtubeArgs("ref", "dir", true), " ")
+	if !strings.HasSuffix(args, " --sponsorblock-mark sponsor,selfpromo --no-embed-chapters ref") {
+		t.Errorf("on, got %s", args)
+	}
+	if args := strings.Join(s.youtubeArgs("ref", "dir", false), " "); strings.Contains(args, "sponsorblock") {
+		t.Errorf("uncut retry, got %s", args)
+	}
+}
+
+func TestCutGraph(t *testing.T) {
+	scale := "[cv]" + scaleFilter + "[v]"
+	// a cut at 0, one in the middle and one past the end
+	got := cutGraph([][2]float64{{0, 12}, {149.5, 229}, {761, 840}}, 839.84, true)
+	want := "[0:v:0]trim=start=12.000:end=149.500,setpts=PTS-STARTPTS[v0];[0:a:0]atrim=start=12.000:end=149.500,asetpts=PTS-STARTPTS[a0];" +
+		"[0:v:0]trim=start=229.000:end=761.000,setpts=PTS-STARTPTS[v1];[0:a:0]atrim=start=229.000:end=761.000,asetpts=PTS-STARTPTS[a1];" +
+		"[v0][a0][v1][a1]concat=n=2:v=1:a=1[cv][a];" + scale
+	if got != want {
+		t.Errorf("got\n%s\nwant\n%s", got, want)
+	}
+	got = cutGraph([][2]float64{{5, 6}}, 10, false)
+	want = "[0:v:0]trim=start=0.000:end=5.000,setpts=PTS-STARTPTS[v0];[0:v:0]trim=start=6.000,setpts=PTS-STARTPTS[v1];" +
+		"[v0][v1]concat=n=2:v=1:a=0[cv];" + scale
+	if got != want {
+		t.Errorf("no audio, open end: got\n%s\nwant\n%s", got, want)
+	}
+	if got := cutGraph(nil, 10, true); got != "" {
+		t.Errorf("no cuts: got %s", got)
+	}
+	if got := cutGraph([][2]float64{{0, 11}}, 10, true); got != "" {
+		t.Errorf("all cut: got %s", got)
+	}
+}
+
 func TestJellyfinExtrasSkipsFailedSubtitles(t *testing.T) {
 	jellyfin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path + "?" + r.URL.Query().Get("Ids") {

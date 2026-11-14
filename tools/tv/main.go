@@ -43,6 +43,8 @@ type config struct {
 	JellyseerrKeyFile string   `json:"jellyseerr_key_file"`
 	RequestsPerDay    int      `json:"requests_per_day"`
 	SubtitleLanguages []string `json:"subtitle_languages"`
+	// SponsorBlock categories yt-dlp cuts out of YouTube videos
+	SponsorblockCategories []string `json:"sponsorblock_categories"`
 }
 
 type server struct {
