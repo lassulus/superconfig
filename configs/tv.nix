@@ -11,6 +11,7 @@ let
   vars = config.clan.core.vars.generators;
   styx = self.inputs.kartei.hosts.styx.nets.retiolum.ip4.addr;
   proxyPort = self.nixosConfigurations.styx.config.lass.servicePorts.tv-proxy;
+  pot = pkgs.python3Packages.bgutil-ytdlp-pot-provider;
   tvConfig = pkgs.writeText "tv.json" (
     builtins.toJSON {
       listen = "127.0.0.1:${toString port}";
@@ -31,11 +32,19 @@ let
         "MandaloreGaming"
         "MinutePhysics"
       ];
-      yt_dlp = lib.getExe pkgs.yt-dlp;
+      yt_dlp = "${
+        pkgs.python3.withPackages (ps: [
+          ps.yt-dlp
+          pot
+        ])
+      }/bin/yt-dlp";
       # YouTube asks datacenter IPs to sign in, so downloads go through styx's residential line
       yt_dlp_args = [
         "--proxy"
         "socks5://${styx}:${toString proxyPort}"
+        # media downloads without a PO token get 403; the script fetches it through --proxy too
+        "--extractor-args"
+        "youtubepot-bgutilscript:server_home=${pot}/share/bgutil-ytdlp-pot-provider"
       ];
       ffmpeg = lib.getExe' pkgs.ffmpeg-headless "ffmpeg";
       llm_url = "https://generativelanguage.googleapis.com/v1beta/openai/";
@@ -66,8 +75,11 @@ in
     wantedBy = [ "multi-user.target" ];
     wants = [ "network-online.target" ];
     after = [ "network-online.target" ];
-    # yt-dlp solves YouTube's JavaScript challenges with deno from PATH
-    path = [ pkgs.deno ];
+    # yt-dlp solves YouTube's JavaScript challenges with deno, the PO token script runs on node
+    path = [
+      pkgs.deno
+      pkgs.nodejs
+    ];
     environment.HOME = "/var/cache/tv";
     serviceConfig = {
       ExecStart = "${lib.getExe self.packages.${pkgs.stdenv.hostPlatform.system}.tv} -config ${tvConfig}";
