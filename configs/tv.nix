@@ -43,6 +43,9 @@ let
       llm_key_file = "/run/credentials/tv.service/gemini";
       look_ahead = "3h";
       admin_key_file = "/run/credentials/tv.service/admin";
+      jellyseerr_url = "http://${self.inputs.kartei.hosts.yellow.nets.retiolum.ip4.addr}:5055";
+      jellyseerr_key_file = "/run/credentials/tv.service/jellyseerr";
+      requests_per_day = 2;
     }
   );
 in
@@ -67,6 +70,7 @@ in
         "gemini:${vars.tv-gemini.files.key.path}"
         "jellyfin:${vars.tv-jellyfin.files.key.path}"
         "admin:${vars.tv-admin.files.key.path}"
+        "jellyseerr:${vars.tv-jellyseerr.files.key.path}"
       ];
       Restart = "on-failure";
       # transcodes take every free core; everything else on neoprism goes first
@@ -114,6 +118,11 @@ in
   };
   clan.core.vars.generators.tv-jellyfin.prompts.key = {
     description = "Jellyfin API key for ${domain} (flix.lassul.us: Dashboard > API Keys)";
+    type = "hidden";
+    persist = true;
+  };
+  clan.core.vars.generators.tv-jellyseerr.prompts.key = {
+    description = "Jellyseerr API key for ${domain}'s movie requests (Jellyseerr: Settings > General > API Key)";
     type = "hidden";
     persist = true;
   };
