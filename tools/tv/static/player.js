@@ -52,6 +52,10 @@ const sync = {
   learn: "seekLead",
   framesSinceSeek: Infinity,
   rateSetAt: 0,
+  // nudge: time and size of the largest error since the rate left 1; correctiveSeekAt: last seek done by control
+  nudge: null,
+  rateWorks: true,
+  correctiveSeekAt: 0,
   needsStart: false,
 };
 let active = $("a");
@@ -72,6 +76,8 @@ function seek(video) {
     (serverNow() - video.entry.start) / 1000 + sync.seekLead,
   );
   sync.err = null;
+  sync.frame = null;
+  sync.nudge = null;
   sync.framesSinceSeek = 0;
   sync.learn = "seekLead";
 }
@@ -90,13 +96,45 @@ function control(raw, at) {
     seek(active);
     return;
   }
+  const canSeek = at - sync.correctiveSeekAt > 10000;
+  // browsers clock picture and sound separately and they can drift apart; a seek realigns both
+  if (canSeek && sync.frame !== null && Math.abs(sync.frame - raw) > 100) {
+    sync.correctiveSeekAt = at;
+    seek(active);
+    return;
+  }
   sync.err = sync.err === null ? raw : sync.err + 0.1 * (raw - sync.err);
+  if (!sync.rateWorks) {
+    if (canSeek && Math.abs(sync.err) > 80) {
+      sync.correctiveSeekAt = at;
+      seek(active);
+    }
+    return;
+  }
+  // 5 s after its peak, a nudged error should be at least halved; some browsers ignore the rate
+  if (
+    active.playbackRate !== 1 &&
+    (!sync.nudge || Math.abs(sync.err) > Math.abs(sync.nudge.err))
+  )
+    sync.nudge = { at, err: sync.err };
+  if (
+    sync.nudge &&
+    at - sync.nudge.at > 5000 &&
+    Math.abs(sync.err) > Math.abs(sync.nudge.err) / 2
+  ) {
+    sync.rateWorks = false;
+    sync.correctiveSeekAt = at;
+    seek(active);
+    return;
+  }
+  // start nudging only past 25 ms and stop below 5 ms, so the rate does not flip back and forth around one threshold
   const rate =
-    Math.abs(sync.err) < 10
+    Math.abs(sync.err) < (active.playbackRate === 1 ? 25 : 5)
       ? 1
       : Math.round((1 - clamp(sync.err * 0.0005, -0.05, 0.05)) * 1000) / 1000;
   // every rate change makes playback stall a little, so change it at most twice a second
   if (rate !== active.playbackRate && at - sync.rateSetAt > 500) {
+    if (rate === 1) sync.nudge = null;
     active.playbackRate = rate;
     sync.rateSetAt = at;
   }
@@ -142,6 +180,8 @@ function swap() {
   standby.load();
   standby.entry = null;
   sync.err = null;
+  sync.frame = null;
+  sync.nudge = null;
   sync.framesSinceSeek = 0;
   sync.learn = "startLead";
 }
@@ -253,7 +293,7 @@ function showDebug() {
     `offset   ${ms(clock.offset)} ms`,
     `rtt      ${ms(clock.rtt)} ms`,
     `error    ${ms(sync.err)} ms (now ${ms(sync.raw)} ms, frame on screen ${ms(sync.frame)} ms)`,
-    `rate     ${active.playbackRate.toFixed(3)}`,
+    `rate     ${active.playbackRate.toFixed(3)}${sync.rateWorks ? "" : " (ignored here, seeking instead)"}`,
     `leads    seek ${ms(sync.seekLead * 1000)} ms, start ${ms(sync.startLead * 1000)} ms`,
   ].join("\n");
 }
