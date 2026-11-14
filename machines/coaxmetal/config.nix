@@ -50,7 +50,7 @@
     (pkgs.writeShellApplication {
       name = "wake-atlas";
       runtimeInputs = [ pkgs.wol ];
-      text = "wol 70:85:c2:0e:ea:3c";
+      text = "wol a8:a1:59:eb:05:c7";
     })
   ];
 

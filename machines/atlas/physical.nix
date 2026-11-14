@@ -13,13 +13,13 @@
 
   nixpkgs.hostPlatform = "x86_64-linux";
 
-  # ASRock Z170 Extreme4, UEFI
+  # ASRock X670E PG Lightning, Ryzen 7 7700X, UEFI
   boot.loader.systemd-boot.enable = true;
   boot.loader.systemd-boot.configurationLimit = 10;
   boot.loader.efi.canTouchEfiVariables = true;
 
   boot.kernelPackages = pkgs.linuxPackages_latest;
-  boot.kernelModules = [ "kvm-intel" ];
+  boot.kernelModules = [ "kvm-amd" ];
   boot.initrd.availableKernelModules = [
     "xhci_pci"
     "ahci"
@@ -27,11 +27,11 @@
     "usbhid"
     "usb_storage"
     "sd_mod"
-    "e1000e"
+    "r8169"
   ];
-  hardware.cpu.intel.updateMicrocode = true;
+  hardware.cpu.amd.updateMicrocode = true;
 
-  # AMD Radeon (Navi 14 / RX 5500-class, PCI 1002:7340) -> amdgpu.
+  # AMD Radeon RX 6800 XT (Navi 21, PCI 1002:73bf) -> amdgpu.
   #
   # amdgpu is deliberately NOT in boot.initrd.kernelModules: early-loading it
   # tears down efifb before the GPU firmware is available in stage-1, which
@@ -43,11 +43,11 @@
   hardware.enableRedistributableFirmware = true;
   services.xserver.videoDrivers = [ "amdgpu" ];
 
-  # Name the onboard Intel NIC deterministically and arm Wake-on-LAN (woken
+  # Name the onboard Realtek NIC deterministically and arm Wake-on-LAN (woken
   # by wake-atlas on coaxmetal). Not networking.interfaces.et0.wakeOnLan:
   # its .link matches OriginalName=et0, the kernel name is a different one.
   systemd.network.links."10-et0" = {
-    matchConfig.PermanentMACAddress = "70:85:c2:0e:ea:3c";
+    matchConfig.PermanentMACAddress = "a8:a1:59:eb:05:c7";
     linkConfig = {
       Name = "et0";
       WakeOnLan = "magic";
@@ -58,8 +58,9 @@
   # ssh -p 2222 root@<atlas' LAN ip>, then systemd-tty-ask-password-agent.
   boot.initrd.network.enable = true;
   boot.initrd.systemd.network.networks."10-et0" = {
-    # the initrd has no .link renaming the NIC
-    matchConfig.MACAddress = "70:85:c2:0e:ea:3c";
+    # the initrd has no .link renaming the NIC; match any wired NIC so a
+    # board swap does not lock us out again
+    matchConfig.Type = "ether";
     DHCP = "ipv4";
     # no machine-id in the initrd: keep its lease stable across boots
     dhcpV4Config.ClientIdentifier = "mac";
