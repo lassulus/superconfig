@@ -293,9 +293,13 @@ func (s *server) jellyfinExtras(ctx context.Context, id, file string) (it, serie
 	src := it.MediaSources[0]
 	for _, sub := range jellyfinSubtitles(file, src.MediaStreams) {
 		path := "/Videos/" + id + "/" + src.ID + "/Subtitles/" + sub.src + "/Stream.vtt"
-		if err := s.jellyfinDownload(ctx, path, filepath.Join(s.cfg.CacheDir, sub.File)); err != nil {
+		dst := filepath.Join(s.cfg.CacheDir, sub.File)
+		if err := s.jellyfinDownload(ctx, path, dst); err != nil {
 			log.Printf("subtitles %q of %s: %v", sub.Label, id, err)
 			continue
+		}
+		if b, err := os.ReadFile(dst); err == nil {
+			os.WriteFile(dst, dedupeVTT(b), 0o644)
 		}
 		subs = append(subs, sub)
 	}
@@ -471,6 +475,26 @@ func cutVTT(vtt []byte, cuts [][2]float64) []byte {
 			lines[j] = vttInlineTime.ReplaceAllStringFunc(lines[j], func(t string) string { return "<" + shift(t[1:len(t)-1]) + ">" })
 		}
 		blocks = append(blocks, strings.Join(lines, "\n"))
+	}
+	return []byte(strings.Join(blocks, "\n\n"))
+}
+
+// dedupeVTT drops cues that repeat an earlier cue's timing and text: ASS
+// signs drawn in several layers become identical stacked cues in WebVTT.
+func dedupeVTT(vtt []byte) []byte {
+	seen := map[string]bool{}
+	var blocks []string
+	for _, block := range strings.Split(strings.ReplaceAll(string(vtt), "\r\n", "\n"), "\n\n") {
+		lines := strings.Split(block, "\n")
+		i := slices.IndexFunc(lines, func(l string) bool { return strings.Contains(l, "-->") })
+		if i >= 0 {
+			key := strings.Join(lines[i:], "\n")
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+		}
+		blocks = append(blocks, block)
 	}
 	return []byte(strings.Join(blocks, "\n\n"))
 }

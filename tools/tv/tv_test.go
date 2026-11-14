@@ -729,3 +729,11 @@ func TestMediaServesSubtitles(t *testing.T) {
 		}
 	}
 }
+
+func TestDedupeVTT(t *testing.T) {
+	in := "WEBVTT\n\n00:02:54.560 --> 00:03:00.860\nGolo presents\n\n00:02:54.560 --> 00:03:00.860\nGolo presents\n\n00:02:55.000 --> 00:03:00.860\nGolo presents\n\n00:02:54.560 --> 00:03:00.860\nOther line"
+	want := "WEBVTT\n\n00:02:54.560 --> 00:03:00.860\nGolo presents\n\n00:02:55.000 --> 00:03:00.860\nGolo presents\n\n00:02:54.560 --> 00:03:00.860\nOther line"
+	if got := string(dedupeVTT([]byte(in))); got != want {
+		t.Errorf("dedupeVTT:\n%s\nwant:\n%s", got, want)
+	}
+}
