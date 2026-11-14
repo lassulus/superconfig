@@ -82,6 +82,9 @@ function showSubtitles(video) {
     t.track.mode = i === j ? "showing" : "disabled";
   });
 }
+// browsers turn tracks on by themselves (caption settings, restoring the page); keep only the chosen one
+for (const v of [active, standby])
+  v.textTracks.addEventListener("change", () => showSubtitles(v));
 
 function updateCC() {
   const subs = active.entry?.subtitles ?? [];
