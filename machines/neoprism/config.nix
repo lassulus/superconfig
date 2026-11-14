@@ -101,6 +101,9 @@
     # Moonlight in the browser for the sunray hosts (sunshine.lassul.us)
     ../../configs/sunshine-web.nix
 
+    # synced 24/7 channel (tv.lassul.us)
+    ../../configs/tv.nix
+
     # backups
     ./backup.nix
 

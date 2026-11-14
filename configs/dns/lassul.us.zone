@@ -82,6 +82,7 @@ when IN CNAME neoprism
 paperless IN CNAME neoprism
 nixcontalks IN CNAME neoprism
 sunshine IN CNAME neoprism
+tv IN CNAME neoprism
 
 ;; Mail
 @ IN MX 3 mail
