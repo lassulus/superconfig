@@ -17,6 +17,7 @@
     ../../configs/monitoring/grafana-public.nix
     ../../configs/health-dav.nix
     ../../configs/services/matrix/bridges
+    ../../configs/tv-proxy.nix
     ./backup.nix
   ];
 
