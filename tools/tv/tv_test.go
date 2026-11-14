@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -110,6 +111,159 @@ func TestDropMissing(t *testing.T) {
 	checkSchedule(t, "nothing missing", st.Schedule, "a 0s-1µs", "b 1µs-2µs", "c 2µs-2.5µs")
 }
 
+// backToBack fails if an upcoming entry does not start where the one before
+// it ends.
+func backToBack(t *testing.T, name string, es []entry) {
+	t.Helper()
+	for i := 1; i < len(es); i++ {
+		if es[i].Start != es[i-1].Start+es[i-1].Duration {
+			t.Errorf("%s: gap or overlap before %s: %q", name, es[i].ID, times(es))
+		}
+	}
+}
+
+func editSchedule() []entry {
+	return []entry{
+		{ID: "a", Start: 0, Duration: 1000},
+		{ID: "b", Start: 1000, Duration: 1000},
+		{ID: "c", Start: 2000, Duration: 500},
+		{ID: "d", Start: 2500, Duration: 500},
+	}
+}
+
+func TestRemove(t *testing.T) {
+	st := state{Schedule: editSchedule()}
+	if _, err := st.remove(300, slot{1000, "b"}); err != nil {
+		t.Fatal(err)
+	}
+	checkSchedule(t, "middle", st.Schedule, "a 0s-1µs", "c 1µs-1.5µs", "d 1.5µs-2µs")
+	backToBack(t, "middle", st.Schedule)
+	if _, err := st.remove(300, slot{1500, "d"}); err != nil {
+		t.Fatal(err)
+	}
+	checkSchedule(t, "last", st.Schedule, "a 0s-1µs", "c 1µs-1.5µs")
+	if _, err := st.remove(300, slot{0, "a"}); err != errPlaying {
+		t.Errorf("playing: %v", err)
+	}
+	for _, sl := range []slot{{2000, "c"}, {1000, "b"}, {1000, "x"}} {
+		if _, err := st.remove(300, sl); err != errStale {
+			t.Errorf("stale %v: %v", sl, err)
+		}
+	}
+	checkSchedule(t, "after the refused ones", st.Schedule, "a 0s-1µs", "c 1µs-1.5µs")
+
+	// nothing playing: the next one takes over the start of the removed one
+	st = state{Schedule: editSchedule()}
+	st.remove(-100, slot{0, "a"})
+	checkSchedule(t, "first while nothing plays", st.Schedule, "b 0s-1µs", "c 1µs-1.5µs", "d 1.5µs-2µs")
+}
+
+func TestMove(t *testing.T) {
+	st := state{Schedule: editSchedule()}
+	step := func(name string, sl slot, after *slot, want ...string) {
+		t.Helper()
+		if _, err := st.move(300, sl, after); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		checkSchedule(t, name, st.Schedule, want...)
+		backToBack(t, name, st.Schedule)
+	}
+	step("forward", slot{1000, "b"}, &slot{2500, "d"}, "a 0s-1µs", "c 1µs-1.5µs", "d 1.5µs-2µs", "b 2µs-3µs")
+	step("backward", slot{2000, "b"}, &slot{1000, "c"}, "a 0s-1µs", "c 1µs-1.5µs", "b 1.5µs-2.5µs", "d 2.5µs-3µs")
+	step("to the front", slot{2500, "d"}, nil, "a 0s-1µs", "d 1µs-1.5µs queued", "c 1.5µs-2µs", "b 2µs-3µs")
+	// later requests and moves line up behind the ones moved to the front
+	step("behind the front one", slot{2000, "b"}, &slot{1000, "d"}, "a 0s-1µs", "d 1µs-1.5µs queued", "b 1.5µs-2.5µs queued", "c 2.5µs-3µs")
+	step("after the playing one by its slot", slot{2500, "c"}, &slot{0, "a"}, "a 0s-1µs", "c 1µs-1.5µs queued", "d 1.5µs-2µs queued", "b 2µs-3µs queued")
+	step("after itself", slot{1500, "d"}, &slot{1500, "d"}, "a 0s-1µs", "c 1µs-1.5µs queued", "d 1.5µs-2µs queued", "b 2µs-3µs queued")
+
+	for _, tc := range []struct {
+		sl    slot
+		after *slot
+		err   error
+	}{
+		{slot{1000, "b"}, nil, errStale},
+		{slot{2000, "b"}, &slot{2500, "c"}, errStale},
+		{slot{0, "a"}, nil, errPlaying},
+	} {
+		if _, err := st.move(300, tc.sl, tc.after); err != tc.err {
+			t.Errorf("move %v after %v: %v, want %v", tc.sl, tc.after, err, tc.err)
+		}
+	}
+	checkSchedule(t, "after the refused ones", st.Schedule, "a 0s-1µs", "c 1µs-1.5µs queued", "d 1.5µs-2µs queued", "b 2µs-3µs queued")
+
+	st = state{Schedule: editSchedule()}
+	if _, err := st.move(-100, slot{2000, "c"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	checkSchedule(t, "to the front while nothing plays", st.Schedule, "c 0s-500ns queued", "a 500ns-1.5µs", "b 1.5µs-2.5µs", "d 2.5µs-3µs")
+}
+
+func TestInsert(t *testing.T) {
+	st := state{Schedule: editSchedule()}
+	st.insert(entry{ID: "n", Duration: 100}, 300, &slot{1000, "b"})
+	checkSchedule(t, "after b", st.Schedule, "a 0s-1µs", "b 1µs-2µs", "n 2µs-2.1µs", "c 2.1µs-2.6µs", "d 2.6µs-3.1µs")
+	st.insert(entry{ID: "m", Duration: 100}, 300, &slot{2000, "c"})
+	checkSchedule(t, "after a gone entry", st.Schedule, "a 0s-1µs", "m 1µs-1.1µs queued", "b 1.1µs-2.1µs", "n 2.1µs-2.2µs", "c 2.2µs-2.7µs", "d 2.7µs-3.2µs")
+	backToBack(t, "insert", st.Schedule)
+}
+
+func TestRequestScheduledSource(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "yt-x-1.mp4"), []byte("x"), 0o644)
+	now := nowMs()
+	// a lookup or prepare would run the missing yt-dlp and fail
+	s := &server{secret: "s", adminKey: "k", statePath: filepath.Join(dir, "state.json"),
+		cfg: config{CacheDir: dir, YtDlp: filepath.Join(dir, "no-yt-dlp")},
+		st: state{Schedule: []entry{
+			{ID: "jf:a", Start: now - 1000, Duration: 600_000, File: "jf-a-1.mp4"},
+			{ID: "jf:b", Start: now + 599_000, Duration: 600_000, File: "jf-b-1.mp4"},
+			{ID: "yt:dQw4w9WgXcQ", Start: now + 1_199_000, Duration: 200_000, File: "yt-x-1.mp4"},
+			{ID: "jf:c", Start: now + 1_399_000, Duration: 600_000, File: "jf-c-1.mp4"},
+		}}}
+	post := func(path, body string) (int, map[string]any) {
+		req := httptest.NewRequest("POST", "/s/"+path, strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer k")
+		rec := httptest.NewRecorder()
+		s.handler().ServeHTTP(rec, req)
+		var out map[string]any
+		json.Unmarshal(rec.Body.Bytes(), &out)
+		return rec.Code, out
+	}
+	url := `{"url": "https://youtu.be/dQw4w9WgXcQ"}`
+	if code, out := post("api/queue", url); code != http.StatusConflict || out["start"] != float64(now+1_199_000) {
+		t.Errorf("queueing a scheduled source: %d %v, want 409 with its start", code, out)
+	}
+	if code, out := post("api/skip", url); code != http.StatusOK || out["entries"] == nil {
+		t.Fatalf("playing a scheduled source now: %d %v", code, out)
+	}
+	sched := s.st.Schedule
+	if len(s.requests) != 0 || len(sched) != 4 || sched[1].ID != "yt:dQw4w9WgXcQ" || sched[1].File != "yt-x-1.mp4" || sched[0].Start+sched[0].Duration != sched[1].Start ||
+		sched[1].Start < now+cutoverLead.Milliseconds() || sched[1].Start > nowMs()+cutoverLead.Milliseconds() {
+		t.Errorf("play now: requests %v, schedule %q", s.requests, times(sched))
+	}
+	backToBack(t, "play now", sched)
+
+	// a requested source becomes play-now instead of a second request
+	s.requests = []*request{{State: "waiting", c: candidate{ID: "yt:aaaaaaaaaaa"}}}
+	if code, _ := post("api/skip", `{"url": "https://youtu.be/aaaaaaaaaaa"}`); code != http.StatusAccepted || len(s.requests) != 1 || !s.requests[0].PlayNow {
+		t.Errorf("play now of a request: %d, requests %v", code, s.requests)
+	}
+	if code, _ := post("api/queue", `{"url": "https://youtu.be/aaaaaaaaaaa"}`); code != http.StatusConflict || len(s.requests) != 1 {
+		t.Errorf("queueing a requested source: %d, requests %v", code, s.requests)
+	}
+}
+
+func TestEditAuth(t *testing.T) {
+	s := &server{secret: "s", adminKey: "k", st: state{Schedule: editSchedule()}}
+	for _, path := range []string{"api/schedule/delete", "api/schedule/move", "api/schedule/insert"} {
+		rec := httptest.NewRecorder()
+		s.handler().ServeHTTP(rec, httptest.NewRequest("POST", "/s/"+path, strings.NewReader(`{"start": 1000, "id": "b"}`)))
+		if rec.Code != http.StatusUnauthorized || len(s.st.Schedule) != 4 {
+			t.Errorf("%s without the admin key: %d", path, rec.Code)
+		}
+	}
+}
+
 func TestParseURL(t *testing.T) {
 	const jf = "0123456789abcdef0123456789abcdef"
 	for raw, want := range map[string]string{
@@ -193,11 +347,14 @@ func TestAdminAuth(t *testing.T) {
 }
 
 func TestQueueRequests(t *testing.T) {
-	runtimes := map[string]int64{"0123456789abcdef0123456789abcdef": 600, "ffffffffffffffffffffffffffffffff": 5 * 3600}
 	jellyfin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := r.URL.Query().Get("Ids")
 		items := []map[string]any{}
-		if secs, ok := runtimes[id]; ok {
+		if id != "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" {
+			secs := int64(600)
+			if id == "ffffffffffffffffffffffffffffffff" {
+				secs = 5 * 3600
+			}
 			items = append(items, map[string]any{"Id": id, "Name": "Item " + id[:4], "Type": "Movie", "MediaType": "Video", "RunTimeTicks": secs * 10_000_000})
 		}
 		json.NewEncoder(w).Encode(map[string]any{"Items": items})
@@ -226,12 +383,15 @@ func TestQueueRequests(t *testing.T) {
 			t.Errorf("%s: %d %v, want %d with an error", body, code, out, want)
 		}
 	}
-	for range maxQueued - 1 {
-		if code, out := post(`{"url": "0123456789abcdef0123456789abcdef"}`); code != http.StatusAccepted {
+	if code, out := post(`{"url": "0123456789abcdef0123456789abcdef"}`); code != http.StatusConflict || out["error"] == "" {
+		t.Errorf("same source again: %d %v, want 409", code, out)
+	}
+	for i := range maxQueued - 1 {
+		if code, out := post(fmt.Sprintf(`{"url": "%032x"}`, i+1)); code != http.StatusAccepted {
 			t.Fatalf("filling the queue: %d %v", code, out)
 		}
 	}
-	if code, out := post(`{"url": "0123456789abcdef0123456789abcdef"}`); code != http.StatusTooManyRequests || out["error"] == "" {
+	if code, out := post(`{"url": "abcdef0123456789abcdef0123456789"}`); code != http.StatusTooManyRequests || out["error"] == "" {
 		t.Errorf("full queue: %d %v", code, out)
 	}
 	// failed items do not count

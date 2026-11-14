@@ -156,6 +156,30 @@ func newServer(configPath string) (*server, error) {
 
 func nowMs() int64 { return time.Now().UnixMilli() }
 
+// handler serves everything under /<secret>/:
+//
+//	GET  api/time      server clock, unix ms
+//	GET  api/schedule  {"entries": [playing, upcoming...], "pending": [requests]}
+//	POST api/queue     {"url"}: queue a YouTube video or Jellyfin item; 409 with
+//	                   its "start" if it is already scheduled or requested
+//	GET  media/<file>  prepared videos and subtitles
+//
+// Admin, with "Authorization: Bearer <admin key>" (401 without):
+//
+//	POST api/skip      {}: skip the playing entry; {"url"}: play it now, an
+//	                   already scheduled entry of it moves to now
+//	POST api/schedule/delete  {"start", "id"}: remove an upcoming entry, the
+//	                   rest moves up
+//	POST api/schedule/move    {"start", "id", "after": {"start", "id"} | null}:
+//	                   put an upcoming entry right after another one, or after
+//	                   the playing one for null
+//	POST api/schedule/insert  {"url", "after": {"start", "id"} | null}: like
+//	                   api/queue, but goes after that entry once prepared (after
+//	                   the playing one if it is gone by then)
+//
+// Edits address entries by start (unix ms) and id; 409 if no upcoming entry
+// matches (the schedule moved) or it is the playing one. They answer 200 with
+// the new api/schedule.
 func (s *server) handler() http.Handler {
 	static, _ := fs.Sub(staticFiles, "static")
 	files := http.FileServerFS(static)
@@ -172,20 +196,29 @@ func (s *server) handler() http.Handler {
 			w.Header().Set("Cache-Control", "no-store")
 			w.Write(strconv.AppendFloat(nil, float64(t.UnixNano())/1e6, 'f', 3, 64))
 		case rest == "api/schedule":
-			now := nowMs()
 			s.mu.Lock()
-			upcoming := append([]entry{}, s.st.upcoming(now)...)
-			pending := s.pending(now)
+			out := s.schedule(nowMs())
 			s.mu.Unlock()
-			writeJSON(w, http.StatusOK, map[string]any{"entries": upcoming, "pending": pending})
+			writeJSON(w, http.StatusOK, out)
 		case rest == "api/queue":
-			s.handleRequest(w, r, false)
-		case rest == "api/skip":
+			s.handleRequest(w, r, queued)
+		case rest == "api/skip" || strings.HasPrefix(rest, "api/schedule/"):
 			if !s.isAdmin(r) {
 				writeError(w, http.StatusUnauthorized, "admin key required")
 				return
 			}
-			s.handleRequest(w, r, true)
+			switch rest {
+			case "api/skip":
+				s.handleRequest(w, r, playNow)
+			case "api/schedule/insert":
+				s.handleRequest(w, r, inserted)
+			case "api/schedule/move":
+				s.handleEdit(w, r, true)
+			case "api/schedule/delete":
+				s.handleEdit(w, r, false)
+			default:
+				http.NotFound(w, r)
+			}
 		case strings.HasPrefix(rest, "media/"):
 			name := strings.TrimPrefix(rest, "media/")
 			if name == "" || name != filepath.Base(name) || strings.HasPrefix(name, ".") || !strings.HasSuffix(name, ".mp4") && !strings.HasSuffix(name, ".vtt") {

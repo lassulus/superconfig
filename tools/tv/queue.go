@@ -10,6 +10,8 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -22,7 +24,7 @@ const (
 	keepFailed  = 5 * time.Minute
 )
 
-// request is a queued or play-now item until its prepare is done.
+// request is a queued, play-now or inserted item until its prepare is done.
 type request struct {
 	URL      string `json:"url"`
 	Title    string `json:"title"`
@@ -33,7 +35,19 @@ type request struct {
 	c        candidate
 	file     string
 	failedAt int64
+	// inserted after this entry (nil: after the playing one) instead of queued
+	insert bool
+	after  *slot
 }
+
+// placement says where a requested item goes into the schedule.
+type placement int
+
+const (
+	queued   placement = iota // after the playing and the queued entries
+	playNow                   // now
+	inserted                  // after a given entry
+)
 
 var (
 	youtubeID  = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)
@@ -165,20 +179,21 @@ func (s *server) queueFull() bool {
 	return n >= maxQueued
 }
 
-// handleRequest serves api/queue and api/skip.
-func (s *server) handleRequest(w http.ResponseWriter, r *http.Request, playNow bool) {
+// handleRequest serves api/queue, api/skip and api/schedule/insert.
+func (s *server) handleRequest(w http.ResponseWriter, r *http.Request, how placement) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "use POST")
 		return
 	}
 	var body struct {
-		URL string `json:"url"`
+		URL   string `json:"url"`
+		After *slot  `json:"after"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
 		writeError(w, http.StatusBadRequest, "body must be JSON like {\"url\": \"...\"}")
 		return
 	}
-	if playNow && body.URL == "" {
+	if how == playNow && body.URL == "" {
 		s.mu.Lock()
 		s.st.skip(nowMs())
 		s.save()
@@ -193,8 +208,13 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request, playNow b
 		return
 	}
 	s.mu.Lock()
-	full := !playNow && s.queueFull()
+	code, out, done := s.claim(c, how, body.After)
+	full := !done && how == queued && s.queueFull()
 	s.mu.Unlock()
+	if done {
+		writeJSON(w, code, out)
+		return
+	}
 	if full {
 		writeError(w, http.StatusTooManyRequests, fmt.Sprintf("the queue is full (%d items)", maxQueued))
 		return
@@ -207,22 +227,121 @@ func (s *server) handleRequest(w http.ResponseWriter, r *http.Request, playNow b
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("%q is %s long, the limit is %s", c.Title, d, maxDuration))
 		return
 	}
-	req := &request{URL: body.URL, Title: c.Title, Duration: c.Duration * 1000, PlayNow: playNow, State: "waiting", c: c, file: fileName(c)}
+	req := &request{URL: body.URL, Title: c.Title, Duration: c.Duration * 1000, PlayNow: how == playNow, State: "waiting", c: c, file: fileName(c),
+		insert: how == inserted, after: body.After}
 	s.mu.Lock()
-	if !playNow && s.queueFull() {
+	// the same source may have been scheduled or requested during the lookup
+	if code, out, done := s.claim(c, how, body.After); done {
+		s.mu.Unlock()
+		writeJSON(w, code, out)
+		return
+	}
+	if how == queued && s.queueFull() {
 		s.mu.Unlock()
 		writeError(w, http.StatusTooManyRequests, fmt.Sprintf("the queue is full (%d items)", maxQueued))
 		return
 	}
 	s.requests = append(s.requests, req)
-	out := *req
+	code, out = http.StatusAccepted, *req
+	if how == inserted {
+		code, out = http.StatusOK, s.schedule(nowMs())
+	}
 	s.mu.Unlock()
-	log.Printf("requested %s %q (play now: %t)", c.ID, c.Title, playNow)
+	log.Printf("requested %s %q (play now: %t, insert: %t)", c.ID, c.Title, req.PlayNow, req.insert)
 	select {
 	case s.wake <- struct{}{}:
 	default:
 	}
-	writeJSON(w, http.StatusAccepted, out)
+	writeJSON(w, code, out)
+}
+
+// claim handles a request for a source that is already in the upcoming
+// schedule or requested, so it is not prepared twice: a scheduled entry
+// moves (play now, insert) or the queue request is refused, a waiting or
+// preparing request becomes play-now or the new one is refused. It returns
+// the response and whether it handled the request; callers hold s.mu.
+func (s *server) claim(c candidate, how placement, after *slot) (int, any, bool) {
+	now := nowMs()
+	if i := s.st.scheduled(now, c.ID); i >= 0 {
+		e := s.st.Schedule[i]
+		if _, err := os.Stat(filepath.Join(s.cfg.CacheDir, e.File)); err != nil {
+			// unplayable, the new request replaces it
+			s.st.take(i)
+			s.save()
+			log.Printf("dropped %s %q without a file", e.ID, e.Title)
+		} else {
+			switch how {
+			case queued:
+				return http.StatusConflict, map[string]any{"error": fmt.Sprintf("%q is already scheduled", e.Title), "start": e.Start}, true
+			case playNow:
+				s.st.playNow(i, now, now+cutoverLead.Milliseconds())
+				log.Printf("playing scheduled %s %q now", e.ID, e.Title)
+			case inserted:
+				if _, err := s.st.move(now, slot{e.Start, e.ID}, after); err != nil {
+					return http.StatusConflict, map[string]string{"error": err.Error()}, true
+				}
+				log.Printf("moved scheduled %s %q", e.ID, e.Title)
+			}
+			s.save()
+			return http.StatusOK, s.schedule(now), true
+		}
+	}
+	for _, r := range s.requests {
+		if r.c.ID != c.ID || r.State == "failed" {
+			continue
+		}
+		if how != playNow {
+			return http.StatusConflict, map[string]string{"error": fmt.Sprintf("%q is already requested", r.Title)}, true
+		}
+		r.PlayNow = true
+		log.Printf("requested %s %q plays now", r.c.ID, r.Title)
+		return http.StatusAccepted, *r, true
+	}
+	return 0, nil, false
+}
+
+// schedule is the api/schedule response; callers hold s.mu.
+func (s *server) schedule(now int64) map[string]any {
+	return map[string]any{"entries": append([]entry{}, s.st.upcoming(now)...), "pending": s.pending(now)}
+}
+
+// handleEdit serves api/schedule/delete and api/schedule/move.
+func (s *server) handleEdit(w http.ResponseWriter, r *http.Request, move bool) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "use POST")
+		return
+	}
+	var body struct {
+		slot
+		After *slot `json:"after"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil || body.ID == "" {
+		writeError(w, http.StatusBadRequest, "body must be JSON like {\"start\": ..., \"id\": \"...\"}")
+		return
+	}
+	s.mu.Lock()
+	now := nowMs()
+	var e entry
+	var err error
+	if move {
+		e, err = s.st.move(now, body.slot, body.After)
+	} else {
+		e, err = s.st.remove(now, body.slot)
+	}
+	if err != nil {
+		s.mu.Unlock()
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
+	s.save()
+	out := s.schedule(now)
+	s.mu.Unlock()
+	if move {
+		log.Printf("moved %s %q to %s", e.ID, e.Title, time.UnixMilli(e.Start).Format(time.TimeOnly))
+	} else {
+		log.Printf("deleted %s %q", e.ID, e.Title)
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // nextRequest returns the oldest waiting request, play-now ones first;
@@ -264,9 +383,12 @@ func (s *server) serveRequests(ctx context.Context) {
 			r.State, r.Error, r.failedAt = "failed", err.Error(), now
 		} else {
 			s.requests = slices.DeleteFunc(s.requests, func(x *request) bool { return x == r })
-			if r.PlayNow {
+			switch {
+			case r.PlayNow:
 				s.st.playAt(e, now, now+cutoverLead.Milliseconds())
-			} else {
+			case r.insert:
+				s.st.insert(e, now, r.after)
+			default:
 				s.st.enqueue(e, now)
 			}
 			s.st.History = append(s.st.History, played{ID: r.c.ID, Title: r.c.Title, At: now})

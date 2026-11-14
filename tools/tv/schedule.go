@@ -113,6 +113,137 @@ func (st *state) playAt(e entry, now, t int64) {
 	st.retime(i, t)
 }
 
+// slot addresses a schedule entry for edits: start is unique, id guards
+// against a schedule that moved since the client looked.
+type slot struct {
+	Start int64  `json:"start"`
+	ID    string `json:"id"`
+}
+
+var (
+	errPlaying = errors.New("the playing entry cannot be edited, only skipped")
+	errStale   = errors.New("no upcoming entry with this start and id, the schedule moved")
+)
+
+// first drops finished entries and returns the index of the first entry
+// after the playing one.
+func (st *state) first(now int64) int {
+	if st.playing(now) {
+		return 1
+	}
+	return 0
+}
+
+// find returns the index of the upcoming, not playing entry at sl.
+func (st *state) find(now int64, sl slot) (int, error) {
+	i := st.first(now)
+	if i == 1 && st.Schedule[0].Start == sl.Start && st.Schedule[0].ID == sl.ID {
+		return 0, errPlaying
+	}
+	for ; i < len(st.Schedule); i++ {
+		if st.Schedule[i].Start == sl.Start && st.Schedule[i].ID == sl.ID {
+			return i, nil
+		}
+	}
+	return 0, errStale
+}
+
+// scheduled returns the index of the upcoming, not playing entry of source
+// id, or -1.
+func (st *state) scheduled(now int64, id string) int {
+	for i := st.first(now); i < len(st.Schedule); i++ {
+		if st.Schedule[i].ID == id {
+			return i
+		}
+	}
+	return -1
+}
+
+// take removes entry i; the ones after it move up into its start.
+func (st *state) take(i int) entry {
+	e := st.Schedule[i]
+	st.Schedule = slices.Delete(st.Schedule, i, i+1)
+	st.retime(i, e.Start)
+	return e
+}
+
+// insertAt puts e at index i (not before the playing entry) back to back
+// after its predecessor and moves the rest back. Like enqueue, it is queued
+// when it lands in the run of queued entries after the playing one, so later
+// requests line up behind it.
+func (st *state) insertAt(e entry, now int64, i int) {
+	f := st.first(now)
+	start := now
+	if i > 0 {
+		start = st.Schedule[i-1].Start + st.Schedule[i-1].Duration
+	} else if len(st.Schedule) > 0 {
+		start = st.Schedule[0].Start
+	}
+	e.Queued = !slices.ContainsFunc(st.Schedule[f:i], func(e entry) bool { return !e.Queued })
+	st.Schedule = slices.Insert(st.Schedule, i, e)
+	st.retime(i, start)
+}
+
+// after returns the index an entry goes to when it follows after, or the
+// playing entry for nil; after may be the playing entry itself.
+func (st *state) after(now int64, after *slot) (int, error) {
+	if after == nil {
+		return st.first(now), nil
+	}
+	j, err := st.find(now, *after)
+	if errors.Is(err, errPlaying) {
+		return 1, nil
+	}
+	return j + 1, err
+}
+
+// remove deletes the upcoming entry at sl.
+func (st *state) remove(now int64, sl slot) (entry, error) {
+	i, err := st.find(now, sl)
+	if err != nil {
+		return entry{}, err
+	}
+	return st.take(i), nil
+}
+
+// move puts the upcoming entry at sl right after the one at after, or right
+// after the playing one for nil.
+func (st *state) move(now int64, sl slot, after *slot) (entry, error) {
+	i, err := st.find(now, sl)
+	if err != nil {
+		return entry{}, err
+	}
+	j, err := st.after(now, after)
+	if err != nil {
+		return entry{}, err
+	}
+	if j == i || j == i+1 {
+		// already there
+		return st.Schedule[i], nil
+	}
+	e := st.take(i)
+	if j > i {
+		j--
+	}
+	st.insertAt(e, now, j)
+	return st.Schedule[j], nil
+}
+
+// insert puts e right after the entry at after, or after the playing one if
+// after is nil or gone.
+func (st *state) insert(e entry, now int64, after *slot) {
+	j, err := st.after(now, after)
+	if err != nil {
+		j = st.first(now)
+	}
+	st.insertAt(e, now, j)
+}
+
+// playNow moves the upcoming entry i to start at t, cutting the playing one.
+func (st *state) playNow(i int, now, t int64) {
+	st.playAt(st.take(i), now, t)
+}
+
 // dropMissing removes entries without a file and retimes the rest back to
 // back from the playing entry, or from now if that one is gone too.
 func (st *state) dropMissing(now int64, exists func(file string) bool) {
