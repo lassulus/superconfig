@@ -4,8 +4,9 @@
 //
 // Run the tv binary locally first with a scratch config whose schedule has an
 // item playing in the middle (state.json with one entry that started a few
-// minutes ago). The browser loads the page through a proxy on port 8378 that
-// can throttle, delay and hold back the media. Scenarios:
+// minutes ago). The browser loads the page through a proxy on port 8378 (or
+// $PROXY_PORT; DevTools on 9333 or $CDP_PORT) that can throttle, delay and
+// hold back the media. Scenarios:
 //
 //   normal        knock playback 60 ms off and watch it converge, then offset
 //                 the picture clock (rVFC mediaTime) by 300 ms for 25 s to
@@ -13,6 +14,12 @@
 //   rate-ignored  the same in a browser that ignores playbackRate
 //   hiccup        hold back the media in the middle of the item until
 //                 playback stalls, and 2 s more, then watch for 60 s
+//   stall         like the phone test: count the seeks of the first 45 s
+//                 (joining), then twice hold back the media until playback
+//                 stalls, 2 s more, and count the seeks of the 45 s after
+//                 releasing it; reports the error after each 45 s and how
+//                 long after the release playback was last out of sync
+//                 (over 100 ms off, or waiting)
 //   freeze        stop the browser's processes for 1.5 s in the middle of
 //                 the item, like a phone busy elsewhere, then watch for 60 s
 //
@@ -67,9 +74,10 @@ http
     res.on("close", () => up.destroy());
     req.pipe(up);
   })
-  .listen(8378, "127.0.0.1");
+  .listen(process.env.PROXY_PORT ?? 8378, "127.0.0.1");
 const proxied = new URL(url);
-proxied.port = 8378;
+proxied.port = process.env.PROXY_PORT ?? 8378;
+const cdpPort = process.env.CDP_PORT ?? 9333;
 
 const p = spawn(
   chromium,
@@ -78,7 +86,7 @@ const p = spawn(
     "--no-sandbox",
     "--disable-gpu",
     "--autoplay-policy=no-user-gesture-required",
-    "--remote-debugging-port=9333",
+    `--remote-debugging-port=${cdpPort}`,
     `--user-data-dir=${dir}/prof`,
     "about:blank",
   ],
@@ -89,7 +97,7 @@ const p = spawn(
   let ws;
   for (let i = 0; i < 50; i++) {
     try {
-      const t = await (await fetch("http://127.0.0.1:9333/json")).json();
+      const t = await (await fetch(`http://127.0.0.1:${cdpPort}/json`)).json();
       ws = new WebSocket(t.find((x) => x.type === "page").webSocketDebuggerUrl);
       break;
     } catch {
@@ -171,6 +179,27 @@ const p = spawn(
     await ev(`window.__drift = 0.3`);
     await sleep(25000);
     await phase("picture 300 ms behind sound for 25 s");
+  } else if (scenario === "stall") {
+    await sleep(33000);
+    await phase("joining (45 s)");
+    for (const n of [1, 2]) {
+      held = true;
+      for (let i = 0; i < 1500 && (await st()).ready >= 3; i++)
+        await sleep(100);
+      await sleep(2000);
+      held = false;
+      const released = Date.now();
+      let outAt = released;
+      while (Date.now() - released < 45000) {
+        const s = await st();
+        if (s.ready < 3 || s.raw === undefined || Math.abs(s.raw) > 100)
+          outAt = Date.now();
+        await sleep(250);
+      }
+      await phase(
+        `45 s after stall ${n}, last out of sync ${((outAt - released) / 1000).toFixed(1)} s after the release`,
+      );
+    }
   } else if (scenario === "freeze") {
     await sleep(20000);
     await phase("20 s before the freeze");
@@ -190,6 +219,8 @@ const p = spawn(
     await sleep(60000);
     await phase("60 s after the hiccup");
   }
-  process.kill(-p.pid);
+  try {
+    process.kill(-p.pid);
+  } catch {}
   process.exit(0);
 })();

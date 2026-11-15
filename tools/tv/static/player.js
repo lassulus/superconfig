@@ -125,21 +125,25 @@ function load(video, e) {
   showSubtitles(video);
 }
 
-// whether t and the second after it are loaded
-function buffered(video, t) {
+// whether [t, t + 3 s] is loaded: a seek there lands without waiting for the
+// network and plays on while more arrives; 3 s covers seekLead (up to 2 s)
+// and the frames until it settles, and a phone on a slow link still has 5 s
+// or more loaded ahead
+function loaded(video, t) {
   for (let i = 0; i < video.buffered.length; i++)
-    if (video.buffered.start(i) <= t && t + 1 <= video.buffered.end(i))
+    if (video.buffered.start(i) <= t && t + 3 <= video.buffered.end(i))
       return true;
   return false;
 }
 
+// where seek goes: seekLead ahead of the schedule
+const seekTarget = (video) =>
+  Math.max(0, (serverNow() - video.entry.start) / 1000 + sync.seekLead);
+
 function seek(video) {
-  const t = Math.max(
-    0,
-    (serverNow() - video.entry.start) / 1000 + sync.seekLead,
-  );
-  // a seek past what is loaded also waits for the network, which says nothing about the next one
-  sync.learn = buffered(video, t) ? "seekLead" : null;
+  const t = seekTarget(video);
+  // only the start seeks past what is loaded; waiting for the network says nothing about the next seek
+  sync.learn = loaded(video, t) ? "seekLead" : null;
   video.playbackRate = 1;
   video.currentTime = t;
   sync.err = null;
@@ -168,9 +172,13 @@ function control(raw, at) {
     return;
   }
   if (Math.abs(raw) > 500) {
-    // a seek can land where too little is loaded or take long to decode and land late again, so after one
-    // play on for 2, 4, 8, then 16 s before the next, until one lands and playback stays in sync for 10 s
-    if (at - sync.landedAt >= (sync.bigSeeks && 1000 * 2 ** sync.bigSeeks)) {
+    // a seek past what is loaded waits for the download and lands late, so play on until the target is
+    // loaded; one within it can still land late on a slow decoder (long GOPs), so after one wait 2, 4, 8,
+    // then 16 s before the next, until one lands and playback stays in sync for 10 s
+    if (
+      at - sync.landedAt >= (sync.bigSeeks && 1000 * 2 ** sync.bigSeeks) &&
+      loaded(active, seekTarget(active))
+    ) {
       sync.bigSeeks = Math.min(sync.bigSeeks + 1, 4);
       seek(active);
     }
