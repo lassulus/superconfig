@@ -2,9 +2,11 @@ package us.lassul.assist;
 
 import android.app.Activity;
 import android.app.PictureInPictureParams;
+import android.app.RemoteAction;
 import android.content.Intent;
 import android.content.res.Configuration;
 import android.graphics.Color;
+import android.graphics.drawable.Icon;
 import android.os.Bundle;
 import android.util.Rational;
 import android.view.View;
@@ -16,11 +18,12 @@ import android.widget.FrameLayout;
 import android.widget.Toast;
 import android.window.OnBackInvokedCallback;
 import android.window.OnBackInvokedDispatcher;
+import java.util.Arrays;
 
 /**
  * The TV channel full screen (Tv's page). Leaving it (home, back, another app) shrinks it to
- * picture-in-picture; closing that stops the TV. Opened or shared tv.lassul.us links become the
- * TV URL.
+ * picture-in-picture; closing that stops the TV, its Audio only plays on without the picture,
+ * like the display going off does. Opened or shared tv.lassul.us links become the TV URL.
  */
 public class TvActivity extends Activity {
     private FrameLayout frame;
@@ -66,6 +69,7 @@ public class TvActivity extends Activity {
         frame = new FrameLayout(this);
         frame.setBackgroundColor(Color.BLACK);
         setContentView(frame);
+        startForegroundService(new Intent(this, TvService.class));
         Tv.show(this, frame);
         Live.watch(redraw);
         getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
@@ -106,6 +110,10 @@ public class TvActivity extends Activity {
     @Override
     public void onPictureInPictureModeChanged(boolean inPip, Configuration config) {
         super.onPictureInPictureModeChanged(inPip, config);
+        // Audio only took the page off this screen already.
+        if (!Tv.shows(this)) {
+            return;
+        }
         if (!inPip && stopped) {
             // Closed instead of expanded.
             Tv.stop(this);
@@ -156,7 +164,7 @@ public class TvActivity extends Activity {
         } else {
             getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         }
-        String state = String.valueOf(pipAspect());
+        String state = pipAspect() + " " + Tv.paused();
         if (!state.equals(pipState)) {
             pipState = state;
             setPictureInPictureParams(pipParams());
@@ -164,11 +172,24 @@ public class TvActivity extends Activity {
     }
 
     private PictureInPictureParams pipParams() {
+        boolean paused = Tv.paused();
         return new PictureInPictureParams.Builder()
                 .setAspectRatio(pipAspect())
                 .setAutoEnterEnabled(true)
                 .setSeamlessResizeEnabled(false)
+                .setActions(Arrays.asList(
+                        pipAction(paused ? android.R.drawable.ic_media_play
+                                        : android.R.drawable.ic_media_pause,
+                                paused ? "Play" : "Pause",
+                                paused ? TvService.ACTION_PLAY : TvService.ACTION_PAUSE),
+                        pipAction(android.R.drawable.ic_lock_silent_mode_off, "Audio only",
+                                TvService.ACTION_AUDIO)))
                 .build();
+    }
+
+    private RemoteAction pipAction(int icon, String label, String action) {
+        return new RemoteAction(Icon.createWithResource(this, icon), label, label,
+                TvService.control(this, action));
     }
 
     // The video's, within what picture-in-picture allows.

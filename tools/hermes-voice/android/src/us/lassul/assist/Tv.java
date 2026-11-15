@@ -28,8 +28,9 @@ import org.json.JSONException;
 
 /**
  * The synced TV channel (tools/tv): its page in one WebView that outlives the TV screen, so
- * the channel can go on without the picture. Paused means muted: the channel is live and the page
- * stays in sync, so playing again is where the channel is now. Main thread only.
+ * the channel plays on without the picture (TvService keeps it in the foreground). Paused means
+ * muted: the channel is live and the page stays in sync, so playing again is where the channel
+ * is now. Main thread only.
  */
 final class Tv {
     private static final String PREFS = "tv";
@@ -228,7 +229,17 @@ final class Tv {
         }
         close();
         paused = false;
+        context.stopService(new Intent(context, TvService.class));
         Live.changed();
+    }
+
+    /** Closes the screen; the channel plays on (TvService). */
+    static void audioOnly() {
+        TvActivity shown = screen;
+        if (shown != null) {
+            hide(shown);
+            shown.finishAndRemoveTask();
+        }
     }
 
     private static void close() {

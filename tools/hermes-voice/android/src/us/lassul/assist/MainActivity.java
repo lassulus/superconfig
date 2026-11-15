@@ -26,6 +26,7 @@ public class MainActivity extends Activity {
     private static final int NEW_CONVERSATION = 1;
     private static final int SESSIONS = 2;
     private static final int SETTINGS = 3;
+    private static final int TV_AUDIO = 4;
 
     private TextView transcript;
     private ColorStateList textColor;
@@ -126,7 +127,8 @@ public class MainActivity extends Activity {
     public boolean onCreateOptionsMenu(Menu menu) {
         menu.add(Menu.NONE, NEW_CONVERSATION, 0, "New conversation");
         menu.add(Menu.NONE, SESSIONS, 1, "Sessions");
-        menu.add(Menu.NONE, SETTINGS, 2, "Settings");
+        menu.add(Menu.NONE, TV_AUDIO, 2, "TV audio only");
+        menu.add(Menu.NONE, SETTINGS, 3, "Settings");
         return true;
     }
 
@@ -146,6 +148,14 @@ public class MainActivity extends Activity {
                 return true;
             case SETTINGS:
                 startActivity(new Intent(this, SettingsActivity.class));
+                return true;
+            case TV_AUDIO:
+                if (Tv.url(this) == null) {
+                    Toast.makeText(this, "Set the TV URL first", Toast.LENGTH_LONG).show();
+                    startActivity(new Intent(this, SettingsActivity.class));
+                } else {
+                    TvService.startAudio(this);
+                }
                 return true;
             default:
                 return super.onOptionsItemSelected(item);
