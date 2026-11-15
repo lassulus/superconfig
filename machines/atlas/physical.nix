@@ -28,6 +28,9 @@
     "usb_storage"
     "sd_mod"
     "r8169"
+    # 10G fiber card (HP NC523SFP), atlas' LAN uplink; runs from its flash
+    # firmware, no firmware file needed
+    "qlcnic"
   ];
   hardware.cpu.amd.updateMicrocode = true;
 
