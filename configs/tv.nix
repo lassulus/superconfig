@@ -21,17 +21,11 @@ let
       secret_file = "/run/credentials/tv.service/secret";
       jellyfin_url = "http://${self.inputs.kartei.hosts.yellow.nets.retiolum.ip4.addr}:8096";
       jellyfin_key_file = "/run/credentials/tv.service/jellyfin";
-      youtube_channels = map (name: "https://www.youtube.com/@${name}/videos") [
-        "halfasinteresting"
-        "HistoryBuffs"
-        "3blue1brown"
-        "FredrikKnudsen"
-        "hbomberguy"
-        "KnowingBetter"
-        "kurzgesagt"
-        "MandaloreGaming"
-        "MinutePhysics"
-      ];
+      # the YouTube channels live in /var/lib/tv/state.json: api/channels/suggest
+      # from the page, api/channels/{add,remove,approve,reject} with the admin key
+      youtube_videos_per_channel = 30;
+      # fraction of the picked airtime that goes to YouTube
+      youtube_share = 0.5;
       yt_dlp = "${
         pkgs.python3.withPackages (ps: [
           ps.yt-dlp
@@ -168,7 +162,7 @@ in
     type = "multiline-hidden";
     persist = true;
   };
-  # bearer key for POST /<secret>/api/skip
+  # bearer key for POST /<secret>/api/skip, api/schedule/* and api/channels/{add,remove,approve,reject}
   clan.core.vars.generators.tv-admin = {
     files.key = { };
     runtimeInputs = [
