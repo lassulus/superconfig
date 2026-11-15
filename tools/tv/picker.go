@@ -273,18 +273,21 @@ func (s *server) chat(ctx context.Context, system, prompt string) (string, error
 
 // answerIDs returns the ids of an answer like {"ids": [...]}.
 func answerIDs(content string) ([]string, error) {
-	// models like to wrap JSON in prose or code fences
-	start, end := strings.Index(content, "{"), strings.LastIndex(content, "}")
-	if start < 0 || end < start {
-		return nil, fmt.Errorf("no JSON object in %q", content)
-	}
 	var answer struct {
 		IDs []string `json:"ids"`
 	}
-	if err := json.Unmarshal([]byte(content[start:end+1]), &answer); err != nil {
-		return nil, err
+	err := answerJSON(content, &answer)
+	return answer.IDs, err
+}
+
+// answerJSON decodes the JSON object of an LLM answer into v.
+func answerJSON(content string, v any) error {
+	// models like to wrap JSON in prose or code fences
+	start, end := strings.Index(content, "{"), strings.LastIndex(content, "}")
+	if start < 0 || end < start {
+		return fmt.Errorf("no JSON object in %q", content)
 	}
-	return answer.IDs, nil
+	return json.Unmarshal([]byte(content[start:end+1]), v)
 }
 
 // validPicks keeps the known, distinct ids of an answer in its order.

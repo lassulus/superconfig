@@ -29,12 +29,21 @@ type movie struct {
 	} `json:"mediaInfo"`
 }
 
-func (s *server) requestMoviesDaily(ctx context.Context) {
-	if s.cfg.JellyseerrURL == "" || s.cfg.RequestsPerDay <= 0 {
+// periodic checks every hour for the daily movie requests and the weekly
+// channel suggestions.
+func (s *server) periodic(ctx context.Context) {
+	movies := s.cfg.JellyseerrURL != "" && s.cfg.RequestsPerDay > 0
+	channels := s.cfg.ChannelSuggestionsPerWeek > 0
+	if !movies && !channels {
 		return
 	}
 	for {
-		s.requestMovies(ctx)
+		if movies {
+			s.requestMovies(ctx)
+		}
+		if channels {
+			s.suggestChannels(ctx)
+		}
 		select {
 		case <-ctx.Done():
 			return

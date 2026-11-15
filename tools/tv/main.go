@@ -48,6 +48,8 @@ type config struct {
 	YouTubeVideosPerChannel int `json:"youtube_videos_per_channel"`
 	// fraction of the picked airtime that is YouTube, 0 leaves it to the LLM
 	YouTubeShare float64 `json:"youtube_share"`
+	// channels the LLM suggests once a week, 0 = off
+	ChannelSuggestionsPerWeek int `json:"channel_suggestions_per_week"`
 }
 
 type server struct {
@@ -84,7 +86,7 @@ func main() {
 	defer stop()
 	go s.run(ctx)
 	go s.serveRequests(ctx)
-	go s.requestMoviesDaily(ctx)
+	go s.periodic(ctx)
 	srv := &http.Server{Addr: s.cfg.Listen, Handler: s.handler(), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
@@ -173,11 +175,14 @@ func nowMs() int64 { return time.Now().UnixMilli() }
 //	                   its "start" if it is already scheduled or requested
 //	GET  media/<file>  prepared videos and subtitles
 //	GET  api/channels  {"channels": [...], "suggestions": [...]}, each
-//	                   {"url", "title", "at"}: the YouTube channels the picker
-//	                   lists and the suggested ones
+//	                   {"url", "title", "at", "by"}: the YouTube channels the
+//	                   picker lists and the suggested ones; "by" is "llm" for
+//	                   the weekly channel_suggestions_per_week the LLM finds
+//	                   similar to the channels (checked like suggest)
 //	POST api/channels/suggest {"url"}: suggest a channel URL or @handle; yt-dlp
-//	                   has to list it; 409 if it is a channel or suggested
-//	                   already, 429 with 20 suggestions waiting
+//	                   has to list it; 409 if it is a channel, suggested
+//	                   already or was rejected (or removed), 429 with 20
+//	                   suggestions waiting
 //
 // Admin, with "Authorization: Bearer <admin key>" (401 without):
 //
@@ -192,11 +197,13 @@ func nowMs() int64 { return time.Now().UnixMilli() }
 //	                   api/queue, but goes after that entry once prepared (after
 //	                   the playing one if it is gone by then)
 //	POST api/channels/add     {"url"}: add a channel (checked like suggest),
-//	                   dropping its suggestion; 409 if it is one already
-//	POST api/channels/remove  {"url"}: remove a channel; its videos leave the
-//	                   picker with the next pick
+//	                   dropping its suggestion and its rejection; 409 if it is
+//	                   one already
+//	POST api/channels/remove  {"url"}: remove a channel and remember it as
+//	                   rejected; its videos leave the picker with the next pick
 //	POST api/channels/approve {"url"}: make a suggestion a channel
-//	POST api/channels/reject  {"url"}: drop a suggestion
+//	POST api/channels/reject  {"url"}: drop a suggestion and remember it as
+//	                   rejected (the last 200)
 //
 // Edits address entries by start (unix ms) and id; 409 if no upcoming entry
 // matches (the schedule moved) or it is the playing one. They answer 200 with

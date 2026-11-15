@@ -1130,7 +1130,7 @@ func TestChannels(t *testing.T) {
 		}
 		if got == http.StatusOK && method == "POST" {
 			saved, err := loadState(s.statePath)
-			if err != nil || !slices.Equal(saved.Channels, s.st.Channels) || !slices.Equal(saved.ChannelSuggestions, s.st.ChannelSuggestions) {
+			if err != nil || !slices.Equal(saved.Channels, s.st.Channels) || !slices.Equal(saved.ChannelSuggestions, s.st.ChannelSuggestions) || !slices.Equal(saved.RejectedChannels, s.st.RejectedChannels) {
 				t.Errorf("%s: saved %+v, %v", name, saved, err)
 			}
 			if len(out["channels"].([]any)) != len(s.st.Channels) || len(out["suggestions"].([]any)) != len(s.st.ChannelSuggestions) {
@@ -1172,6 +1172,26 @@ func TestChannels(t *testing.T) {
 	step("remove", "POST", "api/channels/remove", `{"url": "@beta"}`, "k", http.StatusOK, "alpha,delta | ")
 	step("remove again", "POST", "api/channels/remove", `{"url": "@beta"}`, "k", http.StatusNotFound, "alpha,delta | ")
 	step("remove junk", "POST", "api/channels/remove", `{"url": "beta"}`, "k", http.StatusBadRequest, "alpha,delta | ")
+	rejected := func(name string, want ...string) {
+		t.Helper()
+		var got []string
+		for _, u := range s.st.RejectedChannels {
+			got = append(got, handleOf(u))
+		}
+		if !slices.Equal(got, want) {
+			t.Errorf("%s: rejected %v, want %v", name, got, want)
+		}
+	}
+	rejected("after reject and remove", "@gamma", "@beta")
+	step("suggest rejected", "POST", "api/channels/suggest", `{"url": "@Gamma"}`, "", http.StatusConflict, "alpha,delta | ")
+	if _, out := call("POST", "api/channels/suggest", `{"url": "youtube.com/@beta/streams"}`, ""); !strings.Contains(fmt.Sprint(out["error"]), "was rejected") {
+		t.Errorf("suggesting a removed channel: %v, want \"was rejected\"", out)
+	}
+	step("add rejected", "POST", "api/channels/add", `{"url": "@GAMMA"}`, "k", http.StatusOK, "alpha,delta,GAMMA | ")
+	rejected("after adding gamma", "@beta")
+	step("remove gamma", "POST", "api/channels/remove", `{"url": "@gamma"}`, "k", http.StatusOK, "alpha,delta | ")
+	step("reject unknown", "POST", "api/channels/reject", `{"url": "@zeta"}`, "k", http.StatusNotFound, "alpha,delta | ")
+	rejected("after removing gamma", "@beta", "@GAMMA")
 
 	b, _ := os.ReadFile(ytLog)
 	if !strings.Contains(string(b), "--proxy socks5://proxy --flat-playlist --playlist-end 1 -J https://www.youtube.com/@alpha/videos\n") {
@@ -1224,5 +1244,155 @@ func TestPickUsesStateChannels(t *testing.T) {
 	s.st.Channels = nil
 	if got := groups(); got != nil || len(s.ytLists) != 0 {
 		t.Errorf("without channels: picks from %v, lists %v", got, s.ytLists)
+	}
+}
+
+func TestChannelsDue(t *testing.T) {
+	const day = int64(24 * time.Hour / time.Millisecond)
+	now := 100 * day
+	for _, tc := range []struct {
+		name             string
+		suggested, tried int64
+		want             bool
+	}{
+		{"never", 0, 0, true},
+		{"6 days ago", now - 6*day, now - 6*day, false},
+		{"7 days ago", now - 7*day, now - 7*day, true},
+		{"8 days ago, failed an hour ago", now - 8*day, now - day/24, false},
+		{"never, failed an hour ago", 0, now - day/24, false},
+		{"8 days ago, failed a day ago", now - 8*day, now - day, true},
+	} {
+		st := state{ChannelsSuggestedAt: tc.suggested, ChannelsSuggestTriedAt: tc.tried}
+		if got := st.channelsDue(now); got != tc.want {
+			t.Errorf("%s: due %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestRejectedCap(t *testing.T) {
+	var st state
+	for i := range maxRejected + 5 {
+		st.reject(fmt.Sprintf("https://www.youtube.com/@ch%03d/videos", i))
+	}
+	st.reject("https://www.youtube.com/@CH010/videos")
+	if len(st.RejectedChannels) != maxRejected || handleOf(st.RejectedChannels[0]) != "@ch005" || handleOf(st.RejectedChannels[maxRejected-1]) != "@CH010" {
+		t.Errorf("%d rejected from %s to %s, want %d from @ch005 to @CH010", len(st.RejectedChannels),
+			st.RejectedChannels[0], st.RejectedChannels[len(st.RejectedChannels)-1], maxRejected)
+	}
+	if st.rejected("https://www.youtube.com/@ch004/videos") || !st.rejected("https://www.youtube.com/@Ch204/videos") || slices.Contains(st.RejectedChannels, "https://www.youtube.com/@ch010/videos") {
+		t.Errorf("forgot the wrong ones: %v", st.RejectedChannels)
+	}
+}
+
+func TestSuggestChannels(t *testing.T) {
+	bin, ytLog := fakeYtDlp(t)
+	var prompts []string
+	answer := ""
+	llm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Messages []struct{ Content string }
+		}
+		json.NewDecoder(r.Body).Decode(&req)
+		prompts = append(prompts, req.Messages[0].Content+"\n"+req.Messages[1].Content)
+		if answer == "" {
+			http.Error(w, "overloaded", http.StatusServiceUnavailable)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]string{"content": answer}}}})
+	}))
+	defer llm.Close()
+	ch := func(h string) channel {
+		return channel{URL: "https://www.youtube.com/@" + h + "/videos", Title: h + " Channel", At: 1}
+	}
+	s := &server{statePath: filepath.Join(t.TempDir(), "state.json"),
+		cfg: config{YtDlp: bin, LLMURL: llm.URL, ChannelSuggestionsPerWeek: 3},
+		st: state{Channels: []channel{ch("alpha"), ch("beta")}, ChannelSuggestions: []channel{ch("pend")},
+			RejectedChannels: []string{"https://www.youtube.com/@nope/videos"}}}
+	suggested := func() string {
+		var out []string
+		for _, c := range s.st.ChannelSuggestions {
+			out = append(out, handleOf(c.URL)+":"+c.By)
+		}
+		return strings.Join(out, ",")
+	}
+	ytCalls := func() string {
+		b, _ := os.ReadFile(ytLog)
+		return string(b)
+	}
+
+	answer = "```json\n" + `{"channels": ["@gone", "not a handle!", "@Alpha", "@pend", "@NOPE", "@new1", "@NEW1",
+		"https://www.youtube.com/@new2", "@new3", "@new4"]}` + "\n```"
+	before := nowMs()
+	s.suggestChannels(t.Context())
+	if len(prompts) != 1 {
+		t.Fatalf("%d llm calls, want 1", len(prompts))
+	}
+	for _, want := range []string{"Suggest 6 more", "alpha Channel | @alpha\nbeta Channel | @beta\n", "Already suggested:\npend Channel | @pend\n", "Rejected before:\n@nope\n", `{"channels": ["@handle", ...]}`} {
+		if !strings.Contains(prompts[0], want) {
+			t.Errorf("prompt lacks %q:\n%s", want, prompts[0])
+		}
+	}
+	if got := suggested(); got != "@pend:,@new1:llm,@new2:llm,@new3:llm" {
+		t.Errorf("suggestions %s, want pend and new1-3 by llm", got)
+	}
+	if c := s.st.ChannelSuggestions[1]; c.Title != "new1 Channel" || c.At < before {
+		t.Errorf("llm suggestion %+v, want yt-dlp's title and a time", c)
+	}
+	if calls := ytCalls(); !strings.Contains(calls, "@gone/") || strings.Contains(calls, "@new4/") || strings.Contains(calls, "@nope/") || strings.Contains(calls, "@alpha/") {
+		t.Errorf("yt-dlp calls:\n%s", calls)
+	}
+	if s.st.ChannelsSuggestedAt < before {
+		t.Errorf("run not marked: %d", s.st.ChannelsSuggestedAt)
+	}
+	if saved, err := loadState(s.statePath); err != nil || !slices.Equal(saved.ChannelSuggestions, s.st.ChannelSuggestions) || saved.ChannelsSuggestedAt != s.st.ChannelsSuggestedAt {
+		t.Errorf("saved %+v, %v", saved, err)
+	}
+
+	// within the week nothing happens
+	s.suggestChannels(t.Context())
+	if len(prompts) != 1 {
+		t.Errorf("asked again within the week")
+	}
+
+	// a week later the LLM fails: not marked as run, no retry the same day
+	week := (7 * 24 * time.Hour).Milliseconds()
+	s.st.ChannelsSuggestedAt -= week
+	s.st.ChannelsSuggestTriedAt -= week
+	lastRun := s.st.ChannelsSuggestedAt
+	answer = ""
+	s.suggestChannels(t.Context())
+	s.suggestChannels(t.Context())
+	if len(prompts) != 2 || s.st.ChannelsSuggestedAt != lastRun {
+		t.Errorf("llm failure: %d llm calls, suggested at %d; want 2 and %d", len(prompts), s.st.ChannelsSuggestedAt, lastRun)
+	}
+	// an answer without JSON counts as a failure too, a day later
+	s.st.ChannelsSuggestTriedAt -= (24 * time.Hour).Milliseconds()
+	answer = "I cannot browse YouTube."
+	s.suggestChannels(t.Context())
+	if len(prompts) != 3 || s.st.ChannelsSuggestedAt != lastRun {
+		t.Errorf("answer without JSON: %d llm calls, suggested at %d; want 3 and %d", len(prompts), s.st.ChannelsSuggestedAt, lastRun)
+	}
+
+	// the next day nothing valid comes back: marked as run anyway
+	s.st.ChannelsSuggestTriedAt -= (24 * time.Hour).Milliseconds()
+	answer = `{"channels": ["@gone", "@new1", "@beta"]}`
+	s.suggestChannels(t.Context())
+	if len(prompts) != 4 || s.st.ChannelsSuggestedAt == lastRun || suggested() != "@pend:,@new1:llm,@new2:llm,@new3:llm" {
+		t.Errorf("nothing valid: %d llm calls, suggested at %d, suggestions %s", len(prompts), s.st.ChannelsSuggestedAt, suggested())
+	}
+
+	// the suggestion cap holds and stops the run
+	for i := len(s.st.ChannelSuggestions); i < maxSuggestions-1; i++ {
+		s.st.ChannelSuggestions = append(s.st.ChannelSuggestions, ch(fmt.Sprintf("fill%02d", i)))
+	}
+	s.st.ChannelsSuggestedAt -= week
+	s.st.ChannelsSuggestTriedAt -= week
+	answer = `{"channels": ["@cap1", "@cap2", "@cap3"]}`
+	s.suggestChannels(t.Context())
+	if n := len(s.st.ChannelSuggestions); n != maxSuggestions || handleOf(s.st.ChannelSuggestions[n-1].URL) != "@cap1" {
+		t.Errorf("%d suggestions ending in %s, want %d ending in @cap1", n, s.st.ChannelSuggestions[n-1].URL, maxSuggestions)
+	}
+	if strings.Contains(ytCalls(), "@cap2/") {
+		t.Errorf("checked @cap2 with the suggestions full")
 	}
 }

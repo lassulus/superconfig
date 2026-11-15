@@ -50,6 +50,13 @@ type state struct {
 	// admin
 	Channels           []channel `json:"channels,omitempty"`
 	ChannelSuggestions []channel `json:"channel_suggestions,omitempty"`
+	// unix ms of the last weekly LLM channel suggestion run, and of its last
+	// try, which failed if it is later
+	ChannelsSuggestedAt    int64 `json:"channels_suggested_at,omitempty"`
+	ChannelsSuggestTriedAt int64 `json:"channels_suggest_tried_at,omitempty"`
+	// URLs of rejected suggestions and removed channels, oldest first; they
+	// cannot be suggested again
+	RejectedChannels []string `json:"rejected_channels,omitempty"`
 }
 
 // upcoming returns the entry playing at t (unix ms), if any, and the ones
