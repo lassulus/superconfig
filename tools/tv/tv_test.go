@@ -7,9 +7,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -863,6 +865,52 @@ func TestJellyfinExtrasSkipsFailedSubtitles(t *testing.T) {
 	}
 	if got := itemLink(candidate{Kind: "episode"}, it, series); got != "https://www.themoviedb.org/tv/42/season/1/episode/3" {
 		t.Errorf("link %q", got)
+	}
+}
+
+// A re-encoded item gets a keyframe at least every 2 s whatever the source
+// had, so players can seek in it quickly.
+func TestPrepareKeyframes(t *testing.T) {
+	ffmpeg, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		t.Skip("no ffmpeg on PATH")
+	}
+	ffprobe := strings.TrimSuffix(ffmpeg, "ffmpeg") + "ffprobe"
+	dir := t.TempDir()
+	// MPEG-4 Part 2 has to be re-encoded; one keyframe every 10 s
+	src := filepath.Join(dir, "src.mkv")
+	if _, err := run(t.Context(), ffmpeg, "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=s=320x240:r=25",
+		"-t", "21", "-c:v", "mpeg4", "-g", "250", src); err != nil {
+		t.Fatal(err)
+	}
+	jellyfin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/Videos/src/stream" {
+			http.ServeFile(w, r, src)
+			return
+		}
+		http.Error(w, "no", http.StatusInternalServerError)
+	}))
+	defer jellyfin.Close()
+	s := &server{cfg: config{CacheDir: dir, JellyfinURL: jellyfin.URL, FFmpeg: ffmpeg}}
+	if _, err := s.prepare(t.Context(), candidate{ID: "jf:src", Kind: "movie", ref: "src"}, "jf-src-1.mp4"); err != nil {
+		t.Fatal(err)
+	}
+	out, err := run(t.Context(), ffprobe, "-v", "error", "-select_streams", "v", "-skip_frame", "nokey",
+		"-show_entries", "frame=pts_time", "-of", "csv=p=0", filepath.Join(dir, "jf-src-1.mp4"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys := strings.Fields(string(out))
+	last := 0.0
+	for _, k := range append(keys, "21") {
+		at, err := strconv.ParseFloat(strings.TrimSuffix(k, ","), 64)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if at-last > 2.05 {
+			t.Errorf("keyframes at %v: %.2f s without one after %.2f", keys, at-last, last)
+		}
+		last = at
 	}
 }
 

@@ -129,7 +129,10 @@ func (s *server) prepare(ctx context.Context, c candidate, name string) (entry, 
 	if err != nil {
 		return e, err
 	}
-	videoArgs := []string{"-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p"}
+	// a keyframe every 2 s (x264 defaults to 250 frames, ~8 s): players seek
+	// to the keyframe before the target and decode on from it, which is slow
+	// on phones
+	videoArgs := []string{"-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p", "-force_key_frames", "expr:gte(t,n_forced*2)"}
 	audioArgs := []string{"-c:a", "aac", "-b:a", "192k", "-ac", "2"}
 	hasVideo := false
 	audio := p.audioStream(s.cfg.AudioLanguages)
