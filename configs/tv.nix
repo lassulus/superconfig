@@ -61,6 +61,10 @@ let
       jellyseerr_url = "http://${self.inputs.kartei.hosts.yellow.nets.retiolum.ip4.addr}:5055";
       jellyseerr_key_file = "/run/credentials/tv.service/jellyseerr";
       requests_per_day = 2;
+      audio_languages = [
+        "en"
+        "de"
+      ];
       subtitle_languages = [
         "en"
         "de"

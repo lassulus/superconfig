@@ -43,21 +43,39 @@ func run(ctx context.Context, name string, args ...string) ([]byte, error) {
 
 type probe struct {
 	Streams []struct {
+		Index     int    `json:"index"`
 		CodecType string `json:"codec_type"`
 		CodecName string `json:"codec_name"`
 		PixFmt    string `json:"pix_fmt"`
 		Height    int    `json:"height"`
+		Tags      struct {
+			Language string `json:"language"`
+		} `json:"tags"`
 	} `json:"streams"`
 	Format struct {
 		Duration string `json:"duration"`
 	} `json:"format"`
 }
 
+// audioStream returns the ffmpeg stream spec ("0:<index>") of the first audio
+// stream in the first of langs (ISO 639-1) that has one, else of the first
+// audio stream, or "" without audio.
+func (p probe) audioStream(langs []string) string {
+	for _, l := range append(langs[:len(langs):len(langs)], "") {
+		for _, st := range p.Streams {
+			if code, _ := language(st.Tags.Language); st.CodecType == "audio" && (l == "" || code == l) {
+				return fmt.Sprintf("0:%d", st.Index)
+			}
+		}
+	}
+	return ""
+}
+
 func (s *server) probe(ctx context.Context, headers []string, input string) (probe, error) {
 	// ffprobe ships next to ffmpeg
 	ffprobe := strings.TrimSuffix(s.cfg.FFmpeg, "ffmpeg") + "ffprobe"
 	args := append(append([]string{"-v", "error"}, headers...),
-		"-show_entries", "stream=codec_type,codec_name,pix_fmt,height:format=duration", "-of", "json", input)
+		"-show_entries", "stream=index,codec_type,codec_name,pix_fmt,height:stream_tags=language:format=duration", "-of", "json", input)
 	var p probe
 	out, err := run(ctx, ffprobe, args...)
 	if err != nil {
@@ -113,7 +131,8 @@ func (s *server) prepare(ctx context.Context, c candidate, name string) (entry, 
 	}
 	videoArgs := []string{"-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p"}
 	audioArgs := []string{"-c:a", "aac", "-b:a", "192k", "-ac", "2"}
-	hasVideo, hasAudio := false, false
+	hasVideo := false
+	audio := p.audioStream(s.cfg.AudioLanguages)
 	for _, st := range p.Streams {
 		switch {
 		case st.CodecType == "video" && !hasVideo:
@@ -121,8 +140,7 @@ func (s *server) prepare(ctx context.Context, c candidate, name string) (entry, 
 			if st.CodecName == "h264" && (st.PixFmt == "yuv420p" || st.PixFmt == "yuvj420p") && st.Height <= 1080 && len(cuts) == 0 {
 				videoArgs = []string{"-c:v", "copy"}
 			}
-		case st.CodecType == "audio" && !hasAudio:
-			hasAudio = true
+		case st.CodecType == "audio" && fmt.Sprintf("0:%d", st.Index) == audio:
 			if st.CodecName == "aac" && len(cuts) == 0 {
 				audioArgs = []string{"-c:a", "copy"}
 			}
@@ -135,11 +153,11 @@ func (s *server) prepare(ctx context.Context, c candidate, name string) (entry, 
 	args := append([]string{"-hide_banner", "-loglevel", "error", "-y"}, headers...)
 	args = append(args, "-i", input)
 	inSecs, _ := strconv.ParseFloat(p.Format.Duration, 64)
-	graph := cutGraph(cuts, inSecs, hasAudio)
+	graph := cutGraph(cuts, inSecs, audio)
 	switch {
 	case graph != "":
 		args = append(args, "-filter_complex", graph, "-map", "[v]")
-		if hasAudio {
+		if audio != "" {
 			args = append(args, "-map", "[a]")
 		}
 	case len(cuts) > 0:
@@ -147,7 +165,10 @@ func (s *server) prepare(ctx context.Context, c candidate, name string) (entry, 
 		cuts = nil
 		fallthrough
 	default:
-		args = append(args, "-map", "0:v:0", "-map", "0:a:0?")
+		args = append(args, "-map", "0:v:0")
+		if audio != "" {
+			args = append(args, "-map", audio)
+		}
 		if videoArgs[1] != "copy" {
 			args = append(args, "-vf", scaleFilter)
 		}
@@ -376,9 +397,9 @@ func (i youtubeInfo) cuts() [][2]float64 {
 }
 
 // cutGraph is an ffmpeg filter graph that joins what cuts leave of the
-// duration seconds long input into a scaled [v] and, with audio, [a]; it
-// is empty if no cuts or nothing is left.
-func cutGraph(cuts [][2]float64, duration float64, audio bool) string {
+// duration seconds long input into a scaled [v] and, with an audio stream
+// like "0:1", [a]; it is empty if no cuts or nothing is left.
+func cutGraph(cuts [][2]float64, duration float64, audio string) string {
 	var parts [][2]float64
 	start := 0.0
 	for _, c := range cuts {
@@ -402,13 +423,13 @@ func cutGraph(cuts [][2]float64, duration float64, audio bool) string {
 		}
 		fmt.Fprintf(&g, "[0:v:0]trim=%s,setpts=PTS-STARTPTS[v%d];", bounds, i)
 		fmt.Fprintf(&pads, "[v%d]", i)
-		if audio {
-			fmt.Fprintf(&g, "[0:a:0]atrim=%s,asetpts=PTS-STARTPTS[a%d];", bounds, i)
+		if audio != "" {
+			fmt.Fprintf(&g, "[%s]atrim=%s,asetpts=PTS-STARTPTS[a%d];", audio, bounds, i)
 			fmt.Fprintf(&pads, "[a%d]", i)
 		}
 	}
 	a, out := 0, "[cv]"
-	if audio {
+	if audio != "" {
 		a, out = 1, "[cv][a]"
 	}
 	fmt.Fprintf(&g, "%sconcat=n=%d:v=1:a=%d%s;[cv]%s[v]", pads.String(), len(parts), a, out, scaleFilter)

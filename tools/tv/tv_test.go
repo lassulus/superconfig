@@ -810,23 +810,23 @@ func TestYouTubeArgsSponsorBlock(t *testing.T) {
 func TestCutGraph(t *testing.T) {
 	scale := "[cv]" + scaleFilter + "[v]"
 	// a cut at 0, one in the middle and one past the end
-	got := cutGraph([][2]float64{{0, 12}, {149.5, 229}, {761, 840}}, 839.84, true)
+	got := cutGraph([][2]float64{{0, 12}, {149.5, 229}, {761, 840}}, 839.84, "0:a:0")
 	want := "[0:v:0]trim=start=12.000:end=149.500,setpts=PTS-STARTPTS[v0];[0:a:0]atrim=start=12.000:end=149.500,asetpts=PTS-STARTPTS[a0];" +
 		"[0:v:0]trim=start=229.000:end=761.000,setpts=PTS-STARTPTS[v1];[0:a:0]atrim=start=229.000:end=761.000,asetpts=PTS-STARTPTS[a1];" +
 		"[v0][a0][v1][a1]concat=n=2:v=1:a=1[cv][a];" + scale
 	if got != want {
 		t.Errorf("got\n%s\nwant\n%s", got, want)
 	}
-	got = cutGraph([][2]float64{{5, 6}}, 10, false)
+	got = cutGraph([][2]float64{{5, 6}}, 10, "")
 	want = "[0:v:0]trim=start=0.000:end=5.000,setpts=PTS-STARTPTS[v0];[0:v:0]trim=start=6.000,setpts=PTS-STARTPTS[v1];" +
 		"[v0][v1]concat=n=2:v=1:a=0[cv];" + scale
 	if got != want {
 		t.Errorf("no audio, open end: got\n%s\nwant\n%s", got, want)
 	}
-	if got := cutGraph(nil, 10, true); got != "" {
+	if got := cutGraph(nil, 10, "0:a:0"); got != "" {
 		t.Errorf("no cuts: got %s", got)
 	}
-	if got := cutGraph([][2]float64{{0, 11}}, 10, true); got != "" {
+	if got := cutGraph([][2]float64{{0, 11}}, 10, "0:a:0"); got != "" {
 		t.Errorf("all cut: got %s", got)
 	}
 }
@@ -1394,5 +1394,27 @@ func TestSuggestChannels(t *testing.T) {
 	}
 	if strings.Contains(ytCalls(), "@cap2/") {
 		t.Errorf("checked @cap2 with the suggestions full")
+	}
+}
+
+func TestAudioStream(t *testing.T) {
+	var p probe
+	if err := json.Unmarshal([]byte(`{"streams": [
+		{"index": 0, "codec_type": "video"},
+		{"index": 3, "codec_type": "audio", "tags": {"language": "ita"}},
+		{"index": 5, "codec_type": "audio", "tags": {"language": "eng"}},
+		{"index": 6, "codec_type": "subtitle", "tags": {"language": "ger"}}]}`), &p); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		langs []string
+		want  string
+	}{{[]string{"en", "de"}, "0:5"}, {[]string{"de", "en"}, "0:5"}, {[]string{"de"}, "0:3"}, {nil, "0:3"}} {
+		if got := p.audioStream(c.langs); got != c.want {
+			t.Errorf("audioStream(%v) = %q, want %q", c.langs, got, c.want)
+		}
+	}
+	if got := (probe{}).audioStream([]string{"en"}); got != "" {
+		t.Errorf("no audio: %q", got)
 	}
 }
