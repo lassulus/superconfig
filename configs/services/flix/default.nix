@@ -447,7 +447,9 @@
   # audiobooks: Bookshelf (maintained Readarr fork), web ui on yellow.r:8787
   services.readarr = {
     enable = true;
-    package = self.packages.${pkgs.stdenv.hostPlatform.system}.bookshelf;
+    package = self.packages.${pkgs.stdenv.hostPlatform.system}.bookshelf.override {
+      hardcover = false;
+    };
     dataDir = "/var/lib/bookshelf";
     settings.server.port = config.lass.servicePorts.bookshelf;
     openFirewall = true;
