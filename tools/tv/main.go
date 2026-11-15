@@ -45,6 +45,10 @@ type config struct {
 	SubtitleLanguages []string `json:"subtitle_languages"`
 	// SponsorBlock categories yt-dlp cuts out of YouTube videos
 	SponsorblockCategories []string `json:"sponsorblock_categories"`
+	// newest videos per channel the picker may choose from
+	YouTubeVideosPerChannel int `json:"youtube_videos_per_channel"`
+	// fraction of the picked airtime that is YouTube, 0 leaves it to the LLM
+	YouTubeShare float64 `json:"youtube_share"`
 }
 
 type server struct {
@@ -112,6 +116,12 @@ func newServer(configPath string) (*server, error) {
 	}
 	if cfg.Listen == "" || cfg.StateDir == "" || cfg.CacheDir == "" {
 		return nil, errors.New("config: listen, state_dir and cache_dir are required")
+	}
+	if cfg.YouTubeShare < 0 || cfg.YouTubeShare > 1 {
+		return nil, errors.New("config: youtube_share must be between 0 and 1")
+	}
+	if cfg.YouTubeVideosPerChannel <= 0 {
+		cfg.YouTubeVideosPerChannel = 15
 	}
 	s := &server{cfg: cfg, statePath: filepath.Join(cfg.StateDir, "state.json"), ytLists: map[string]ytList{}, wake: make(chan struct{}, 1)}
 	if s.lookAhead, err = time.ParseDuration(cfg.LookAhead); err != nil {

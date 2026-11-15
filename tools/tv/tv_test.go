@@ -897,3 +897,159 @@ func TestDedupeVTT(t *testing.T) {
 		t.Errorf("dedupeVTT:\n%s\nwant:\n%s", got, want)
 	}
 }
+
+// airtime returns the YouTube and Jellyfin seconds of a batch.
+func airtime(picks []candidate) (yt, jf int64) {
+	for _, c := range picks {
+		if c.Kind == "youtube" {
+			yt += c.Duration
+		} else {
+			jf += c.Duration
+		}
+	}
+	return yt, jf
+}
+
+func ids(picks []candidate) []string {
+	var out []string
+	for _, p := range picks {
+		out = append(out, p.ID)
+	}
+	return out
+}
+
+// videos returns n ten minute YouTube candidates spread over three channels.
+func videos(n int) []candidate {
+	var out []candidate
+	for i := range n {
+		out = append(out, candidate{ID: fmt.Sprintf("yt:%d", i), Kind: "youtube", Title: "V", Group: fmt.Sprintf("ch%d", i%3), Duration: 600})
+	}
+	return out
+}
+
+func checkShare(t *testing.T, name string, picks []candidate, share float64, look time.Duration) {
+	t.Helper()
+	yt, jf := airtime(picks)
+	if float64(yt) < share*float64(yt+jf) {
+		t.Errorf("%s: YouTube %ds of %ds, want at least %.0f%%: %v", name, yt, yt+jf, share*100, ids(picks))
+	}
+	if time.Duration(yt+jf)*time.Second < look {
+		t.Errorf("%s: covers %ds of %s: %v", name, yt+jf, look, ids(picks))
+	}
+	seen := map[string]bool{}
+	for _, p := range picks {
+		if seen[p.ID] {
+			t.Errorf("%s: %s twice", name, p.ID)
+		}
+		seen[p.ID] = true
+	}
+}
+
+func TestBalance(t *testing.T) {
+	look := 3 * time.Hour
+	movie := candidate{ID: "jf:m", Kind: "movie", Title: "M", Duration: 7200}
+	movie2 := candidate{ID: "jf:m2", Kind: "movie", Title: "M2", Duration: 6000}
+	ep := candidate{ID: "jf:e", Kind: "episode", Title: "E", Group: "S", Duration: 2700}
+	ep2 := candidate{ID: "jf:e2", Kind: "episode", Title: "E2", Group: "T", Duration: 1500}
+	yt := videos(60)
+
+	// share 0 keeps the answer as it is, even all Jellyfin and too long
+	picks := []candidate{movie, movie2, ep}
+	if got := balance(picks, yt, 0, look); !reflect.DeepEqual(got, picks) {
+		t.Errorf("share 0: %v", ids(got))
+	}
+
+	// a 2h movie cannot be half of 3h: it stays as the only Jellyfin item and
+	// the batch grows until YouTube matches it
+	got := balance([]candidate{movie, ep, yt[0], movie2}, yt, 0.5, look)
+	checkShare(t, "long movie", got, 0.5, look)
+	if got[0].ID != "jf:m" || got[1].ID != "yt:0" {
+		t.Errorf("long movie: %v, want the answer's order first", ids(got))
+	}
+	if _, jf := airtime(got); jf != movie.Duration {
+		t.Errorf("long movie: Jellyfin %ds, want only the movie", jf)
+	}
+	if y, _ := airtime(got); y > movie.Duration+600 {
+		t.Errorf("long movie: YouTube %ds, more than needed", y)
+	}
+
+	// Jellyfin items that fit the rest of the look-ahead all stay
+	got = balance([]candidate{ep, ep2, yt[1]}, yt, 0.5, look)
+	checkShare(t, "short episodes", got, 0.5, look)
+	if got[0].ID != "jf:e" || got[1].ID != "jf:e2" || got[2].ID != "yt:1" {
+		t.Errorf("short episodes: %v", ids(got))
+	}
+
+	// only YouTube: topped up to the look-ahead, preferring another channel
+	got = balance([]candidate{yt[0]}, yt, 0.5, look)
+	checkShare(t, "only YouTube", got, 0.5, look)
+	for i := 1; i < len(got); i++ {
+		if got[i].Group == got[i-1].Group {
+			t.Errorf("only YouTube: %s and %s of the same channel back to back", got[i-1].ID, got[i].ID)
+		}
+	}
+
+	// no YouTube at all: the share cannot hold, the answer stays
+	if got := balance(picks, []candidate{movie, ep}, 0.5, look); !reflect.DeepEqual(got, picks) {
+		t.Errorf("only Jellyfin: %v", ids(got))
+	}
+
+	// share 1 drops every Jellyfin item
+	got = balance([]candidate{movie, yt[2], ep}, yt, 1, look)
+	checkShare(t, "share 1", got, 1, look)
+
+	// YouTube runs out: everything there is, the share as close as it gets
+	got = balance([]candidate{movie}, yt[:3], 0.5, look)
+	if !reflect.DeepEqual(ids(got), []string{"jf:m", "yt:0", "yt:1", "yt:2"}) {
+		t.Errorf("few videos: %v", ids(got))
+	}
+}
+
+func TestPicksKeepYouTubeShare(t *testing.T) {
+	var cands []candidate
+	for i := range 40 {
+		cands = append(cands, candidate{ID: fmt.Sprintf("jf:%d", i), Kind: "movie", Title: "M", Duration: int64(5400 + 60*i)})
+	}
+	cands = append(cands, videos(100)...)
+	// the LLM answers with mostly movies
+	llm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"choices":[{"message":{"content":"{\"ids\": [\"jf:1\", \"yt:5\", \"jf:2\", \"jf:3\"]}"}}]}`))
+	}))
+	defer llm.Close()
+	s := &server{cfg: config{LLMURL: llm.URL, YouTubeShare: 0.5}, lookAhead: 3 * time.Hour}
+	got := s.choose(t.Context(), cands, nil)
+	checkShare(t, "llm", got, 0.5, s.lookAhead)
+	if got[0].ID != "jf:1" || got[1].ID != "yt:5" {
+		t.Errorf("llm: %v, want the answer's order first", ids(got))
+	}
+	if _, jf := airtime(got); jf != cands[1].Duration {
+		t.Errorf("llm: Jellyfin %ds, want only the first movie", jf)
+	}
+
+	for i := range 50 {
+		checkShare(t, fmt.Sprintf("random %d", i), s.randomPicks(cands), 0.5, s.lookAhead)
+	}
+}
+
+// TestPromptSize logs the size of a prompt for 35 channels of 30 videos and
+// a Jellyfin sample of 120 movies and 40 episodes.
+func TestPromptSize(t *testing.T) {
+	var cands []candidate
+	for i := range 120 {
+		cands = append(cands, candidate{ID: fmt.Sprintf("jf:%032x", i), Kind: "movie", Title: "The Quite Long Movie Title Number " + fmt.Sprint(i), Duration: 6600})
+	}
+	for i := range 40 {
+		cands = append(cands, candidate{ID: fmt.Sprintf("jf:%032x", 1000+i), Kind: "episode", Title: fmt.Sprintf("Some Series S02E%02d An Episode Title", i), Group: "Some Series", Duration: 2700})
+	}
+	for i := range 35 * 30 {
+		cands = append(cands, candidate{ID: fmt.Sprintf("yt:%011d", i), Kind: "youtube", Title: "Why This Thing Is Actually Way More Interesting Than You Think", Group: fmt.Sprintf("Channel Name %d", i%35), Duration: 1500})
+	}
+	history := make([]string, 30)
+	for i := range history {
+		history[i] = "Something That Played Recently"
+	}
+	s := &server{cfg: config{YouTubeShare: 0.5}, lookAhead: 3 * time.Hour}
+	system, prompt := s.llmPrompt(cands, history)
+	n := len(system) + len(prompt)
+	t.Logf("%d candidates: prompt %d bytes, ~%d tokens", len(cands), n, n/4)
+}
