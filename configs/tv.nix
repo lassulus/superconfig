@@ -26,6 +26,8 @@ let
       youtube_videos_per_channel = 30;
       # fraction of the picked airtime that goes to YouTube
       youtube_share = 0.5;
+      # channels like the current ones the LLM adds to the suggestions every week
+      channel_suggestions_per_week = 3;
       yt_dlp = "${
         pkgs.python3.withPackages (ps: [
           ps.yt-dlp
