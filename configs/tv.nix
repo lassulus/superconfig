@@ -41,9 +41,13 @@ let
         # media downloads without a PO token get 403; the script fetches it through --proxy too
         "--extractor-args"
         "youtubepot-bgutilscript:server_home=${pot}/share/bgutil-ytdlp-pot-provider"
-        # the default clients never ask for a PO token; mweb does and uses it for the media URLs
+        # the default clients never ask for a PO token; mweb does and uses it for the media URLs.
+        # formats=dashy splits each format into 10 MiB range fragments so -N fetches 4 at once
+        # (YouTube throttles each connection; one extractor-args per extractor, a second replaces the first)
         "--extractor-args"
-        "youtube:player_client=default,mweb"
+        "youtube:player_client=default,mweb;formats=dashy"
+        "--concurrent-fragments"
+        "4"
         # cookies of a Google account; yt-dlp writes rotated cookies back, so a writable copy
         "--cookies"
         "/var/lib/tv/youtube-cookies.txt"
