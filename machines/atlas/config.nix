@@ -57,45 +57,10 @@
     output HEADLESS-1 mode 1920x1080
   '';
 
-  # Power off after 10 minutes without keyboard/mouse input, load or nix
-  # builds; ssh sessions don't keep it on. swayidle marks input idle after
-  # a minute in %t/idle and neither locks (home gaming/build box) nor suspends
-  # (that would beat the poweroff).
-  systemd.user.services.swayidle.serviceConfig = {
-    ExecStart = lib.mkForce ''
-      ${pkgs.swayidle}/bin/swayidle -w \
-        timeout 60 '${pkgs.coreutils}/bin/touch %t/idle' resume '${pkgs.coreutils}/bin/rm -f %t/idle'
-    '';
-    # no stale mark when swayidle dies while idle
-    ExecStopPost = "${pkgs.coreutils}/bin/rm -f %t/idle";
-  };
+  # Always on (home gaming/build box, LAN via the fiber card): no idle lock,
+  # suspend or poweroff
+  systemd.user.services.swayidle.enable = false;
   # no screen lock either: not before sleep, on loginctl lock-session or via
   # the sway lock keybindings
   lass.noctalia.settings.lockscreen.enabled = false;
-  systemd.services.idle-shutdown = {
-    startAt = "minutely";
-    path = [
-      pkgs.gawk
-      pkgs.procps
-    ];
-    serviceConfig = {
-      RuntimeDirectory = "idle-shutdown";
-      RuntimeDirectoryPreserve = true;
-    };
-    script = ''
-      count=$(cat /run/idle-shutdown/count 2>/dev/null || echo 0)
-      if ls /run/user/*/idle >/dev/null 2>&1 &&
-        awk '{ exit !($2 < 0.5) }' /proc/loadavg &&
-        ! pgrep -G nixbld >/dev/null; then
-        count=$((count + 1))
-      else
-        count=0
-      fi
-      echo "$count" >/run/idle-shutdown/count
-      if [ "$count" -ge 10 ]; then
-        echo "no input, load or nix builds for $count minutes, powering off"
-        systemctl poweroff
-      fi
-    '';
-  };
 }
