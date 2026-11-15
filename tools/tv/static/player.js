@@ -43,6 +43,7 @@ const entryAfter = (t) => entries.find((e) => e.start > t);
 // err: smoothed sync error in ms (positive: ahead of the server),
 // frame: error of the frame on screen, seekLead/startLead: how far ahead to
 // seek and to start the next item, learned from the error after each one
+// (learn is null if this one says nothing about the next)
 const sync = {
   err: null,
   raw: null,
@@ -56,6 +57,9 @@ const sync = {
   nudge: null,
   rateWorks: true,
   correctiveSeekAt: 0,
+  // seeks for errors over 500 ms in a row and when the last seek settled
+  bigSeeks: 0,
+  landedAt: 0,
   needsStart: false,
 };
 let active = $("a");
@@ -121,33 +125,58 @@ function load(video, e) {
   showSubtitles(video);
 }
 
+// whether t and the second after it are loaded
+function buffered(video, t) {
+  for (let i = 0; i < video.buffered.length; i++)
+    if (video.buffered.start(i) <= t && t + 1 <= video.buffered.end(i))
+      return true;
+  return false;
+}
+
 function seek(video) {
-  video.playbackRate = 1;
-  video.currentTime = Math.max(
+  const t = Math.max(
     0,
     (serverNow() - video.entry.start) / 1000 + sync.seekLead,
   );
+  // a seek past what is loaded also waits for the network, which says nothing about the next one
+  sync.learn = buffered(video, t) ? "seekLead" : null;
+  video.playbackRate = 1;
+  video.currentTime = t;
   sync.err = null;
   sync.frame = null;
   sync.nudge = null;
   sync.framesSinceSeek = 0;
-  sync.learn = "seekLead";
 }
+
+// waiting for data after a seek landed or a start makes it late by however long that took
+for (const v of [active, standby])
+  v.addEventListener("waiting", () => {
+    if (v === active && !v.seeking) sync.learn = null;
+  });
 
 function control(raw, at) {
   sync.raw = raw;
   if (sync.framesSinceSeek < 10) {
     // the first frames after a seek or start still settle; the 10th shows how late it landed
     if (++sync.framesSinceSeek === 10) {
-      const max = sync.learn === "seekLead" ? 2 : 0.5;
-      sync[sync.learn] = clamp(sync[sync.learn] - raw / 1000, 0, max);
+      sync.landedAt = at;
+      if (sync.learn) {
+        const max = sync.learn === "seekLead" ? 2 : 0.5;
+        sync[sync.learn] = clamp(sync[sync.learn] - raw / 1000, 0, max);
+      }
     }
     return;
   }
   if (Math.abs(raw) > 500) {
-    seek(active);
+    // a seek can land where too little is loaded or take long to decode and land late again, so after one
+    // play on for 2, 4, 8, then 16 s before the next, until one lands and playback stays in sync for 10 s
+    if (at - sync.landedAt >= (sync.bigSeeks && 1000 * 2 ** sync.bigSeeks)) {
+      sync.bigSeeks = Math.min(sync.bigSeeks + 1, 4);
+      seek(active);
+    }
     return;
   }
+  if (at - sync.landedAt > 10000) sync.bigSeeks = 0;
   const canSeek = at - sync.correctiveSeekAt > 10000;
   // browsers clock picture and sound separately and they can drift apart; a seek realigns both
   if (canSeek && sync.frame !== null && Math.abs(sync.frame - raw) > 100) {
@@ -193,9 +222,15 @@ function control(raw, at) {
 }
 
 // currentTime follows the media (audio) clock continuously, mediaTime only in
-// whole frames, so the clock steers and the frame error is only shown
+// whole frames, so the clock steers and the frame error is only shown; while
+// playback waits for data the error only grows and says nothing
 function measure() {
-  if (active.entry && !active.paused && !active.seeking) {
+  if (
+    active.entry &&
+    !active.paused &&
+    !active.seeking &&
+    active.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA
+  ) {
     const now = performance.now();
     const target =
       performance.timeOrigin + now + clock.offset - active.entry.start;
