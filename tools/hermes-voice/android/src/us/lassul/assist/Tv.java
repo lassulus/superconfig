@@ -174,7 +174,7 @@ final class Tv {
         }
         // The screen lends its activity while it shows the page (fullscreen, dialogs).
         base = new MutableContextWrapper(context.getApplicationContext());
-        view = new WebView(base);
+        view = new Page(base);
         WebSettings settings = view.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
@@ -214,8 +214,11 @@ final class Tv {
         screen = null;
         pip = false;
         if (view != null) {
-            detach();
-            base.setBaseContext(base.getApplicationContext());
+            // Detached, a page that has been on a screen counts as hidden and its video pauses
+            // (Page); a new one that never was plays on. It loads in a few seconds, in sync.
+            Context context = base.getApplicationContext();
+            close();
+            start(context);
         }
         Live.changed();
     }
@@ -223,8 +226,9 @@ final class Tv {
     /** Ends the TV: the screen closes and the page goes. */
     static void stop(Context context) {
         TvActivity shown = screen;
+        screen = null;
+        pip = false;
         if (shown != null) {
-            hide(shown);
             shown.finishAndRemoveTask();
         }
         close();
@@ -360,27 +364,35 @@ final class Tv {
     }
 
     private static final class Chrome extends WebChromeClient {
-        // The page's fullscreen button.
+        // The page's fullscreen button: the TV screen is full screen already, and WebView's own
+        // fullscreen view would stop the video once it is hidden (Page), so the page stays.
         @Override
         public void onShowCustomView(View custom, CustomViewCallback closed) {
-            if (screen == null) {
-                closed.onCustomViewHidden();
-                return;
-            }
-            screen.showCustom(custom, closed);
-        }
-
-        @Override
-        public void onHideCustomView() {
-            if (screen != null) {
-                screen.hideCustom();
-            }
+            closed.onCustomViewHidden();
         }
 
         // Instead of a grey play button until the video starts.
         @Override
         public Bitmap getDefaultVideoPoster() {
             return Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888);
+        }
+    }
+
+    /**
+     * The page, playing with the screen off and behind other apps. Chromium pauses a video with
+     * sound once its page is hidden (WebMediaPlayerImpl::ShouldPausePlaybackWhenHidden), and a
+     * WebView's page is hidden while it is detached after having been attached, or while its
+     * window is not visible (BrowserViewRenderer::IsClientVisible). Its window counts as visible
+     * here; detaching is up to hide().
+     */
+    private static final class Page extends WebView {
+        Page(Context context) {
+            super(context);
+        }
+
+        @Override
+        protected void onWindowVisibilityChanged(int visibility) {
+            super.onWindowVisibilityChanged(View.VISIBLE);
         }
     }
 }

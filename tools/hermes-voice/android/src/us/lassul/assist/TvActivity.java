@@ -9,11 +9,9 @@ import android.graphics.Color;
 import android.graphics.drawable.Icon;
 import android.os.Bundle;
 import android.util.Rational;
-import android.view.View;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
-import android.webkit.WebChromeClient;
 import android.widget.FrameLayout;
 import android.widget.Toast;
 import android.window.OnBackInvokedCallback;
@@ -27,8 +25,6 @@ import java.util.Arrays;
  */
 public class TvActivity extends Activity {
     private FrameLayout frame;
-    private View custom;
-    private WebChromeClient.CustomViewCallback customClosed;
     private boolean stopped;
     // The picture-in-picture parameters last set.
     private String pipState;
@@ -41,11 +37,7 @@ public class TvActivity extends Activity {
     private final OnBackInvokedCallback back = new OnBackInvokedCallback() {
         @Override
         public void onBackInvoked() {
-            if (custom != null) {
-                WebChromeClient.CustomViewCallback closed = customClosed;
-                hideCustom();
-                closed.onCustomViewHidden();
-            } else if (!enterPictureInPictureMode(pipParams())) {
+            if (!enterPictureInPictureMode(pipParams())) {
                 // Picture-in-picture turned off for the app: it plays on in the background.
                 moveTaskToBack(true);
             }
@@ -126,11 +118,6 @@ public class TvActivity extends Activity {
     protected void onDestroy() {
         Live.unwatch(redraw);
         if (frame != null) {
-            if (custom != null) {
-                WebChromeClient.CustomViewCallback closed = customClosed;
-                hideCustom();
-                closed.onCustomViewHidden();
-            }
             // Swiped away or closed in picture-in-picture; not when the system reclaims it.
             if (isFinishing() && Tv.shows(this)) {
                 Tv.stop(this);
@@ -139,23 +126,6 @@ public class TvActivity extends Activity {
             }
         }
         super.onDestroy();
-    }
-
-    /** The page's fullscreen element, over the page. */
-    void showCustom(View view, WebChromeClient.CustomViewCallback closed) {
-        hideCustom();
-        custom = view;
-        customClosed = closed;
-        frame.addView(view, new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
-    }
-
-    void hideCustom() {
-        if (custom != null) {
-            frame.removeView(custom);
-            custom = null;
-            customClosed = null;
-        }
     }
 
     private void refresh() {
