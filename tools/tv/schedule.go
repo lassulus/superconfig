@@ -310,6 +310,13 @@ func (s *server) run(ctx context.Context) {
 	}
 }
 
+// covered reports whether the upcoming entries fill the look-ahead and
+// something follows the playing one, also when it alone runs past it.
+func covered(upcoming []entry, now int64, lookAhead time.Duration) bool {
+	n := len(upcoming)
+	return n > 1 && time.Duration(upcoming[n-1].Start+upcoming[n-1].Duration-now)*time.Millisecond >= lookAhead
+}
+
 // tick drops finished entries and prepares at most one new item; it reports
 // whether it added one, so the caller can go on filling right away. Pending
 // requests go first, so it waits while there are any.
@@ -320,10 +327,6 @@ func (s *server) tick(ctx context.Context) bool {
 	now := nowMs()
 	s.mu.Lock()
 	s.st.Schedule = s.st.upcoming(now)
-	end := now
-	if n := len(s.st.Schedule); n > 0 {
-		end = max(end, s.st.Schedule[n-1].Start+s.st.Schedule[n-1].Duration)
-	}
 	cutoff := now - repeatAfter.Milliseconds()
 	var history []played
 	for _, p := range s.st.History {
@@ -333,9 +336,10 @@ func (s *server) tick(ctx context.Context) bool {
 	}
 	s.st.History = history
 	busy := slices.ContainsFunc(s.requests, func(r *request) bool { return r.State != "failed" })
+	full := covered(s.st.Schedule, now, s.lookAhead)
 	s.mu.Unlock()
 
-	if s.cleanCache() >= s.cfg.CacheMaxBytes || busy || time.Duration(end-now)*time.Millisecond >= s.lookAhead {
+	if s.cleanCache() >= s.cfg.CacheMaxBytes || busy || full {
 		return false
 	}
 	c, ok := s.next(ctx)

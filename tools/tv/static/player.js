@@ -295,7 +295,9 @@ function updateInfo() {
   else $("now").removeAttribute("href");
   $("next").textContent = next
     ? `Next at ${at(next.start)}: ${next.title}`
-    : "";
+    : cur
+      ? `Ends at ${at(cur.start + cur.duration)}`
+      : "";
   $("pending").replaceChildren(
     ...pending.map((r) => {
       const div = document.createElement("div");

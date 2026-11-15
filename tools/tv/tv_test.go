@@ -1418,3 +1418,17 @@ func TestAudioStream(t *testing.T) {
 		t.Errorf("no audio: %q", got)
 	}
 }
+
+func TestCovered(t *testing.T) {
+	h := time.Hour.Milliseconds()
+	movie := entry{Start: 0, Duration: 4 * h}
+	if covered([]entry{movie}, h, 3*time.Hour) {
+		t.Error("a lone item past the look-ahead must still get a successor")
+	}
+	if !covered([]entry{movie, {Start: 4 * h, Duration: h}}, h, 3*time.Hour) {
+		t.Error("two items past the look-ahead are enough")
+	}
+	if covered([]entry{{Start: 0, Duration: h}, {Start: h, Duration: h}}, 0, 3*time.Hour) {
+		t.Error("two hours do not fill three")
+	}
+}
