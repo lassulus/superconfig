@@ -60,6 +60,8 @@ const sync = {
   // seeks for errors over 500 ms in a row and when the last seek settled
   bigSeeks: 0,
   landedAt: 0,
+  // while waiting for the seek target to load: when and how many seconds were still missing
+  behind: null,
   needsStart: false,
 };
 let active = $("a");
@@ -136,6 +138,15 @@ function loaded(video, t) {
   return false;
 }
 
+// how many seconds of [t, t + 3 s] the download still has to fetch beyond what is loaded around the playhead
+function missing(video, t) {
+  const now = video.currentTime;
+  for (let i = 0; i < video.buffered.length; i++)
+    if (video.buffered.start(i) <= now && now <= video.buffered.end(i))
+      return t + 3 - video.buffered.end(i);
+  return Infinity;
+}
+
 // where seek goes: seekLead ahead of the schedule
 const seekTarget = (video) =>
   Math.max(0, (serverNow() - video.entry.start) / 1000 + sync.seekLead);
@@ -150,6 +161,7 @@ function seek(video) {
   sync.frame = null;
   sync.nudge = null;
   sync.framesSinceSeek = 0;
+  sync.behind = null;
 }
 
 // waiting for data after a seek landed or a start makes it late by however long that took
@@ -175,15 +187,29 @@ function control(raw, at) {
     // a seek past what is loaded waits for the download and lands late, so play on until the target is
     // loaded; one within it can still land late on a slow decoder (long GOPs), so after one wait 2, 4, 8,
     // then 16 s before the next, until one lands and playback stays in sync for 10 s
-    if (
-      at - sync.landedAt >= (sync.bigSeeks && 1000 * 2 ** sync.bigSeeks) &&
-      loaded(active, seekTarget(active))
-    ) {
+    if (at - sync.landedAt < (sync.bigSeeks && 1000 * 2 ** sync.bigSeeks))
+      return;
+    const t = seekTarget(active);
+    let go = loaded(active, t);
+    if (!go) {
+      // the target moves on at 1x, so the download has to outrun playback by the missing seconds; on a link
+      // barely faster than the video that takes long or never ends, so every 5 s project the rest and seek
+      // past what is loaded (waiting for the download once) if it would take more than 15 s longer
+      const left = missing(active, t);
+      if (!sync.behind) sync.behind = { at, left };
+      else if (at - sync.behind.at >= 5000) {
+        const gained = sync.behind.left - left;
+        go = !(gained > 0 && (left / gained) * 5000 <= 15000);
+        sync.behind = { at, left };
+      }
+    }
+    if (go) {
       sync.bigSeeks = Math.min(sync.bigSeeks + 1, 4);
       seek(active);
     }
     return;
   }
+  sync.behind = null;
   if (at - sync.landedAt > 10000) sync.bigSeeks = 0;
   const canSeek = at - sync.correctiveSeekAt > 10000;
   // browsers clock picture and sound separately and they can drift apart; a seek realigns both

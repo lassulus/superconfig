@@ -26,12 +26,15 @@
 // Run the browser through `taskset -c 0` to make its decoder slow like a
 // phone's.
 //
-// The optional kbit/s throttles the media, so the browser buffers less ahead
+// The optional kbit/s throttles all media requests together (both video
+// elements share the link, as on a phone), so the browser buffers less ahead
 // and the hiccup comes sooner; latency delays each media request, like a
 // phone's network does every seek past what is loaded.
 //
-// Prints the player's seeks (currentTime writes other than the probe's own)
-// and the browser's seeking events per phase, and the media events.
+// Prints per phase the player's seeks (currentTime writes other than the
+// probe's own), the browser's seeking events, the seconds of downloaded media
+// forward seeks jumped over (wasted download) and the media bytes the proxy
+// passed, then the media events.
 const [chromium, url, dir, scenario = "normal", kbps, latency = 0] =
   process.argv.slice(2);
 const { spawn } = require("child_process");
@@ -41,6 +44,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const upstream = new URL(url);
 const bytesPerSec = kbps ? (kbps * 1000) / 8 : Infinity;
 let held = false;
+let mediaBytes = 0;
+// when the throttled link is free again
+let linkFree = 0;
 http
   .createServer(async (req, res) => {
     const media = req.url.includes("/media/");
@@ -59,7 +65,11 @@ http
           for await (const chunk of ur) {
             if (media) {
               while (held) await sleep(50);
-              await sleep((chunk.length / bytesPerSec) * 1000);
+              const now = Date.now();
+              linkFree =
+                Math.max(linkFree, now) + (chunk.length / bytesPerSec) * 1000;
+              await sleep(linkFree - now);
+              mediaBytes += chunk.length;
             }
             if (!res.write(chunk))
               await new Promise((r) => res.once("drain", r));
@@ -123,10 +133,15 @@ const p = spawn(
   await send("Page.enable");
   await send("Page.addScriptToEvaluateOnNewDocument", {
     source: `
-    window.__seeks = 0; window.__probeSeeks = 0; window.__seeking = 0; window.__drift = 0; window.__log = [];
+    window.__seeks = 0; window.__probeSeeks = 0; window.__seeking = 0; window.__drift = 0; window.__log = []; window.__skipped = 0;
     const d = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "currentTime");
     Object.defineProperty(HTMLMediaElement.prototype, "currentTime", { get() { return d.get.call(this); }, set(v) {
       if (window.__probe) window.__probeSeeks++; else window.__seeks++;
+      // a forward seek throws away the downloaded part of what it jumps over
+      const from = d.get.call(this);
+      for (let i = 0; i < this.buffered.length; i++)
+        if (v > from && this.buffered.start(i) <= from && from <= this.buffered.end(i))
+          window.__skipped += Math.min(v, this.buffered.end(i)) - from;
       d.set.call(this, v);
     } });
     ${scenario === "rate-ignored" ? 'Object.defineProperty(HTMLMediaElement.prototype, "playbackRate", { get() { return this.__r ?? 1; }, set(v) { this.__r = v; } });' : ""}
@@ -151,15 +166,15 @@ const p = spawn(
   const st = async () =>
     JSON.parse(
       await ev(
-        `JSON.stringify({err: tv.sync.err?.toFixed(1), raw: tv.sync.raw?.toFixed(1), frame: tv.sync.frame?.toFixed(1), rate: tv.active().playbackRate, works: tv.sync.rateWorks, lead: tv.sync.seekLead.toFixed(3), seeks: __seeks, seeking: __seeking, ready: tv.active().readyState, paused: tv.active().paused})`,
+        `JSON.stringify({err: tv.sync.err?.toFixed(1), raw: tv.sync.raw?.toFixed(1), frame: tv.sync.frame?.toFixed(1), rate: tv.active().playbackRate, works: tv.sync.rateWorks, lead: tv.sync.seekLead.toFixed(3), seeks: __seeks, seeking: __seeking, skipped: __skipped, ready: tv.active().readyState, paused: tv.active().paused})`,
       ),
     );
-  let mark = await st();
+  let mark = { ...(await st()), bytes: mediaBytes };
   let logFrom = 0;
   const phase = async (label) => {
-    const s = await st();
+    const s = { ...(await st()), bytes: mediaBytes };
     console.log(
-      `${label}: player seeks ${s.seeks - mark.seeks}, seeking events ${s.seeking - mark.seeking}`,
+      `${label}: player seeks ${s.seeks - mark.seeks}, seeking events ${s.seeking - mark.seeking}, skipped loaded ${(s.skipped - mark.skipped).toFixed(1)} s, media ${((s.bytes - mark.bytes) / 1e6).toFixed(1)} MB`,
       JSON.stringify(s),
     );
     const log = JSON.parse(await ev(`JSON.stringify(__log)`));
