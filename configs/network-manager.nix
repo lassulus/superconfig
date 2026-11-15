@@ -25,6 +25,15 @@
     matchConfig.Type = "wlan";
     linkConfig.Unmanaged = true;
   };
+  # A host on cable and wifi in the same LAN: by default Linux answers ARP for
+  # any local address on any interface, so the wifi answers NetworkManager's
+  # address conflict probe for the cable's IP. NM then sees a conflict and
+  # drops the cable's LAN route, and LAN traffic goes over wifi. Answer ARP
+  # only on the interface that owns the address.
+  boot.kernel.sysctl = {
+    "net.ipv4.conf.all.arp_ignore" = 1;
+    "net.ipv4.conf.all.arp_announce" = 2;
+  };
   systemd.services.NetworkManager-wait-online.enable = false;
   users.users.mainUser = {
     extraGroups = [ "networkmanager" ];
