@@ -32,7 +32,20 @@
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOdxrE1taDjoPXX5aoz63u9vy48avCmniEmGnkpb0y3C hermes@coaxmetal"
   ];
 
-  # Autostart straight into sway: greetd logs the main user in on boot with no
+  # The desktop runs as a separate games user, not lass: no password (greetd
+  # logs it in, there is nothing to unlock), not in wheel. It gets lass's other
+  # groups (audio, input, ...) and ssh keys, so `sunray games@atlas` can
+  # approve pairings in its session.
+  users.users.games = {
+    isNormalUser = true;
+    extraGroups = lib.remove "wheel" config.users.users.mainUser.extraGroups;
+    openssh.authorizedKeys.keys = config.users.users.mainUser.openssh.authorizedKeys.keys;
+  };
+  # Sunshine runs in the games session and reads its server key
+  clan.core.vars.generators.sunshine-server.files."key.pem".owner =
+    lib.mkForce config.users.users.games.name;
+
+  # Autostart straight into sway: greetd logs the games user in on boot with no
   # prompt and execs sway (a login shell so the wrapped sway + session env from
   # programs.sway are on PATH). initial_session makes it a real user session
   # (logind class user, not greeter), so polkit treats processes of the user
@@ -45,7 +58,7 @@
     let
       session = {
         command = "${lib.getExe pkgs.bash} --login -c 'WLR_BACKENDS=drm,libinput,headless WLR_HEADLESS_OUTPUTS=1 sway'";
-        user = config.users.users.mainUser.name;
+        user = config.users.users.games.name;
       };
     in
     {
