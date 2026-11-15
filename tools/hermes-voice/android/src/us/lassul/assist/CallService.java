@@ -11,6 +11,8 @@ import android.content.ComponentName;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
+import android.media.AudioAttributes;
+import android.media.AudioFocusRequest;
 import android.media.AudioManager;
 import android.media.ToneGenerator;
 import android.net.Uri;
@@ -37,7 +39,8 @@ import java.util.function.Consumer;
  * One call at a time, without a screen: a VoiceCall held as a self-managed Telecom call, so the
  * audio goes to the Bluetooth headset and its hang-up button (AT+CHUP) ends the call. In the
  * foreground with the microphone; stops when the call ends. A tone says the voice listens (or
- * that the call failed).
+ * that the call failed). The call holds the audio focus; the TV goes silent for it (Tv.muted())
+ * and comes back after.
  */
 public class CallService extends Service {
     static final String TAG = "Assist";
@@ -50,6 +53,7 @@ public class CallService extends Service {
     private PhoneAccountHandle account;
     private CallControl telecom;
     private VoiceCall voice;
+    private AudioFocusRequest focus;
     // What the main screen shows (main thread); null without a call.
     private static String state;
 
@@ -112,7 +116,9 @@ public class CallService extends Service {
         startForeground(NOTIFICATION, callNotification(),
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL
                         | ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE);
+        // The state first: it silences the TV, so its page lets go of the audio focus.
         setState("Connecting…");
+        takeFocus();
         voice = new VoiceCall(this, api, Conversation.load(this), new VoiceCall.Listener() {
             @Override
             public void onListening() {
@@ -123,6 +129,8 @@ public class CallService extends Service {
             @Override
             public void onFinished(String reason, boolean failed) {
                 voice = null;
+                // The focus first, so the TV gets it back when the state brings back its sound.
+                releaseFocus();
                 setState(null);
                 if (failed) {
                     tone(ToneGenerator.TONE_PROP_NACK);
@@ -150,6 +158,7 @@ public class CallService extends Service {
             voice.close();
         }
         disconnectTelecom();
+        releaseFocus();
         super.onDestroy();
     }
 
@@ -193,6 +202,23 @@ public class CallService extends Service {
                 },
                 new Control(),
                 new Events());
+    }
+
+    private void takeFocus() {
+        focus = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                .setAudioAttributes(new AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build())
+                .build();
+        getSystemService(AudioManager.class).requestAudioFocus(focus);
+    }
+
+    private void releaseFocus() {
+        if (focus != null) {
+            getSystemService(AudioManager.class).abandonAudioFocusRequest(focus);
+            focus = null;
+        }
     }
 
     private void disconnectTelecom() {

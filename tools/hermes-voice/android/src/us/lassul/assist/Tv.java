@@ -131,9 +131,9 @@ final class Tv {
         return paused;
     }
 
-    /** Silent: paused by the user. */
+    /** Silent: paused, or a call runs (CallService.state()). */
     static boolean muted() {
-        return paused;
+        return paused || CallService.state() != null;
     }
 
     static boolean showing() {

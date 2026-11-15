@@ -169,6 +169,9 @@ public class TvService extends Service {
         if (Tv.paused()) {
             return "Paused";
         }
+        if (CallService.state() != null) {
+            return "Silent during the call";
+        }
         return Tv.showing() ? "Playing" : "Audio only";
     }
 
