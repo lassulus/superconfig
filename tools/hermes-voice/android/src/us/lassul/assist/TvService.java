@@ -27,6 +27,8 @@ public class TvService extends Service {
     static final String ACTION_PLAY = "us.lassul.assist.TV_PLAY";
     static final String ACTION_PAUSE = "us.lassul.assist.TV_PAUSE";
     static final String ACTION_STOP = "us.lassul.assist.TV_STOP";
+    // Ends the call and goes on with the TV (audio only unless its screen is open).
+    static final String ACTION_FROM_CALL = "us.lassul.assist.TV_FROM_CALL";
     private static final String CHANNEL = "tv";
     private static final int NOTIFICATION = 2;
 
@@ -80,6 +82,9 @@ public class TvService extends Service {
             Tv.setPaused(true);
         } else if (ACTION_AUDIO.equals(action)) {
             Tv.audioOnly();
+        } else if (ACTION_FROM_CALL.equals(action) && CallService.state() != null) {
+            // The TV stays silent until the call has ended (Tv.muted()).
+            startService(new Intent(this, CallService.class).setAction(CallService.ACTION_HANG_UP));
         }
         refresh();
         return START_NOT_STICKY;
@@ -102,6 +107,11 @@ public class TvService extends Service {
     /** Starts the TV without the screen (it plays on in the background); needs the foreground. */
     static void startAudio(Context context) {
         context.startForegroundService(new Intent(context, TvService.class).setAction(ACTION_AUDIO));
+    }
+
+    /** Hangs up and plays the TV; needs the foreground or a notification's tap. */
+    static Intent fromCall(Context context) {
+        return new Intent(context, TvService.class).setAction(ACTION_FROM_CALL);
     }
 
     private void refresh() {

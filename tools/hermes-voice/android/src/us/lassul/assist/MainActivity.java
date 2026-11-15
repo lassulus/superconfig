@@ -33,6 +33,7 @@ public class MainActivity extends Activity {
     private ScrollView scroll;
     private TextView status;
     private Button call;
+    private Button tv;
     private final Runnable redraw = new Runnable() {
         @Override
         public void run() {
@@ -83,8 +84,7 @@ public class MainActivity extends Activity {
                 }
             }
         });
-        Button tv = new Button(this);
-        tv.setText("TV");
+        tv = new Button(this);
         tv.setTextColor(0xffffffff);
         tv.setTextSize(20);
         tv.setTypeface(Typeface.DEFAULT_BOLD);
@@ -96,7 +96,12 @@ public class MainActivity extends Activity {
         tv.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                startActivity(new Intent(MainActivity.this, TvActivity.class));
+                if (CallService.state() != null && Tv.url(MainActivity.this) != null) {
+                    // Hangs up and plays the TV, as audio unless its screen is open.
+                    startForegroundService(TvService.fromCall(MainActivity.this));
+                } else {
+                    startActivity(new Intent(MainActivity.this, TvActivity.class));
+                }
             }
         });
 
@@ -176,6 +181,7 @@ public class MainActivity extends Activity {
         background.setColor(state != null ? Conversation.LIVE : Conversation.ACCENT);
         call.setBackground(background);
         call.setText(state != null ? "Hang up" : ready ? "Call" : "Set up");
+        tv.setText(state != null ? "To TV" : "TV");
         status.setText(state != null
                 ? state
                 : ready ? "Hold the headset's voice button, or tap Call" : "Not set up yet");

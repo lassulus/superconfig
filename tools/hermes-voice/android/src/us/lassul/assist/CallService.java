@@ -11,6 +11,7 @@ import android.content.ComponentName;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
+import android.graphics.drawable.Icon;
 import android.media.AudioAttributes;
 import android.media.AudioFocusRequest;
 import android.media.AudioManager;
@@ -244,12 +245,19 @@ public class CallService extends Service {
         PendingIntent hangUp = PendingIntent.getService(this, 0,
                 new Intent(this, CallService.class).setAction(ACTION_HANG_UP),
                 PendingIntent.FLAG_IMMUTABLE);
-        return new Notification.Builder(this, CHANNEL)
+        Notification.Builder builder = new Notification.Builder(this, CHANNEL)
                 .setSmallIcon(android.R.drawable.sym_action_call)
                 .setStyle(Notification.CallStyle.forOngoingCall(
                         new Person.Builder().setName("Hermes").build(), hangUp))
-                .setOngoing(true)
-                .build();
+                .setOngoing(true);
+        if (Tv.url(this) != null) {
+            builder.addAction(new Notification.Action.Builder(
+                            Icon.createWithResource(this, android.R.drawable.ic_media_play), "TV",
+                            PendingIntent.getForegroundService(this, 0, TvService.fromCall(this),
+                                    PendingIntent.FLAG_IMMUTABLE))
+                    .build());
+        }
+        return builder.build();
     }
 
     private Notification setupNotification() {
