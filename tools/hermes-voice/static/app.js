@@ -12,6 +12,9 @@ const DELEGATION_SETTLE_MS = 400;
 // END_CALL_MAX_MS.
 const END_CALL_QUIET_MS = 800;
 const END_CALL_MAX_MS = 30000;
+// A "disconnected" connection often recovers by itself (WLAN or mobile
+// hiccup); the call only ends if it stays down this long.
+const RECONNECT_GRACE_MS = 15000;
 const STORAGE_KEY = "hermes-voice";
 
 const talk = document.getElementById("talk");
@@ -198,12 +201,12 @@ class Call {
       voice.play().catch(() => {});
       this.probeSpeaking(stream);
     });
+    // "failed" is final: an ICE restart needs a new offer/answer exchange,
+    // and /session can only create a new vendor session, not renegotiate.
     pc.addEventListener("connectionstatechange", () => {
-      if (
-        pc.connectionState === "failed" ||
-        pc.connectionState === "disconnected"
-      )
-        this.finish("connection lost");
+      if (pc.connectionState === "failed") this.finish("connection failed");
+      else if (pc.connectionState === "disconnected") this.onDisconnected();
+      else if (pc.connectionState === "connected") this.onReconnected();
     });
 
     this.mic = await navigator.mediaDevices.getUserMedia({
@@ -258,6 +261,25 @@ class Call {
       const timer = setTimeout(resolve, 3000);
       this.pc.addEventListener("icegatheringstatechange", done);
     });
+  }
+
+  onDisconnected() {
+    if (this.closed || this.reconnectTimer) return;
+    this.statusBeforeDrop = statusLine.textContent;
+    setStatus("Reconnecting…");
+    this.reconnectTimer = setTimeout(
+      () => this.finish("connection lost"),
+      RECONNECT_GRACE_MS,
+    );
+  }
+
+  onReconnected() {
+    if (!this.reconnectTimer) return;
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    // Status updates meanwhile (Hermes progress) stay.
+    if (statusLine.textContent === "Reconnecting…")
+      setStatus(this.statusBeforeDrop);
   }
 
   probeSpeaking(stream) {
@@ -591,6 +613,7 @@ class Call {
     if (this.closed) return;
     this.closed = true;
     clearTimeout(this.closeTimer);
+    clearTimeout(this.reconnectTimer);
     clearTimeout(this.endTimer);
     clearInterval(this.idleTimer);
     clearInterval(this.probe);
@@ -609,6 +632,9 @@ class Call {
     talk.textContent = "Talk";
     talk.disabled = false;
     setStatus(`Idle (${reason})`);
+    // Not hung up from here (button, idle, Hermes): say why it ended.
+    if (!this.closing && reason !== "page closed")
+      addLine("error", `Call ended: ${reason}`);
     renderCost();
   }
 }
