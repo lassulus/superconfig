@@ -46,6 +46,10 @@ type state struct {
 	MoviesRequestedAt int64 `json:"movies_requested_at,omitempty"`
 	// TMDB ids requested through Jellyseerr
 	RequestedMovies []int `json:"requested_movies,omitempty"`
+	// YouTube channels the picker lists, and suggested ones waiting for the
+	// admin
+	Channels           []channel `json:"channels,omitempty"`
+	ChannelSuggestions []channel `json:"channel_suggestions,omitempty"`
 }
 
 // upcoming returns the entry playing at t (unix ms), if any, and the ones

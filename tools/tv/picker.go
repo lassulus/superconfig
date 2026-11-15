@@ -61,7 +61,19 @@ func (s *server) pick(ctx context.Context) []candidate {
 		}
 		all = append(all, cands...)
 	}
-	for _, ch := range s.cfg.YouTubeChannels {
+	s.mu.Lock()
+	var channels []string
+	for _, c := range s.st.Channels {
+		channels = append(channels, c.URL)
+	}
+	s.mu.Unlock()
+	// removed channels leave the picker
+	for ch := range s.ytLists {
+		if !slices.Contains(channels, ch) {
+			delete(s.ytLists, ch)
+		}
+	}
+	for _, ch := range channels {
 		l, ok := s.ytLists[ch]
 		if !ok || time.Since(l.fetched) > 6*time.Hour {
 			videos, err := s.youtubeCandidates(ctx, ch)

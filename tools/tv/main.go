@@ -30,7 +30,6 @@ type config struct {
 	SecretFile        string   `json:"secret_file"`
 	JellyfinURL       string   `json:"jellyfin_url"`
 	JellyfinKeyFile   string   `json:"jellyfin_key_file"`
-	YouTubeChannels   []string `json:"youtube_channels"`
 	YtDlp             string   `json:"yt_dlp"`
 	YtDlpArgs         []string `json:"yt_dlp_args"`
 	FFmpeg            string   `json:"ffmpeg"`
@@ -173,6 +172,12 @@ func nowMs() int64 { return time.Now().UnixMilli() }
 //	POST api/queue     {"url"}: queue a YouTube video or Jellyfin item; 409 with
 //	                   its "start" if it is already scheduled or requested
 //	GET  media/<file>  prepared videos and subtitles
+//	GET  api/channels  {"channels": [...], "suggestions": [...]}, each
+//	                   {"url", "title", "at"}: the YouTube channels the picker
+//	                   lists and the suggested ones
+//	POST api/channels/suggest {"url"}: suggest a channel URL or @handle; yt-dlp
+//	                   has to list it; 409 if it is a channel or suggested
+//	                   already, 429 with 20 suggestions waiting
 //
 // Admin, with "Authorization: Bearer <admin key>" (401 without):
 //
@@ -186,10 +191,17 @@ func nowMs() int64 { return time.Now().UnixMilli() }
 //	POST api/schedule/insert  {"url", "after": {"start", "id"} | null}: like
 //	                   api/queue, but goes after that entry once prepared (after
 //	                   the playing one if it is gone by then)
+//	POST api/channels/add     {"url"}: add a channel (checked like suggest),
+//	                   dropping its suggestion; 409 if it is one already
+//	POST api/channels/remove  {"url"}: remove a channel; its videos leave the
+//	                   picker with the next pick
+//	POST api/channels/approve {"url"}: make a suggestion a channel
+//	POST api/channels/reject  {"url"}: drop a suggestion
 //
 // Edits address entries by start (unix ms) and id; 409 if no upcoming entry
 // matches (the schedule moved) or it is the playing one. They answer 200 with
-// the new api/schedule.
+// the new api/schedule. Channel changes answer 200 with the new api/channels,
+// 404 if the channel or suggestion to remove, approve or reject is not there.
 func (s *server) handler() http.Handler {
 	static, _ := fs.Sub(staticFiles, "static")
 	files := http.FileServerFS(static)
@@ -212,7 +224,14 @@ func (s *server) handler() http.Handler {
 			writeJSON(w, http.StatusOK, out)
 		case rest == "api/queue":
 			s.handleRequest(w, r, queued)
-		case rest == "api/skip" || strings.HasPrefix(rest, "api/schedule/"):
+		case rest == "api/channels":
+			s.mu.Lock()
+			out := s.channels()
+			s.mu.Unlock()
+			writeJSON(w, http.StatusOK, out)
+		case rest == "api/channels/suggest":
+			s.handleChannel(w, r, "suggest")
+		case rest == "api/skip" || strings.HasPrefix(rest, "api/schedule/") || strings.HasPrefix(rest, "api/channels/"):
 			if !s.isAdmin(r) {
 				writeError(w, http.StatusUnauthorized, "admin key required")
 				return
@@ -226,6 +245,8 @@ func (s *server) handler() http.Handler {
 				s.handleEdit(w, r, true)
 			case "api/schedule/delete":
 				s.handleEdit(w, r, false)
+			case "api/channels/add", "api/channels/remove", "api/channels/approve", "api/channels/reject":
+				s.handleChannel(w, r, strings.TrimPrefix(rest, "api/channels/"))
 			default:
 				http.NotFound(w, r)
 			}

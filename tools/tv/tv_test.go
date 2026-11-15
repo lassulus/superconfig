@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1052,4 +1053,176 @@ func TestPromptSize(t *testing.T) {
 	system, prompt := s.llmPrompt(cands, history)
 	n := len(system) + len(prompt)
 	t.Logf("%d candidates: prompt %d bytes, ~%d tokens", len(cands), n, n/4)
+}
+
+func TestChannelURL(t *testing.T) {
+	for in, want := range map[string]string{
+		"@veritasium":    "https://www.youtube.com/@veritasium/videos",
+		" /@Shaun_vids ": "https://www.youtube.com/@Shaun_vids/videos",
+		"https://www.youtube.com/@3blue1brown/videos": "https://www.youtube.com/@3blue1brown/videos",
+		"https://youtube.com/@foo.bar/featured":       "https://www.youtube.com/@foo.bar/videos",
+		"m.youtube.com/@a-b-c?si=x":                   "https://www.youtube.com/@a-b-c/videos",
+		"http://www.youtube.com/@ÄÖü":                 "https://www.youtube.com/@ÄÖü/videos",
+	} {
+		if got, err := channelURL(in); got != want || err != nil {
+			t.Errorf("%q: %q, %v, want %q", in, got, err, want)
+		}
+	}
+	for _, in := range []string{"", "@", "@ab", "veritasium", "https://example.org/@veritasium", "https://www.youtube.com/channel/UCHnyfMqiRRG1u-2MsSQLbXA",
+		"https://www.youtube.com/watch?v=dQw4w9WgXcQ", "ftp://youtube.com/@veritasium", "@a/b/../c", "@x y z", "@" + strings.Repeat("a", 31)} {
+		if got, err := channelURL(in); err == nil {
+			t.Errorf("%q: %q, want an error", in, got)
+		}
+	}
+}
+
+// fakeYtDlp writes a yt-dlp that lists one 10 minute video for any
+// youtube.com/@<handle> URL, titled "<handle> Channel", and fails for @gone.
+// It appends its arguments to log.
+func fakeYtDlp(t *testing.T) (bin, log string) {
+	dir := t.TempDir()
+	bin, log = filepath.Join(dir, "yt-dlp"), filepath.Join(dir, "log")
+	script := `#!/bin/sh
+echo "$@" >> ` + log + `
+for a; do u=$a; done
+case $u in *@gone/*) echo "ERROR: This channel does not exist." >&2; exit 1;; esac
+h=${u#*@}; h=${h%%/*}
+printf '{"channel": "%s Channel", "title": "%s - Videos", "entries": [{"id": "%.11s", "title": "a video of %s", "duration": 600}]}\n' "$h" "$h" "${h}___________" "$h"
+`
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return bin, log
+}
+
+func TestChannels(t *testing.T) {
+	bin, ytLog := fakeYtDlp(t)
+	s := &server{secret: "s", adminKey: "k", statePath: filepath.Join(t.TempDir(), "state.json"),
+		cfg: config{YtDlp: bin, YtDlpArgs: []string{"--proxy", "socks5://proxy"}}}
+	call := func(method, path, body, key string) (int, map[string]any) {
+		t.Helper()
+		req := httptest.NewRequest(method, "/s/"+path, strings.NewReader(body))
+		if key != "" {
+			req.Header.Set("Authorization", "Bearer "+key)
+		}
+		rec := httptest.NewRecorder()
+		s.handler().ServeHTTP(rec, req)
+		var out map[string]any
+		json.Unmarshal(rec.Body.Bytes(), &out)
+		return rec.Code, out
+	}
+	// names renders the state as "channels | suggestions" of handles
+	names := func() string {
+		var cs, ss []string
+		for _, c := range s.st.Channels {
+			cs = append(cs, strings.TrimSuffix(strings.TrimPrefix(c.URL, "https://www.youtube.com/@"), "/videos"))
+		}
+		for _, c := range s.st.ChannelSuggestions {
+			ss = append(ss, strings.TrimSuffix(strings.TrimPrefix(c.URL, "https://www.youtube.com/@"), "/videos"))
+		}
+		return strings.Join(cs, ",") + " | " + strings.Join(ss, ",")
+	}
+	step := func(name, method, path, body, key string, code int, want string) {
+		t.Helper()
+		got, out := call(method, path, body, key)
+		if got != code || names() != want {
+			t.Errorf("%s: %d %v, state %q; want %d, %q", name, got, out, names(), code, want)
+		}
+		if got == http.StatusOK && method == "POST" {
+			saved, err := loadState(s.statePath)
+			if err != nil || !slices.Equal(saved.Channels, s.st.Channels) || !slices.Equal(saved.ChannelSuggestions, s.st.ChannelSuggestions) {
+				t.Errorf("%s: saved %+v, %v", name, saved, err)
+			}
+			if len(out["channels"].([]any)) != len(s.st.Channels) || len(out["suggestions"].([]any)) != len(s.st.ChannelSuggestions) {
+				t.Errorf("%s: answer %v is not api/channels", name, out)
+			}
+		}
+		if got != http.StatusOK && out["error"] == "" {
+			t.Errorf("%s: no error message in %v", name, out)
+		}
+	}
+
+	if code, out := call("GET", "api/channels", "", ""); code != http.StatusOK || out["channels"] == nil || out["suggestions"] == nil {
+		t.Errorf("empty api/channels: %d %v, want both lists", code, out)
+	}
+	step("suggest", "POST", "api/channels/suggest", `{"url": "@alpha"}`, "", http.StatusOK, " | alpha")
+	if c := s.st.ChannelSuggestions[0]; c.Title != "alpha Channel" || c.At == 0 {
+		t.Errorf("suggestion %+v, want yt-dlp's channel title and a time", c)
+	}
+	step("suggest again", "POST", "api/channels/suggest", `{"url": "https://www.youtube.com/@Alpha/featured"}`, "", http.StatusConflict, " | alpha")
+	step("suggest unknown", "POST", "api/channels/suggest", `{"url": "@gone"}`, "", http.StatusBadRequest, " | alpha")
+	step("suggest junk", "POST", "api/channels/suggest", `{"url": "nope"}`, "", http.StatusBadRequest, " | alpha")
+	step("suggest by GET", "GET", "api/channels/suggest", `{"url": "@beta"}`, "", http.StatusMethodNotAllowed, " | alpha")
+	for _, action := range []string{"add", "remove", "approve", "reject"} {
+		for _, key := range []string{"", "wrong"} {
+			step(action+" without the admin key", "POST", "api/channels/"+action, `{"url": "@alpha"}`, key, http.StatusUnauthorized, " | alpha")
+		}
+	}
+	step("approve", "POST", "api/channels/approve", `{"url": "@alpha"}`, "k", http.StatusOK, "alpha | ")
+	step("approve again", "POST", "api/channels/approve", `{"url": "@alpha"}`, "k", http.StatusNotFound, "alpha | ")
+	step("suggest a channel", "POST", "api/channels/suggest", `{"url": "@alpha"}`, "", http.StatusConflict, "alpha | ")
+	step("add a channel", "POST", "api/channels/add", `{"url": "@ALPHA"}`, "k", http.StatusConflict, "alpha | ")
+	step("suggest beta", "POST", "api/channels/suggest", `{"url": "youtube.com/@beta"}`, "", http.StatusOK, "alpha | beta")
+	step("suggest gamma", "POST", "api/channels/suggest", `{"url": "/@gamma"}`, "", http.StatusOK, "alpha | beta,gamma")
+	step("add a suggestion", "POST", "api/channels/add", `{"url": "https://www.youtube.com/@beta"}`, "k", http.StatusOK, "alpha,beta | gamma")
+	step("add unknown", "POST", "api/channels/add", `{"url": "@gone"}`, "k", http.StatusBadRequest, "alpha,beta | gamma")
+	step("add", "POST", "api/channels/add", `{"url": "@delta"}`, "k", http.StatusOK, "alpha,beta,delta | gamma")
+	step("reject", "POST", "api/channels/reject", `{"url": "@gamma"}`, "k", http.StatusOK, "alpha,beta,delta | ")
+	step("reject a channel", "POST", "api/channels/reject", `{"url": "@beta"}`, "k", http.StatusNotFound, "alpha,beta,delta | ")
+	step("remove", "POST", "api/channels/remove", `{"url": "@beta"}`, "k", http.StatusOK, "alpha,delta | ")
+	step("remove again", "POST", "api/channels/remove", `{"url": "@beta"}`, "k", http.StatusNotFound, "alpha,delta | ")
+	step("remove junk", "POST", "api/channels/remove", `{"url": "beta"}`, "k", http.StatusBadRequest, "alpha,delta | ")
+
+	b, _ := os.ReadFile(ytLog)
+	if !strings.Contains(string(b), "--proxy socks5://proxy --flat-playlist --playlist-end 1 -J https://www.youtube.com/@alpha/videos\n") {
+		t.Errorf("yt-dlp calls:\n%s", b)
+	}
+
+	var full []string
+	for i := range maxSuggestions {
+		full = append(full, fmt.Sprintf("chan%02d", i))
+		step("filling", "POST", "api/channels/suggest", fmt.Sprintf(`{"url": "@chan%02d"}`, i), "", http.StatusOK, "alpha,delta | "+strings.Join(full, ","))
+	}
+	step("full", "POST", "api/channels/suggest", `{"url": "@onemore"}`, "", http.StatusTooManyRequests, "alpha,delta | "+strings.Join(full, ","))
+	// the admin still adds directly
+	step("add while full", "POST", "api/channels/add", `{"url": "@onemore"}`, "k", http.StatusOK, "alpha,delta,onemore | "+strings.Join(full, ","))
+	step("approve while full", "POST", "api/channels/approve", `{"url": "@chan00"}`, "k", http.StatusOK, "alpha,delta,onemore,chan00 | "+strings.Join(full[1:], ","))
+	step("suggest after approving", "POST", "api/channels/suggest", `{"url": "@epsilon"}`, "", http.StatusOK, "alpha,delta,onemore,chan00 | "+strings.Join(append(full[1:], "epsilon"), ","))
+}
+
+func TestPickUsesStateChannels(t *testing.T) {
+	bin, _ := fakeYtDlp(t)
+	s := &server{secret: "s", adminKey: "k", statePath: filepath.Join(t.TempDir(), "state.json"), lookAhead: time.Hour,
+		cfg: config{YtDlp: bin, YouTubeVideosPerChannel: 30},
+		st:  state{Channels: []channel{{URL: "https://www.youtube.com/@alpha/videos", Title: "alpha Channel"}}},
+		ytLists: map[string]ytList{"https://www.youtube.com/@old/videos": {fetched: time.Now(),
+			videos: []candidate{{ID: "yt:old________", Kind: "youtube", Title: "old", Group: "old Channel", Duration: 600}}}}}
+	groups := func() []string {
+		var gs []string
+		for _, c := range s.pick(t.Context()) {
+			gs = append(gs, c.Group)
+		}
+		slices.Sort(gs)
+		return gs
+	}
+	if got := groups(); !reflect.DeepEqual(got, []string{"alpha Channel"}) {
+		t.Errorf("picks from %v, want only the state's channel", got)
+	}
+	if _, ok := s.ytLists["https://www.youtube.com/@old/videos"]; ok || len(s.ytLists) != 1 {
+		t.Errorf("lists %v, want the removed channel gone", s.ytLists)
+	}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/s/api/channels/add", strings.NewReader(`{"url": "@beta"}`))
+	req.Header.Set("Authorization", "Bearer k")
+	s.handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("adding: %d %s", rec.Code, rec.Body)
+	}
+	if got := groups(); !reflect.DeepEqual(got, []string{"alpha Channel", "beta Channel"}) {
+		t.Errorf("picks from %v after adding beta", got)
+	}
+	s.st.Channels = nil
+	if got := groups(); got != nil || len(s.ytLists) != 0 {
+		t.Errorf("without channels: picks from %v, lists %v", got, s.ytLists)
+	}
 }

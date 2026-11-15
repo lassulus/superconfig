@@ -90,24 +90,31 @@
         border-radius: 0.3em;
         cursor: pointer;
       }
-      #queue {
+      #panel {
         position: absolute;
         top: 4em;
         right: 1em;
         max-width: 70%;
         display: flex;
-        flex-wrap: wrap;
+        flex-direction: column;
         gap: 0.4em;
         padding: 0.6em;
         background: rgba(0, 0, 0, 0.7);
         border-radius: 0.4em;
       }
-      #url {
+      #panel form {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4em;
+      }
+      #url,
+      #channel {
         flex: 1;
         min-width: 18em;
         font-size: 1em;
       }
-      #queued {
+      #queued,
+      #suggested {
         width: 100%;
       }
       #debug {
@@ -135,14 +142,25 @@
     </div>
     <div id="controls">
       <button id="cc" title="Subtitles" hidden>CC: off</button>
-      <button id="add" title="Queue a video">+</button>
+      <button id="add" title="Queue a video or suggest a channel">+</button>
       <button id="fs" title="Fullscreen">⛶</button>
     </div>
-    <form id="queue" hidden>
-      <input id="url" placeholder="YouTube or Jellyfin URL" required />
-      <button>Queue</button>
-      <div id="queued"></div>
-    </form>
+    <div id="panel" hidden>
+      <form id="queue">
+        <input id="url" placeholder="YouTube or Jellyfin URL" required />
+        <button>Queue</button>
+        <div id="queued"></div>
+      </form>
+      <form id="suggest">
+        <input
+          id="channel"
+          placeholder="YouTube channel URL or @handle"
+          required
+        />
+        <button>Suggest channel</button>
+        <div id="suggested"></div>
+      </form>
+    </div>
     <div id="debug" hidden></div>
     <div id="start" class="screen">Tap to start</div>
     <script src="player.js"></script>

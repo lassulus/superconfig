@@ -337,6 +337,26 @@ async function queueURL(ev) {
   }
 }
 
+async function suggestChannel(ev) {
+  ev.preventDefault();
+  $("suggested").textContent = "Checking…";
+  try {
+    const res = await fetch("api/channels/suggest", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: $("channel").value }),
+    });
+    const out = await res.json();
+    if (!res.ok) throw new Error(out.error);
+    // a new suggestion goes to the end of the list
+    $("suggested").textContent =
+      `Suggested, waiting for approval: ${out.suggestions.at(-1).title}`;
+    $("channel").value = "";
+  } catch (e) {
+    $("suggested").textContent = `Error: ${e.message}`;
+  }
+}
+
 function toggleFullscreen() {
   if (document.fullscreenElement) document.exitFullscreen();
   else document.documentElement.requestFullscreen?.().catch(() => {});
@@ -364,12 +384,13 @@ $("start").addEventListener("click", () => {
 $("fs").addEventListener("click", toggleFullscreen);
 $("cc").addEventListener("click", cycleSubtitles);
 $("add").addEventListener("click", () => {
-  $("queue").hidden = !$("queue").hidden;
-  if (!$("queue").hidden) $("url").focus();
+  $("panel").hidden = !$("panel").hidden;
+  if (!$("panel").hidden) $("url").focus();
 });
 $("queue").addEventListener("submit", queueURL);
+$("suggest").addEventListener("submit", suggestChannel);
 document.addEventListener("keydown", (ev) => {
-  if (ev.target === $("url")) return;
+  if (ev.target.tagName === "INPUT") return;
   if (ev.key === "d") $("debug").hidden = !$("debug").hidden;
   if (ev.key === "f") toggleFullscreen();
 });
