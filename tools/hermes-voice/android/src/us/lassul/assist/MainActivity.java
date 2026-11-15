@@ -19,8 +19,8 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 /**
- * The launcher screen: the current conversation, live during a call, and a Call / Hang up
- * button. New conversation, the session list and the settings are in the menu.
+ * The launcher screen: the current conversation, live during a call, a Call / Hang up button and
+ * the TV. New conversation, the session list and the settings are in the menu.
  */
 public class MainActivity extends Activity {
     private static final int NEW_CONVERSATION = 1;
@@ -82,8 +82,30 @@ public class MainActivity extends Activity {
                 }
             }
         });
-        layout.addView(call, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, (int) (64 * dp)));
+        Button tv = new Button(this);
+        tv.setText("TV");
+        tv.setTextColor(0xffffffff);
+        tv.setTextSize(20);
+        tv.setTypeface(Typeface.DEFAULT_BOLD);
+        tv.setAllCaps(false);
+        GradientDrawable tvBackground = new GradientDrawable();
+        tvBackground.setCornerRadius(32 * dp);
+        tvBackground.setColor(Conversation.DIM);
+        tv.setBackground(tvBackground);
+        tv.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                startActivity(new Intent(MainActivity.this, TvActivity.class));
+            }
+        });
+
+        LinearLayout buttons = new LinearLayout(this);
+        buttons.addView(call, new LinearLayout.LayoutParams(0, (int) (64 * dp), 1));
+        LinearLayout.LayoutParams tvSize =
+                new LinearLayout.LayoutParams((int) (96 * dp), (int) (64 * dp));
+        tvSize.setMarginStart((int) (8 * dp));
+        buttons.addView(tv, tvSize);
+        layout.addView(buttons);
         setContentView(layout);
     }
 

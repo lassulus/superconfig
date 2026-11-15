@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Long press on the launcher icon: the TV. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="tv"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/tv">
+        <intent
+            android:action="android.intent.action.MAIN"
+            android:targetPackage="us.lassul.assist"
+            android:targetClass="us.lassul.assist.TvActivity" />
+    </shortcut>
+</shortcuts>

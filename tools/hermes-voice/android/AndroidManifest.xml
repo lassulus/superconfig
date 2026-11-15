@@ -28,6 +28,35 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+        </activity>
+        <!-- The TV channel (tools/tv) in its own task, so it can shrink to
+             picture-in-picture alone. Opened or shared tv.lassul.us links
+             set its URL. -->
+        <activity
+            android:name=".TvActivity"
+            android:label="TV"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:taskAffinity="us.lassul.assist.tv"
+            android:supportsPictureInPicture="true"
+            android:enableOnBackInvokedCallback="true"
+            android:resizeableActivity="true"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation|uiMode|density"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="tv.lassul.us" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
         </activity>
         <activity
             android:name=".SettingsActivity"

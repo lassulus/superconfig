@@ -11,14 +11,16 @@ import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 /**
- * Setup: the app token (`clan vars get coaxmetal hermes-voice-app/token`) and the microphone and
- * notification permissions.
+ * Setup: the app token (`clan vars get coaxmetal hermes-voice-app/token`), the microphone and
+ * notification permissions and the TV URL.
  */
 public class SettingsActivity extends Activity {
     private TextView status;
     private EditText token;
+    private EditText tvUrl;
     private Button permissions;
 
     @Override
@@ -61,13 +63,35 @@ public class SettingsActivity extends Activity {
         });
         layout.addView(permissions);
 
+        tvUrl = new EditText(this);
+        tvUrl.setHint("TV URL");
+        tvUrl.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        tvUrl.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO);
+        tvUrl.setText(Tv.url(this));
+        layout.addView(tvUrl);
+        layout.addView(button("Save TV URL", new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                String url = Tv.parse(tvUrl.getText().toString(), false);
+                if (url == null) {
+                    Toast.makeText(SettingsActivity.this, "Not a URL", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                Tv.saveUrl(SettingsActivity.this, url);
+                tvUrl.setText(url);
+                refresh();
+            }
+        }));
+
         TextView help = new TextView(this);
         help.setPadding(0, pad, 0, 0);
         help.setTextColor(Conversation.DIM);
         help.setText("The token: clan vars get coaxmetal hermes-voice-app/token\n\n"
                 + "Hold the headset's voice button to talk to Hermes, a short press hangs up;"
                 + " a tone says it listens. Pick Assist when Android asks which app handles voice"
-                + " commands. On GrapheneOS, Assist also needs the Network permission.");
+                + " commands. On GrapheneOS, Assist also needs the Network permission.\n\n"
+                + "The TV URL is the TV page with its secret path, https://tv.lassul.us/…/;"
+                + " sharing a tv.lassul.us link with Assist sets it too.");
         layout.addView(help);
 
         ScrollView scroll = new ScrollView(this);
@@ -97,7 +121,8 @@ public class SettingsActivity extends Activity {
         boolean mic = checkSelfPermission(Manifest.permission.RECORD_AUDIO)
                 == PackageManager.PERMISSION_GRANTED;
         status.setText("Token: " + (Api.hasToken(this) ? "set" : "missing")
-                + "\nMicrophone: " + (mic ? "allowed" : "not allowed"));
+                + "\nMicrophone: " + (mic ? "allowed" : "not allowed")
+                + "\nTV URL: " + (Tv.url(this) != null ? "set" : "missing"));
         permissions.setVisibility(mic ? View.GONE : View.VISIBLE);
     }
 
