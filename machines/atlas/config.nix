@@ -33,12 +33,21 @@
   ];
 
   # The desktop runs as a separate games user, not lass: no password (greetd
-  # logs it in, there is nothing to unlock), not in wheel. It gets lass's other
-  # groups (audio, input, ...) and ssh keys, so `sunray games@atlas` can
-  # approve pairings in its session.
+  # logs it in, there is nothing to unlock), not in wheel. It gets lass's ssh
+  # keys, so `sunray games@atlas` can approve pairings in its session.
   users.users.games = {
     isNormalUser = true;
-    extraGroups = lib.remove "wheel" config.users.users.mainUser.extraGroups;
+    extraGroups = [
+      "audio"
+      "bluetooth"
+      "dialout"
+      "fuse"
+      "input"
+      "networkmanager"
+      "pipewire"
+      "tor"
+      "video"
+    ];
     openssh.authorizedKeys.keys = config.users.users.mainUser.openssh.authorizedKeys.keys;
   };
   # Sunshine runs in the games session and reads its server key
