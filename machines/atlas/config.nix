@@ -14,6 +14,7 @@
     ../../configs/network-manager.nix
     ../../configs/retiolum.nix
     ../../configs/steam.nix
+    ./llm.nix
     self.wrapperModules.workspace-manager
   ];
 
