@@ -53,6 +53,8 @@ const sync = {
   learn: "seekLead",
   framesSinceSeek: Infinity,
   rateSetAt: 0,
+  // raw error when the rate last changed
+  rateSetRaw: 0,
   // nudge: time and size of the largest error since the rate left 1; correctiveSeekAt: last seek done by control
   nudge: null,
   rateWorks: true,
@@ -237,6 +239,18 @@ function control(raw, at) {
     seek(active);
     return;
   }
+  // some browsers (Firefox) stall the sound for ~65 ms on every rate change, which needs another nudge and
+  // another change: a jump right after one that a nudge of at most 5 % cannot explain means seek instead
+  if (
+    sync.rateWorks &&
+    at - sync.rateSetAt < 500 &&
+    Math.abs(raw - sync.rateSetRaw) > 40
+  ) {
+    sync.rateWorks = false;
+    sync.correctiveSeekAt = at;
+    seek(active);
+    return;
+  }
   sync.err = sync.err === null ? raw : sync.err + 0.1 * (raw - sync.err);
   if (!sync.rateWorks) {
     if (canSeek && Math.abs(sync.err) > 80) {
@@ -271,6 +285,7 @@ function control(raw, at) {
     if (rate === 1) sync.nudge = null;
     active.playbackRate = rate;
     sync.rateSetAt = at;
+    sync.rateSetRaw = raw;
   }
 }
 
@@ -477,7 +492,7 @@ function showDebug() {
     `offset   ${ms(clock.offset)} ms`,
     `rtt      ${ms(clock.rtt)} ms`,
     `error    ${ms(sync.err)} ms (now ${ms(sync.raw)} ms, frame on screen ${ms(sync.frame)} ms)`,
-    `rate     ${active.playbackRate.toFixed(3)}${sync.rateWorks ? "" : " (ignored here, seeking instead)"}`,
+    `rate     ${active.playbackRate.toFixed(3)}${sync.rateWorks ? "" : " (unusable here, seeking instead)"}`,
     `leads    seek ${ms(sync.seekLead * 1000)} ms, start ${ms(sync.startLead * 1000)} ms`,
   ].join("\n");
 }
