@@ -43,6 +43,9 @@ type config struct {
 	RequestsPerDay    int      `json:"requests_per_day"`
 	SubtitleLanguages []string `json:"subtitle_languages"`
 	AudioLanguages    []string `json:"audio_languages"`
+	// Jellyfin items the picker may choose need audio or a text subtitle in
+	// one of these; empty = no filter
+	RequiredLanguages []string `json:"required_languages"`
 	// SponsorBlock categories yt-dlp cuts out of YouTube videos
 	SponsorblockCategories []string `json:"sponsorblock_categories"`
 	// newest videos per channel the picker may choose from

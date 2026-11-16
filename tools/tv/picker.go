@@ -329,6 +329,7 @@ type jellyfinItem struct {
 	Type         string            `json:"Type"`
 	MediaType    string            `json:"MediaType"`
 	ProviderIDs  map[string]string `json:"ProviderIds"`
+	MediaStreams []mediaStream     `json:"MediaStreams"`
 	MediaSources []struct {
 		ID           string        `json:"Id"`
 		MediaStreams []mediaStream `json:"MediaStreams"`
@@ -360,14 +361,14 @@ func (s *server) jellyfinItems(ctx context.Context, path string, query url.Value
 // sample of series, the episode after the last one this channel played.
 func (s *server) jellyfinCandidates(ctx context.Context) ([]candidate, error) {
 	ticksToSeconds := func(t int64) int64 { return t / 10_000_000 }
-	movies, err := s.jellyfinItems(ctx, "/Items", url.Values{"Recursive": {"true"}, "IncludeItemTypes": {"Movie"}})
+	movies, err := s.jellyfinItems(ctx, "/Items", url.Values{"Recursive": {"true"}, "IncludeItemTypes": {"Movie"}, "Fields": {"MediaStreams"}})
 	if err != nil {
 		return nil, err
 	}
 	rand.Shuffle(len(movies), func(i, j int) { movies[i], movies[j] = movies[j], movies[i] })
 	var cands []candidate
 	for _, m := range movies[:min(len(movies), 120)] {
-		if m.RunTimeTicks > 0 {
+		if m.RunTimeTicks > 0 && understandable(m.MediaStreams, s.cfg.RequiredLanguages) {
 			cands = append(cands, candidate{ID: "jf:" + m.ID, Kind: "movie", Title: m.Name, Duration: ticksToSeconds(m.RunTimeTicks), ref: m.ID})
 		}
 	}
@@ -377,7 +378,7 @@ func (s *server) jellyfinCandidates(ctx context.Context) ([]candidate, error) {
 	}
 	rand.Shuffle(len(series), func(i, j int) { series[i], series[j] = series[j], series[i] })
 	for _, sr := range series[:min(len(series), 40)] {
-		episodes, err := s.jellyfinItems(ctx, "/Shows/"+sr.ID+"/Episodes", url.Values{})
+		episodes, err := s.jellyfinItems(ctx, "/Shows/"+sr.ID+"/Episodes", url.Values{"Fields": {"MediaStreams"}})
 		if err != nil {
 			log.Printf("jellyfin: %v", err)
 			continue
@@ -401,6 +402,9 @@ func (s *server) jellyfinCandidates(ctx context.Context) ([]candidate, error) {
 			}
 		}
 		e := present[next]
+		if !understandable(e.MediaStreams, s.cfg.RequiredLanguages) {
+			continue
+		}
 		cands = append(cands, candidate{
 			ID:       "jf:" + e.ID,
 			Kind:     "episode",

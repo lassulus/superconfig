@@ -69,6 +69,7 @@ let
         "en"
         "de"
       ];
+      required_languages = [ "en" ];
       sponsorblock_categories = [
         "sponsor"
         "selfpromo"

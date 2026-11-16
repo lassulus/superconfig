@@ -255,6 +255,23 @@ type mediaStream struct {
 	IsTextSubtitleStream bool   `json:"IsTextSubtitleStream"`
 }
 
+// understandable reports whether an item has audio or a text subtitle in one
+// of langs. Audio without a language tag counts, as do items without stream
+// info, so only items known to lack them are dropped.
+func understandable(streams []mediaStream, langs []string) bool {
+	if len(langs) == 0 || len(streams) == 0 {
+		return true
+	}
+	for _, st := range streams {
+		code, _ := language(st.Language)
+		if st.Type == "Audio" && (code == "" || slices.Contains(langs, code)) ||
+			st.Type == "Subtitle" && st.IsTextSubtitleStream && slices.Contains(langs, code) {
+			return true
+		}
+	}
+	return false
+}
+
 // jellyfinSubtitles names a cache file for each subtitle stream Jellyfin can
 // convert to WebVTT; image ones (PGS, VobSub) cannot be.
 func jellyfinSubtitles(file string, streams []mediaStream) []subtitle {

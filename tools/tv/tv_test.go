@@ -1480,3 +1480,24 @@ func TestCovered(t *testing.T) {
 		t.Error("two hours do not fill three")
 	}
 }
+
+func TestUnderstandable(t *testing.T) {
+	en := []string{"en"}
+	for _, c := range []struct {
+		name    string
+		streams []mediaStream
+		langs   []string
+		want    bool
+	}{
+		{"english audio", []mediaStream{{Type: "Audio", Language: "eng"}}, en, true},
+		{"untagged audio", []mediaStream{{Type: "Audio"}}, en, true},
+		{"english text sub", []mediaStream{{Type: "Audio", Language: "kor"}, {Type: "Subtitle", Language: "eng", IsTextSubtitleStream: true}}, en, true},
+		{"english image sub only", []mediaStream{{Type: "Audio", Language: "kor"}, {Type: "Subtitle", Language: "eng"}, {Type: "Subtitle", Language: "ger", IsTextSubtitleStream: true}}, en, false},
+		{"no stream info", nil, en, true},
+		{"no filter", []mediaStream{{Type: "Audio", Language: "kor"}}, nil, true},
+	} {
+		if got := understandable(c.streams, c.langs); got != c.want {
+			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
+		}
+	}
+}
