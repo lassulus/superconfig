@@ -6,7 +6,10 @@
   ...
 }:
 {
-  imports = [ ./sso.nix ];
+  imports = [
+    ./sso.nix
+    ./audiobookshelf-sso.nix
+  ];
 
   lass.ports = {
     "80" = "nginx-http";
@@ -463,7 +466,7 @@
     mode = "0775";
   };
   # audiobook player for the bookshelf library, public on audible.lassul.us
-  # (proxy.nix on neoprism); the library and users are set up in its web ui
+  # (proxy.nix on neoprism), logins via id.lassul.us (audiobookshelf-sso.nix)
   services.audiobookshelf = {
     enable = true;
     host = "0.0.0.0";

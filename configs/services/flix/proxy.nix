@@ -64,7 +64,17 @@
     };
   };
 
-  # audiobookshelf on yellow (default.nix); its own logins, also for the apps
+  # audiobookshelf on yellow (default.nix), logins via id.lassul.us for users
+  # an admin gave a user grant on project audible in the console. Its client
+  # id and secret go into the audible-oidc var of yellow
+  # (audiobookshelf-sso.nix); mobile-redirect is the apps' login.
+  lass.zitadel.projects.audible = {
+    access = "managed";
+    apps.audiobookshelf.redirectUris = [
+      "https://audible.lassul.us/audiobookshelf/auth/openid/callback"
+      "https://audible.lassul.us/audiobookshelf/auth/openid/mobile-redirect"
+    ];
+  };
   services.nginx.virtualHosts."audible.lassul.us" = {
     forceSSL = true;
     enableACME = true;
