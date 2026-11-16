@@ -52,6 +52,7 @@ in
       (https "id" "https://id.lassul.us/debug/healthz")
       (https "byoidc" "https://byoidc.lassul.us/healthz")
       (https "paint" "https://paint.lassul.us/")
+      (https "audible" "https://audible.lassul.us/healthcheck")
       (https "ntfy" "https://ntfy.lassul.us/v1/health")
       (https "paperless" "https://paperless.lassul.us/accounts/login/")
       (https "cache" "https://cache.lassul.us/nix-cache-info")

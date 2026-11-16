@@ -64,6 +64,19 @@
     };
   };
 
+  # audiobookshelf on yellow (default.nix); its own logins, also for the apps
+  services.nginx.virtualHosts."audible.lassul.us" = {
+    forceSSL = true;
+    enableACME = true;
+    locations."/" = {
+      proxyPass = "http://${self.inputs.kartei.hosts.yellow.nets.retiolum.ip4.addr}:8000";
+      proxyWebsockets = true;
+      recommendedProxySettings = true;
+      # uploads of whole audiobooks through the web ui
+      extraConfig = "client_max_body_size 0;";
+    };
+  };
+
   services.nginx.virtualHosts."flex.lassul.us" = {
     forceSSL = true;
     enableACME = true;

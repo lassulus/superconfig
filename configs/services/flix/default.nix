@@ -18,6 +18,7 @@
     "6969" = "gamarr";
     "7359" = "jellyfin-discovery";
     "7878" = "radarr";
+    "8000" = "audiobookshelf";
     "8080" = "sabnzbd";
     "8096" = "jellyfin";
     "8191" = "flaresolverr";
@@ -461,6 +462,15 @@
     group = "download";
     mode = "0775";
   };
+  # audiobook player for the bookshelf library, public on audible.lassul.us
+  # (proxy.nix on neoprism); the library and users are set up in its web ui
+  services.audiobookshelf = {
+    enable = true;
+    host = "0.0.0.0";
+    port = config.lass.servicePorts.audiobookshelf;
+    openFirewall = true;
+    group = "download";
+  };
   # games, web ui on yellow.r:6969 (its default 6767 is bazarr's)
   systemd.services.gamarr = {
     environment = {
@@ -545,6 +555,7 @@
         sabnzbd = "/var/lib/sabnzbd/admin/history1.db";
         gamarr = "/var/lib/gamarr/gamarr.db";
         bookshelf = "${config.services.readarr.dataDir}/readarr.db";
+        audiobookshelf = "/var/lib/${config.services.audiobookshelf.dataDir}/config/absdatabase.sqlite";
       };
       dirs = [
         "/var/lib/jellyfin"
@@ -555,6 +566,7 @@
         "/var/lib/sabnzbd"
         "/var/lib/gamarr"
         config.services.readarr.dataDir
+        "/var/lib/${config.services.audiobookshelf.dataDir}"
       ];
     in
     {
@@ -577,6 +589,10 @@
         "/var/lib/gamarr/MediaCover"
         "${config.services.readarr.dataDir}/MediaCover"
         "${config.services.readarr.dataDir}/logs"
+        "/var/lib/${config.services.audiobookshelf.dataDir}/config/absdatabase.sqlite*"
+        "/var/lib/${config.services.audiobookshelf.dataDir}/metadata/cache"
+        "/var/lib/${config.services.audiobookshelf.dataDir}/metadata/logs"
+        "/var/lib/${config.services.audiobookshelf.dataDir}/metadata/streams"
       ]
       # the live databases, also the unneeded servarr logs.db
       ++ map (dir: "${dir}/*.db") dirs
