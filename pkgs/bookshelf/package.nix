@@ -37,6 +37,13 @@ buildDotnetModule (finalAttrs: {
   postPatch = ''
     mv src/NuGet.config NuGet.Config
     sed -i 's|<TargetFrameworks>net6.0</TargetFrameworks>|<TargetFrameworks>net8.0</TargetFrameworks>|' src/*/*.csproj
+    # Since .NET 7, API controllers bind parameters whose type the DI
+    # container can resolve from services, not from the body: every POST/PUT
+    # without [FromBody] (root folders, authors, tags, ...) got an empty
+    # resource. Restore the net6 behaviour.
+    substituteInPlace src/NzbDrone.Host/Startup.cs \
+      --replace-fail '.AddControllersAsServices();' \
+        '.AddControllersAsServices().ConfigureApiBehaviorOptions(o => o.DisableImplicitFromServicesParameters = true);'
   '';
 
   strictDeps = true;
