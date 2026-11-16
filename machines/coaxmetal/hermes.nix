@@ -312,6 +312,12 @@ in
     # resume on the next message.
     settings.agent.restart_after_turn_timeout = 300;
 
+    # Upstream lowered the clarify wait to 90 s. On Matrix that is shorter
+    # than reading the question, so it timed out and the agent re-asked it as
+    # plain text: every question showed up twice. Typing a reply instead of
+    # picking an option still cancels the question at once.
+    settings.agent.clarify_timeout = 3600;
+
     # Matrix is a Tier-2 platform whose default tool-progress preview caps
     # commands at 40 chars (so a `terminal` call shows only `curl -X POST -H
     # "Content-Type: applic...`). "verbose" makes the gateway render the FULL
