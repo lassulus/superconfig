@@ -28,9 +28,10 @@ import org.json.JSONException;
 
 /**
  * The synced TV channel (tools/tv): its page in one WebView that outlives the TV screen, so
- * the channel plays on without the picture (TvService keeps it in the foreground). Paused means
- * muted: the channel is live and the page stays in sync, so playing again is where the channel
- * is now. Main thread only.
+ * the channel plays on without the picture (TvService keeps it in the foreground). Without a
+ * screen the page plays only the sound (?audio, tv.setAudioOnly) and does not download the
+ * video. Paused means muted: the channel is live and the page stays in sync, so playing again
+ * is where the channel is now. Main thread only.
  */
 final class Tv {
     private static final String PREFS = "tv";
@@ -56,7 +57,7 @@ final class Tv {
     private static boolean pip;
     private static String title = "";
     private static Rational aspect = new Rational(16, 9);
-    // The mute and picture-in-picture state the page has; null after a (re)load.
+    // The mute, picture-in-picture and audio-only state the page has; null after a (re)load.
     private static String applied;
 
     private static final Runnable apply = new Runnable() {
@@ -92,8 +93,14 @@ final class Tv {
     static void saveUrl(Context context, String url) {
         prefs(context).edit().putString("url", url).apply();
         if (view != null) {
-            view.loadUrl(url);
+            view.loadUrl(page(url));
         }
+    }
+
+    /** The page to load for the channel at url: without a screen, its audio only. */
+    private static String page(String url) {
+        return screen != null ? url
+                : Uri.parse(url).buildUpon().appendQueryParameter("audio", "1").build().toString();
     }
 
     /**
@@ -185,7 +192,7 @@ final class Tv {
         view.setWebViewClient(new Client());
         view.setWebChromeClient(new Chrome());
         applied = null;
-        view.loadUrl(url);
+        view.loadUrl(page(url));
         Live.watch(apply);
         main.postDelayed(poll, POLL_MS);
         Live.changed();
@@ -194,10 +201,12 @@ final class Tv {
 
     /** Puts the page on the screen; false without a TV URL. */
     static boolean show(TvActivity activity, ViewGroup frame) {
-        if (!start(activity)) {
+        if (url(activity) == null) {
             return false;
         }
+        // Before start(), so a new page loads with the video.
         screen = activity;
+        start(activity);
         base.setBaseContext(activity);
         detach();
         frame.addView(view, 0, new ViewGroup.LayoutParams(
@@ -215,7 +224,8 @@ final class Tv {
         pip = false;
         if (view != null) {
             // Detached, a page that has been on a screen counts as hidden and its video pauses
-            // (Page); a new one that never was plays on. It loads in a few seconds, in sync.
+            // (Page); a new one that never was plays on. It loads in a few seconds, in sync,
+            // and only the sound.
             Context context = base.getApplicationContext();
             close();
             start(context);
@@ -267,13 +277,17 @@ final class Tv {
         }
     }
 
-    /** Tells the page whether to be silent and whether it is in picture-in-picture. */
+    /**
+     * Tells the page whether to be silent, whether it is in picture-in-picture and whether it
+     * plays only the sound (no screen; a page shown again loads the video at where it is).
+     */
     private static void apply() {
         if (view == null) {
             return;
         }
         boolean muted = muted();
-        String state = muted + " " + pip;
+        boolean audio = screen == null;
+        String state = muted + " " + pip + " " + audio;
         if (state.equals(applied)) {
             return;
         }
@@ -288,6 +302,7 @@ final class Tv {
                 + " document.head.append(style);"
                 + " }"
                 + " style.disabled = " + !pip + ";"
+                + " window.tv?.setAudioOnly(" + audio + ");"
                 + " })()", null);
     }
 
