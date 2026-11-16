@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -409,10 +410,10 @@ func TestCleanCacheKeepsPending(t *testing.T) {
 	s := &server{cfg: config{CacheDir: dir}, preparing: "jf-p-1.mp4",
 		st:       state{Schedule: []entry{{File: "yt-a-1.mp4"}}},
 		requests: []*request{{file: "yt-q-1.mp4", State: "preparing"}, {file: "yt-n-1.mp4", State: "waiting"}}}
-	keep := []string{"yt-a-1.mp4", "yt-a-1.mp4.0.vtt", "yt-a-1.mp4.1.vtt", "jf-p-1.mp4.part", "jf-p-1.mp4.0.vtt",
-		"yt-q-1.mp4.part", "yt-q-1.mp4.dl/video.webm", "yt-q-1.mp4.dl/sub.en.vtt", "yt-n-1.mp4", "yt-n-1.mp4.0.vtt"}
-	garbage := []string{"yt-old-1.mp4", "yt-old-1.mp4.0.vtt", "yt-old-2.mp4.part", "yt-old-3.mp4.1.vtt",
-		"download/video.mp4", "yt-gone-1.mp4.dl/video.mp4"}
+	keep := []string{"yt-a-1.mp4", "yt-a-1.mp4.0.vtt", "yt-a-1.mp4.1.vtt", "yt-a-1.mp4.m4a", "jf-p-1.mp4.part", "jf-p-1.mp4.0.vtt",
+		"jf-p-1.mp4.m4a.part", "yt-q-1.mp4.part", "yt-q-1.mp4.dl/video.webm", "yt-q-1.mp4.dl/sub.en.vtt", "yt-n-1.mp4", "yt-n-1.mp4.0.vtt"}
+	garbage := []string{"yt-old-1.mp4", "yt-old-1.mp4.0.vtt", "yt-old-1.mp4.m4a", "yt-old-2.mp4.part", "yt-old-3.mp4.1.vtt",
+		"yt-old-4.mp4.m4a.part", "download/video.mp4", "yt-gone-1.mp4.dl/video.mp4"}
 	for _, f := range append(keep, garbage...) {
 		os.MkdirAll(filepath.Dir(filepath.Join(dir, f)), 0o755)
 		os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o644)
@@ -914,9 +915,124 @@ func TestPrepareKeyframes(t *testing.T) {
 	}
 }
 
+// The audio-only copy of an item, copied or re-encoded (SponsorBlock cut), is
+// the MP4's audio stream as is.
+func TestPrepareAudioCopy(t *testing.T) {
+	ffmpeg, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		t.Skip("no ffmpeg on PATH")
+	}
+	ffprobe := strings.TrimSuffix(ffmpeg, "ffmpeg") + "ffprobe"
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src.mp4")
+	if _, err := run(t.Context(), ffmpeg, "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=s=320x240:r=25",
+		"-f", "lavfi", "-i", "sine=f=440:r=48000", "-t", "10", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", src); err != nil {
+		t.Fatal(err)
+	}
+	jellyfin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/Videos/src/stream" {
+			http.ServeFile(w, r, src)
+			return
+		}
+		http.Error(w, "no", http.StatusInternalServerError)
+	}))
+	defer jellyfin.Close()
+	// a yt-dlp that "downloads" src with a SponsorBlock segment from 3 to 5 s
+	ytDlp := filepath.Join(dir, "yt-dlp")
+	if err := os.WriteFile(ytDlp, []byte(`#!/bin/sh
+while [ $# -gt 0 ]; do case $1 in -o) out=$2; shift;; esac; shift; done
+d=$(dirname "$out")
+mkdir -p "$d"
+cp `+src+` "$d/video.mp4"
+echo '{"sponsorblock_chapters": [{"start_time": 3, "end_time": 5, "type": "skip"}]}' > "$d/video.info.json"
+echo "$d/video.mp4"
+`), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s := &server{cfg: config{CacheDir: dir, JellyfinURL: jellyfin.URL, FFmpeg: ffmpeg, YtDlp: ytDlp, SponsorblockCategories: []string{"sponsor"}}}
+
+	type stream struct {
+		CodecType  string `json:"codec_type"`
+		CodecName  string `json:"codec_name"`
+		SampleRate string `json:"sample_rate"`
+		BitRate    string `json:"bit_rate"`
+		NbFrames   string `json:"nb_frames"`
+	}
+	type info struct {
+		Streams []stream `json:"streams"`
+		Format  struct {
+			Duration string `json:"duration"`
+		} `json:"format"`
+	}
+	probe := func(path string) (info, []string) {
+		t.Helper()
+		out, err := run(t.Context(), ffprobe, "-v", "error", "-show_entries", "stream=codec_type,codec_name,sample_rate,bit_rate,nb_frames:format=duration",
+			"-of", "json", path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var i info
+		if err := json.Unmarshal(out, &i); err != nil {
+			t.Fatal(err)
+		}
+		sizes, err := run(t.Context(), ffprobe, "-v", "error", "-select_streams", "a:0", "-show_entries", "packet=size", "-of", "csv=p=0", path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return i, strings.Fields(string(sizes))
+	}
+	for _, c := range []candidate{
+		{ID: "jf:src", Kind: "movie", ref: "src"},
+		{ID: "yt:src", Kind: "youtube", ref: "src"},
+	} {
+		file := fileName(c)
+		e, err := s.prepare(t.Context(), c, file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if e.Audio != file+".m4a" {
+			t.Fatalf("%s: audio %q", c.ID, e.Audio)
+		}
+		video, videoPackets := probe(filepath.Join(dir, file))
+		audio, audioPackets := probe(filepath.Join(dir, e.Audio))
+		if len(audio.Streams) != 1 || audio.Streams[0].CodecType != "audio" || audio.Streams[0].CodecName != "aac" {
+			t.Fatalf("%s: streams %+v, want one AAC", c.ID, audio.Streams)
+		}
+		var videoAudio stream
+		for _, st := range video.Streams {
+			if st.CodecType == "audio" {
+				videoAudio = st
+			}
+		}
+		got, want := audio.Streams[0], videoAudio
+		if got.NbFrames != want.NbFrames || got.BitRate != want.BitRate || !slices.Equal(audioPackets, videoPackets) {
+			t.Errorf("%s: %s packets at %s bit/s, want the MP4's %s at %s bit/s (sizes equal: %v)", c.ID,
+				got.NbFrames, got.BitRate, want.NbFrames, want.BitRate, slices.Equal(audioPackets, videoPackets))
+		}
+		rate, _ := strconv.ParseFloat(got.SampleRate, 64)
+		secs, _ := strconv.ParseFloat(audio.Format.Duration, 64)
+		videoSecs, _ := strconv.ParseFloat(video.Format.Duration, 64)
+		if rate == 0 || math.Abs(secs-videoSecs) > 1024/rate {
+			t.Errorf("%s: %.4f s long, the MP4 %.4f s", c.ID, secs, videoSecs)
+		}
+		t.Logf("%s: %s packets at %s bit/s, %.4f s long, the MP4 %.4f s", c.ID, got.NbFrames, got.BitRate, secs, videoSecs)
+		if c.Kind == "youtube" && math.Abs(videoSecs-8) > 0.1 {
+			t.Errorf("%s: %.2f s long, want 8 after the cut", c.ID, videoSecs)
+		}
+		// an entry prepared before there were audio copies gets one
+		os.Remove(filepath.Join(dir, e.Audio))
+		s.statePath = filepath.Join(dir, "state.json")
+		s.st.Schedule = []entry{{ID: e.ID, File: file}}
+		s.addMissingAudio(t.Context())
+		if _, err := os.Stat(filepath.Join(dir, e.Audio)); err != nil || s.st.Schedule[0].Audio != e.Audio {
+			t.Errorf("%s: added audio %q, %v", c.ID, s.st.Schedule[0].Audio, err)
+		}
+	}
+}
+
 func TestMediaServesSubtitles(t *testing.T) {
 	dir := t.TempDir()
-	for _, f := range []string{"jf-a-1.mp4", "jf-a-1.mp4.0.vtt", "jf-a-1.mp4.part", ".x.vtt"} {
+	for _, f := range []string{"jf-a-1.mp4", "jf-a-1.mp4.0.vtt", "jf-a-1.mp4.m4a", "jf-a-1.mp4.part", "jf-a-1.mp4.m4a.part", ".x.vtt"} {
 		os.WriteFile(filepath.Join(dir, f), []byte("WEBVTT\n"), 0o644)
 	}
 	h := (&server{secret: "s", cfg: config{CacheDir: dir}}).handler()
@@ -932,7 +1048,10 @@ func TestMediaServesSubtitles(t *testing.T) {
 	if rec := get("/s/media/jf-a-1.mp4"); rec.Code != http.StatusOK {
 		t.Errorf("video: %d", rec.Code)
 	}
-	for _, path := range []string{"/s/media/jf-a-1.mp4.part", "/s/media/.x.vtt", "/s/media/nope.mp4.0.vtt"} {
+	if rec := get("/s/media/jf-a-1.mp4.m4a"); rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "audio/mp4" {
+		t.Errorf("audio: %d %q", rec.Code, rec.Header().Get("Content-Type"))
+	}
+	for _, path := range []string{"/s/media/jf-a-1.mp4.part", "/s/media/jf-a-1.mp4.m4a.part", "/s/media/.x.vtt", "/s/media/nope.mp4.0.vtt"} {
 		if rec := get(path); rec.Code != http.StatusNotFound {
 			t.Errorf("%s: %d, want 404", path, rec.Code)
 		}

@@ -90,8 +90,8 @@ func fileName(c candidate) string {
 }
 
 // prepare turns c into the browser-friendly MP4 name in the cache dir, with
-// its text subtitles as name.<n>.vtt next to it, and returns its entry
-// without a start.
+// its audio as name.m4a and its text subtitles as name.<n>.vtt next to it,
+// and returns its entry without a start.
 func (s *server) prepare(ctx context.Context, c candidate, name string) (entry, error) {
 	e := entry{ID: c.ID, Source: c.source(), Title: c.Title, File: name}
 	var input string
@@ -196,6 +196,12 @@ func (s *server) prepare(ctx context.Context, c candidate, name string) (entry, 
 		return e, err
 	}
 	e.Duration = int64(math.Round(secs * 1000))
+	if audio != "" {
+		if e.Audio, err = s.copyAudio(ctx, name); err != nil {
+			// players fall back to the MP4
+			log.Printf("audio of %s: %v", name, err)
+		}
+	}
 	if len(s.cfg.SponsorblockCategories) > 0 && c.Kind == "youtube" {
 		log.Printf("%s: removed %d SponsorBlock segments, %.1fs to %.1fs", name, len(cuts), inSecs, secs)
 	}
@@ -207,6 +213,59 @@ func (s *server) prepare(ctx context.Context, c candidate, name string) (entry, 
 	}
 	e.Link = itemLink(c, it, series)
 	return e, nil
+}
+
+// copyAudio copies the first audio stream of the prepared MP4 file in the
+// cache dir into file.m4a without re-encoding, so an audio-only player does
+// not download the video, and returns its name; "" if file has no audio.
+func (s *server) copyAudio(ctx context.Context, file string) (string, error) {
+	path := filepath.Join(s.cfg.CacheDir, file)
+	p, err := s.probe(ctx, nil, path)
+	if err != nil {
+		return "", err
+	}
+	if p.audioStream(nil) == "" {
+		return "", nil
+	}
+	name := file + ".m4a"
+	part := filepath.Join(s.cfg.CacheDir, name+".part")
+	if _, err := run(ctx, s.cfg.FFmpeg, "-hide_banner", "-loglevel", "error", "-y", "-i", path,
+		"-map", "0:a:0", "-c", "copy", "-movflags", "+faststart", "-f", "mp4", part); err != nil {
+		os.Remove(part)
+		return "", err
+	}
+	return name, os.Rename(part, filepath.Join(s.cfg.CacheDir, name))
+}
+
+// addMissingAudio gives the scheduled entries prepared before there were
+// audio copies theirs.
+func (s *server) addMissingAudio(ctx context.Context) {
+	s.mu.Lock()
+	var files []string
+	for _, e := range s.st.Schedule {
+		if e.Audio == "" {
+			files = append(files, e.File)
+		}
+	}
+	s.mu.Unlock()
+	for _, file := range files {
+		name, err := s.copyAudio(ctx, file)
+		if err != nil {
+			log.Printf("audio of %s: %v", file, err)
+			continue
+		}
+		if name == "" {
+			continue
+		}
+		s.mu.Lock()
+		for i := range s.st.Schedule {
+			if s.st.Schedule[i].File == file {
+				s.st.Schedule[i].Audio = name
+			}
+		}
+		s.save()
+		s.mu.Unlock()
+	}
 }
 
 type subtitle struct {

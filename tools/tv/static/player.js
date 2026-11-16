@@ -72,6 +72,9 @@ let standby = $("b");
 let started = false;
 let swapTimer = null;
 
+// audio only (?audio, tv.setAudioOnly): the elements play the entries' audio copies, without subtitles
+let audioOnly = new URLSearchParams(location.search).has("audio");
+
 // chosen subtitles as {lang, label}, or null for off
 let subtitleChoice = JSON.parse(localStorage.getItem("subtitles") ?? "null");
 
@@ -98,7 +101,7 @@ for (const v of [active, standby])
 function updateCC() {
   const subs = active.entry?.subtitles ?? [];
   const i = subtitleIndex(active.entry);
-  $("cc").hidden = subs.length === 0;
+  $("cc").hidden = audioOnly || subs.length === 0;
   $("cc").textContent = i < 0 ? "CC: off" : `CC: ${subs[i].label}`;
 }
 
@@ -114,11 +117,14 @@ function cycleSubtitles() {
 
 function load(video, e) {
   video.entry = e;
-  video.src = "media/" + encodeURIComponent(e.file);
+  // an audio copy has no frames to measure sync by
+  video.playsAudio = audioOnly && !!e.audio;
+  video.src =
+    "media/" + encodeURIComponent(video.playsAudio ? e.audio : e.file);
   video.playbackRate = 1;
   // tracks follow the element's currentTime, so they stay in sync without help
   video.replaceChildren(
-    ...(e.subtitles ?? []).map((s) => {
+    ...(audioOnly ? [] : (e.subtitles ?? [])).map((s) => {
       const t = document.createElement("track");
       t.kind = "subtitles";
       t.src = "media/" + encodeURIComponent(s.file);
@@ -128,6 +134,15 @@ function load(video, e) {
     }),
   );
   showSubtitles(video);
+}
+
+// reloads both elements with the other files; the active one starts again with one seek (tick)
+function setAudioOnly(on) {
+  if (on === audioOnly) return;
+  audioOnly = on;
+  for (const v of [active, standby]) if (v.entry) load(v, v.entry);
+  if (active.entry) sync.needsStart = true;
+  updateCC();
 }
 
 // whether [t, t + 3 s] is loaded: a seek there lands without waiting for the
@@ -297,9 +312,12 @@ function onFrame(video, meta) {
 }
 
 function pollPosition() {
-  measure();
+  if (!active.playsAudio) measure();
   requestAnimationFrame(pollPosition);
 }
+
+// an audio copy has no frames: measure on a timer, which also runs while the page is hidden
+setInterval(() => active.playsAudio && measure(), 16);
 
 function swap() {
   [active, standby] = [standby, active];
@@ -464,7 +482,7 @@ function showDebug() {
   ].join("\n");
 }
 
-window.tv = { clock, sync, serverNow, active: () => active };
+window.tv = { clock, sync, serverNow, active: () => active, setAudioOnly };
 
 $("debug").hidden = !new URLSearchParams(location.search).has("debug");
 $("start").addEventListener("click", () => {

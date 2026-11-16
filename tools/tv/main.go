@@ -88,6 +88,7 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	go s.addMissingAudio(ctx)
 	go s.run(ctx)
 	go s.serveRequests(ctx)
 	go s.periodic(ctx)
@@ -177,7 +178,7 @@ func nowMs() int64 { return time.Now().UnixMilli() }
 //	GET  api/schedule  {"entries": [playing, upcoming...], "pending": [requests]}
 //	POST api/queue     {"url"}: queue a YouTube video or Jellyfin item; 409 with
 //	                   its "start" if it is already scheduled or requested
-//	GET  media/<file>  prepared videos and subtitles
+//	GET  media/<file>  prepared videos, their audio (.m4a) and subtitles
 //	GET  api/channels  {"channels": [...], "suggestions": [...]}, each
 //	                   {"url", "title", "at", "by"}: the YouTube channels the
 //	                   picker lists and the suggested ones; "by" is "llm" for
@@ -263,7 +264,7 @@ func (s *server) handler() http.Handler {
 			}
 		case strings.HasPrefix(rest, "media/"):
 			name := strings.TrimPrefix(rest, "media/")
-			if name == "" || name != filepath.Base(name) || strings.HasPrefix(name, ".") || !strings.HasSuffix(name, ".mp4") && !strings.HasSuffix(name, ".vtt") {
+			if name == "" || name != filepath.Base(name) || strings.HasPrefix(name, ".") || !strings.HasSuffix(name, ".mp4") && !strings.HasSuffix(name, ".m4a") && !strings.HasSuffix(name, ".vtt") {
 				http.NotFound(w, r)
 				return
 			}
@@ -278,9 +279,12 @@ func (s *server) handler() http.Handler {
 				http.NotFound(w, r)
 				return
 			}
-			// Go's built-in MIME table has no .vtt; browsers ignore tracks of other types
-			if strings.HasSuffix(name, ".vtt") {
+			// Go's built-in MIME table has neither .vtt nor .m4a; browsers ignore tracks of other types
+			switch {
+			case strings.HasSuffix(name, ".vtt"):
 				w.Header().Set("Content-Type", "text/vtt; charset=utf-8")
+			case strings.HasSuffix(name, ".m4a"):
+				w.Header().Set("Content-Type", "audio/mp4")
 			}
 			http.ServeContent(w, r, name, fi.ModTime(), f)
 		default:

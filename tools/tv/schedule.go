@@ -26,6 +26,8 @@ type entry struct {
 	Start     int64      `json:"start"`
 	Duration  int64      `json:"duration"`
 	File      string     `json:"file"`
+	// the audio of File alone (media.go copyAudio), if it has any
+	Audio     string     `json:"audio,omitempty"`
 	Queued    bool       `json:"queued,omitempty"`
 	Link      string     `json:"link,omitempty"`
 	Subtitles []subtitle `json:"subtitles,omitempty"`
