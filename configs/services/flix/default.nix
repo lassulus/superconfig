@@ -463,7 +463,11 @@
   };
   # games, web ui on yellow.r:6969 (its default 6767 is bazarr's)
   systemd.services.gamarr = {
-    environment.GAMARR__SERVER__PORT = toString config.lass.servicePorts.gamarr;
+    environment = {
+      GAMARR__SERVER__PORT = toString config.lass.servicePorts.gamarr;
+      # login happens on games.lassul.us (games-proxy.nix on neoprism)
+      GAMARR__AUTH__METHOD = "External";
+    };
     after = [ "network.target" ];
     wantedBy = [ "multi-user.target" ];
     serviceConfig = {

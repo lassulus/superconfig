@@ -5,7 +5,10 @@
   ...
 }:
 {
-  imports = [ ./transmission-proxy.nix ];
+  imports = [
+    ./games-proxy.nix
+    ./transmission-proxy.nix
+  ];
 
   # POST → ipfs-upload backend (writes file to /var/lib/ipfs/download/<path>
   # and returns the CID). Anything else → the kubo gateway.
