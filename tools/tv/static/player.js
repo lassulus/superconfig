@@ -63,6 +63,9 @@ const sync = {
   // while waiting for the seek target to load: when and how many seconds were still missing
   behind: null,
   needsStart: false,
+  // the page came back from the background and playback is not realigned yet
+  resync: false,
+  playAt: -Infinity,
 };
 let active = $("a");
 let standby = $("b");
@@ -155,6 +158,7 @@ function seek(video) {
   const t = seekTarget(video);
   // only the start seeks past what is loaded; waiting for the network says nothing about the next seek
   sync.learn = loaded(video, t) ? "seekLead" : null;
+  sync.resync = false;
   video.playbackRate = 1;
   video.currentTime = t;
   sync.err = null;
@@ -266,6 +270,13 @@ function measure() {
     active.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA
   ) {
     const now = performance.now();
+    if (sync.resync) {
+      // back from the background the picture restarts and drifts from the clock; one seek on the first
+      // frame realigns both, and how late it lands says nothing about the next seek
+      seek(active);
+      sync.learn = null;
+      return;
+    }
     const target =
       performance.timeOrigin + now + clock.offset - active.entry.start;
     control(active.currentTime * 1000 - target, now);
@@ -336,7 +347,16 @@ function tick() {
     sync.needsStart = false;
     seek(active);
     active.play().catch(() => {});
-  } else if (!sync.needsStart && active.paused && !active.ended) {
+  } else if (
+    !sync.needsStart &&
+    active.paused &&
+    !active.ended &&
+    // the browser pauses a hidden page's video (Chrome on Android) and pauses it again if played there;
+    // play it again only once visible and at most once a second
+    !document.hidden &&
+    performance.now() - sync.playAt >= 1000
+  ) {
+    sync.playAt = performance.now();
     active.play().catch(() => {});
   }
   const next = entryAfter(now);
@@ -467,6 +487,10 @@ document.addEventListener("keydown", (ev) => {
 });
 for (const ev of ["mousemove", "touchstart"])
   document.addEventListener(ev, showInfo, { passive: true });
+// back from the background (Home on a phone), realign once instead of steering the restarting picture
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && started) sync.resync = true;
+});
 
 if ("requestVideoFrameCallback" in HTMLVideoElement.prototype) {
   for (const v of [active, standby])
