@@ -1,8 +1,10 @@
 package us.lassul.assist;
 
 import android.content.ActivityNotFoundException;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.MutableContextWrapper;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
@@ -10,6 +12,7 @@ import android.graphics.Color;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.util.Log;
 import android.util.Rational;
 import android.view.View;
@@ -29,8 +32,8 @@ import org.json.JSONException;
 /**
  * The synced TV channel (tools/tv): its page in one WebView that outlives the TV screen, so
  * the channel plays on without the picture (TvService keeps it in the foreground). Without a
- * screen the page plays only the sound (?audio, tv.setAudioOnly) and does not download the
- * video. Paused means muted: the channel is live and the page stays in sync, so playing again
+ * screen, or with the display off, the page plays only the sound (?audio, tv.setAudioOnly) and
+ * does not download the video. Paused means muted: the channel is live and the page stays in sync, so playing again
  * is where the channel is now. Main thread only.
  */
 final class Tv {
@@ -63,6 +66,13 @@ final class Tv {
     private static final Runnable apply = new Runnable() {
         @Override
         public void run() {
+            apply();
+        }
+    };
+    // The display going off or on switches between sound only and video (apply).
+    private static final BroadcastReceiver display = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
             apply();
         }
     };
@@ -194,6 +204,9 @@ final class Tv {
         applied = null;
         view.loadUrl(page(url));
         Live.watch(apply);
+        IntentFilter filter = new IntentFilter(Intent.ACTION_SCREEN_OFF);
+        filter.addAction(Intent.ACTION_SCREEN_ON);
+        base.registerReceiver(display, filter, Context.RECEIVER_NOT_EXPORTED);
         main.postDelayed(poll, POLL_MS);
         Live.changed();
         return true;
@@ -261,6 +274,7 @@ final class Tv {
             return;
         }
         Live.unwatch(apply);
+        base.unregisterReceiver(display);
         main.removeCallbacks(poll);
         detach();
         view.destroy();
@@ -279,14 +293,16 @@ final class Tv {
 
     /**
      * Tells the page whether to be silent, whether it is in picture-in-picture and whether it
-     * plays only the sound (no screen; a page shown again loads the video at where it is).
+     * plays only the sound (no screen or the display off; a page shown again loads the video at
+     * where it is).
      */
     private static void apply() {
         if (view == null) {
             return;
         }
         boolean muted = muted();
-        boolean audio = screen == null;
+        boolean audio = screen == null
+                || !base.getSystemService(PowerManager.class).isInteractive();
         String state = muted + " " + pip + " " + audio;
         if (state.equals(applied)) {
             return;
