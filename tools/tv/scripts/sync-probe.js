@@ -22,6 +22,16 @@
 //                 (over 100 ms off, or waiting)
 //   freeze        stop the browser's processes for 1.5 s in the middle of
 //                 the item, like a phone busy elsewhere, then watch for 60 s
+//   background    like pressing Home on the phone: hide the page for 15 s
+//                 (another tab in front) and pause the video while hidden
+//                 (on hiding and on every play), as Chrome on Android did
+//                 in one test, then bring it back and watch for 30 s;
+//                 counts the player's play()/pause() calls and the seeks
+//                 while hidden and after the return, the error 1-30 s after
+//                 it and when playback was last out of sync (over 100 ms
+//                 off, paused or waiting)
+//   background-once  the same, but the browser pauses the video only once
+//                 on hiding (as in other tests on the phone)
 //
 // Run the browser through `taskset -c 0` to make its decoder slow like a
 // phone's.
@@ -133,7 +143,16 @@ const p = spawn(
   await send("Page.enable");
   await send("Page.addScriptToEvaluateOnNewDocument", {
     source: `
-    window.__seeks = 0; window.__probeSeeks = 0; window.__seeking = 0; window.__drift = 0; window.__log = []; window.__skipped = 0;
+    window.__seeks = 0; window.__probeSeeks = 0; window.__seeking = 0; window.__drift = 0; window.__log = []; window.__skipped = 0; window.__plays = 0; window.__pauses = 0;
+    // the player's play() and pause() calls on the active element
+    for (const [m, n] of [["play", "__plays"], ["pause", "__pauses"]]) {
+      const f = HTMLMediaElement.prototype[m];
+      HTMLMediaElement.prototype[m] = function () {
+        if (!window.__probe && window.tv && this === tv.active()) window[n]++;
+        return f.call(this);
+      };
+    }
+    ${scenario.startsWith("background") ? `const bgPause = (v) => { if (document.hidden && !v.paused) { window.__probe = true; v.pause(); window.__probe = false; } }; document.addEventListener("visibilitychange", () => bgPause(tv.active())); ${scenario === "background" ? 'addEventListener("DOMContentLoaded", () => { for (const v of document.querySelectorAll("video")) v.addEventListener("play", () => bgPause(v)); });' : ""}` : ""}
     const d = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "currentTime");
     Object.defineProperty(HTMLMediaElement.prototype, "currentTime", { get() { return d.get.call(this); }, set(v) {
       if (window.__probe) window.__probeSeeks++; else window.__seeks++;
@@ -156,7 +175,7 @@ const p = spawn(
             buffered: [...Array(v.buffered.length).keys()].map((i) => v.buffered.start(i).toFixed(1) + "-" + v.buffered.end(i).toFixed(1)).join(" "),
             raw: tv.sync.raw?.toFixed(0), lead: tv.sync.seekLead.toFixed(3), learn: tv.sync.learn });
         });
-        for (const e of ["seeked", "waiting", "playing"]) v.addEventListener(e, () => v === tv.active() && window.__log.push({ t: performance.now(), event: e, at: v.currentTime.toFixed(2), ready: v.readyState }));
+        for (const e of ["seeked", "waiting", "playing", "play", "pause"]) v.addEventListener(e, () => v === tv.active() && window.__log.push({ t: performance.now(), event: e, at: v.currentTime.toFixed(2), ready: v.readyState, hidden: document.hidden }));
       }
     });
   `,
@@ -166,7 +185,7 @@ const p = spawn(
   const st = async () =>
     JSON.parse(
       await ev(
-        `JSON.stringify({err: tv.sync.err?.toFixed(1), raw: tv.sync.raw?.toFixed(1), frame: tv.sync.frame?.toFixed(1), rate: tv.active().playbackRate, works: tv.sync.rateWorks, lead: tv.sync.seekLead.toFixed(3), seeks: __seeks, seeking: __seeking, skipped: __skipped, ready: tv.active().readyState, paused: tv.active().paused})`,
+        `JSON.stringify({err: tv.sync.err?.toFixed(1), raw: tv.sync.raw?.toFixed(1), frame: tv.sync.frame?.toFixed(1), rate: tv.active().playbackRate, works: tv.sync.rateWorks, lead: tv.sync.seekLead.toFixed(3), seeks: __seeks, seeking: __seeking, skipped: __skipped, plays: __plays, pauses: __pauses, ready: tv.active().readyState, paused: tv.active().paused, hidden: document.hidden})`,
       ),
     );
   let mark = { ...(await st()), bytes: mediaBytes };
@@ -174,7 +193,7 @@ const p = spawn(
   const phase = async (label) => {
     const s = { ...(await st()), bytes: mediaBytes };
     console.log(
-      `${label}: player seeks ${s.seeks - mark.seeks}, seeking events ${s.seeking - mark.seeking}, skipped loaded ${(s.skipped - mark.skipped).toFixed(1)} s, media ${((s.bytes - mark.bytes) / 1e6).toFixed(1)} MB`,
+      `${label}: player seeks ${s.seeks - mark.seeks}, seeking events ${s.seeking - mark.seeking}, play() ${s.plays - mark.plays}, pause() ${s.pauses - mark.pauses}, skipped loaded ${(s.skipped - mark.skipped).toFixed(1)} s, media ${((s.bytes - mark.bytes) / 1e6).toFixed(1)} MB`,
       JSON.stringify(s),
     );
     const log = JSON.parse(await ev(`JSON.stringify(__log)`));
@@ -223,6 +242,40 @@ const p = spawn(
     process.kill(-p.pid, "SIGCONT");
     await sleep(60000);
     await phase("60 s after the browser froze for 1.5 s");
+  } else if (scenario.startsWith("background")) {
+    await sleep(20000);
+    await phase("20 s before hiding");
+    // a tab in front hides the page (visibilitychange, rVFC and rAF stop, timers throttle)
+    const { targetId } = (
+      await send("Target.createTarget", { url: "about:blank" })
+    ).result;
+    await sleep(15000);
+    await phase("15 s hidden");
+    await send("Page.bringToFront");
+    await send("Target.closeTarget", { targetId });
+    const back = Date.now();
+    // error of the playhead against the schedule, also while paused
+    const errAt = {};
+    let outAt = back;
+    while (Date.now() - back < 30000) {
+      const s = JSON.parse(
+        await ev(
+          `JSON.stringify({err: tv.active().currentTime * 1000 - (tv.serverNow() - tv.active().entry.start), ready: tv.active().readyState, paused: tv.active().paused})`,
+        ),
+      );
+      const t = Date.now() - back;
+      for (const at of [1, 3, 5, 10, 20, 29])
+        if (t >= at * 1000 && !(at in errAt)) errAt[at] = s.err.toFixed(0);
+      if (s.ready < 3 || s.paused || Math.abs(s.err) > 100) outAt = Date.now();
+      await sleep(250);
+    }
+    await phase(
+      `30 s after the return, error ${Object.entries(errAt)
+        .map(([at, e]) => `${at} s: ${e} ms`)
+        .join(
+          ", ",
+        )}, last out of sync ${((outAt - back) / 1000).toFixed(1)} s after it`,
+    );
   } else {
     await sleep(20000);
     await phase("20 s before the hiccup");
