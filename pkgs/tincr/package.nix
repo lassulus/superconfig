@@ -33,6 +33,11 @@ in
 # mapping no longer keeps both ends on a relayed path (Mic92/tincr#184).
 lib.throwIf (srcHas "crates/tincd/src/udp_path.rs" "fn release_unanswered_seen(")
   "pkgs/tincr: the pinned tincr has release_unanswered_seen, remove release-unanswered-seen.patch"
+  # Announces a direct peer's NAT-mapped UDP port in our edge, so a pair
+  # relayed elsewhere finds it again after the NAT rebinds (radio <-> styx).
+  lib.throwIf
+  (srcHas "crates/tincd/src/daemon/gossip/send.rs" "fn advertise_udp_edge_addr(")
+  "pkgs/tincr: the pinned tincr has advertise_udp_edge_addr, remove advertise-nat-udp-port.patch"
   rustPlatform.buildRustPackage
   {
     pname = "tincr";
@@ -40,7 +45,10 @@ lib.throwIf (srcHas "crates/tincd/src/udp_path.rs" "fn release_unanswered_seen("
 
     inherit src;
 
-    patches = [ ./release-unanswered-seen.patch ];
+    patches = [
+      ./release-unanswered-seen.patch
+      ./advertise-nat-udp-port.patch
+    ];
 
     cargoHash = "sha256-fXW+8t4QuD1cuHjI9t6B/fCvmYYWgPdFz5iLnr/3JSo=";
 

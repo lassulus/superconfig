@@ -1,0 +1,79 @@
+From 40c4b2eb31b02cad029db70ade127fe2e86886bb Mon Sep 17 00:00:00 2001
+From: Hermes <hermes@lassul.us>
+Date: Mon, 16 Nov 2026 12:24:35 +0100
+Subject: [PATCH] tincd: advertise a direct peer's NAT-rewritten UDP port in
+ our edge
+
+The edge address is the peer's TCP source with its listening port, which
+a port-randomising NAT never forwards. Once UDP to the peer confirms on
+the same IP at another port, re-gossip the edge with that port so nodes
+routed elsewhere (radio via eva) can still find and punch it.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ crates/tincd/src/daemon/gossip/send.rs | 28 +++++++++++++++++++++++++-
+ crates/tincd/src/daemon/tx_control.rs  |  2 +-
+ 2 files changed, 28 insertions(+), 2 deletions(-)
+
+diff --git a/crates/tincd/src/daemon/gossip/send.rs b/crates/tincd/src/daemon/gossip/send.rs
+index def8863f..83137c9d 100644
+--- a/crates/tincd/src/daemon/gossip/send.rs
++++ b/crates/tincd/src/daemon/gossip/send.rs
+@@ -2,7 +2,7 @@
+ 
+ use crate::daemon::{ConnId, Daemon};
+ 
+-use crate::graph::EdgeId;
++use crate::graph::{EdgeId, NodeId};
+ use tinc_proto::msg::{AddEdge, DelEdge, SubnetMsg};
+ use tinc_proto::{AddrStr, Request, Subnet};
+ 
+@@ -34,6 +34,32 @@ impl Daemon {
+         Some(msg.format(nonce))
+     }
+ 
++    /// A NAT may map `peer`'s UDP to another port than its TCP-derived
++    /// edge address; advertise the confirmed one so others can punch it.
++    pub(in crate::daemon) fn advertise_udp_edge_addr(&mut self, peer: NodeId) -> bool {
++        let Some(udp) = self.dp.tunnels.get(&peer).and_then(|t| t.path.underlay()) else {
++            return false;
++        };
++        let Some(ns) = self.nodes.get_mut(&peer) else {
++            return false;
++        };
++        let (Some(eid), Some(old)) = (ns.edge, ns.edge_addr) else {
++            return false;
++        };
++        if old == udp || old.get().ip() != udp.get().ip() || self.settings.tunnelserver {
++            return false;
++        }
++        ns.edge_addr = Some(udp);
++        let Some(entry) = self.edge_addrs.get_mut(&eid) else {
++            return false;
++        };
++        (entry.0, entry.1) = AddrStr::from_socket_addr(udp.get());
++        let Some(line) = self.fmt_add_edge(eid, Self::nonce()) else {
++            return false;
++        };
++        self.broadcast_line(&line)
++    }
++
+     /// Correction path: send back what we know about an edge.
+     pub(in crate::daemon) fn send_add_edge(&mut self, to: ConnId, eid: EdgeId) -> bool {
+         let Some(line) = self.fmt_add_edge(eid, Self::nonce()) else {
+diff --git a/crates/tincd/src/daemon/tx_control.rs b/crates/tincd/src/daemon/tx_control.rs
+index ef995cfc..d158264f 100644
+--- a/crates/tincd/src/daemon/tx_control.rs
++++ b/crates/tincd/src/daemon/tx_control.rs
+@@ -141,7 +141,7 @@ impl Daemon {
+             Self::log_pmtu_action(peer_name, a);
+         }
+         self.publish_path(peer);
+-        false
++        !was_confirmed && self.advertise_udp_edge_addr(peer)
+     }
+ 
+     /// Type-2 reply: length in bytes [1..3], wire packet is
+-- 
+2.56.0
+
