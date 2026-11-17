@@ -325,10 +325,6 @@
       locations."/" = {
         proxyWebsockets = true;
         proxyPass = "http://localhost:${toString config.lass.servicePorts.sonarr}";
-        # sonar.r now has forced authentication
-        extraConfig = ''
-          proxy_set_header Authorization "Basic a3JlYnM6YWlkc2JhbGxz";
-        '';
       };
     };
   };
@@ -435,6 +431,8 @@
   services.radarr = {
     enable = true;
     settings.server.port = config.lass.servicePorts.radarr;
+    # login happens on flex.lassul.us (backend-proxy.nix on neoprism)
+    settings.auth.method = "External";
     openFirewall = true;
     user = "download";
     group = "download";
@@ -444,6 +442,8 @@
   services.sonarr = {
     enable = true;
     settings.server.port = config.lass.servicePorts.sonarr;
+    # login happens on flux.lassul.us (backend-proxy.nix on neoprism)
+    settings.auth.method = "External";
     openFirewall = true;
     user = "download";
     group = "download";
