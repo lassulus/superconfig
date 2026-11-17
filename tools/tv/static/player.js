@@ -124,6 +124,8 @@ function load(video, e) {
   video.src =
     "media/" + encodeURIComponent(video.playsAudio ? e.audio : e.file);
   video.playbackRate = 1;
+  // a track removed while showing leaves its cue drawn (Android WebView), so hide the old ones first
+  for (const t of video.textTracks) t.mode = "disabled";
   // tracks follow the element's currentTime, so they stay in sync without help
   video.replaceChildren(
     ...(audioOnly ? [] : (e.subtitles ?? [])).map((s) => {
