@@ -21,7 +21,7 @@ import java.util.Arrays;
 /**
  * The TV channel full screen (Tv's page). Leaving it (home, back, another app) shrinks it to
  * picture-in-picture; closing that stops the TV, its Audio only plays on without the picture,
- * like the display going off does. Opened or shared tv.lassul.us links become the TV URL.
+ * like the display going off does. Opened or shared glotz.lassul.us links become the TV URL.
  */
 public class TvActivity extends Activity {
     private FrameLayout frame;
@@ -185,7 +185,7 @@ public class TvActivity extends Activity {
         }
         String url = Tv.parse(text, true);
         if (url == null) {
-            Toast.makeText(this, "No tv.lassul.us link in it", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "No glotz.lassul.us link in it", Toast.LENGTH_LONG).show();
         } else if (!url.equals(Tv.url(this))) {
             Tv.saveUrl(this, url);
             Toast.makeText(this, "TV URL saved", Toast.LENGTH_SHORT).show();

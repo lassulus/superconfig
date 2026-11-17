@@ -11,12 +11,12 @@ let
   neoprism = self.inputs.kartei.hosts.neoprism.nets.retiolum.ip4.addr;
 in
 {
-  # SOCKS5 proxy for tv.lassul.us on neoprism: YouTube refuses video
+  # SOCKS5 proxy for glotz.lassul.us on neoprism: YouTube refuses video
   # downloads from datacenter IPs, not from this residential line.
   lass.ports."1080" = "tv-proxy";
 
   systemd.services.tv-proxy = {
-    description = "SOCKS5 proxy for tv.lassul.us";
+    description = "SOCKS5 proxy for glotz.lassul.us";
     wantedBy = [ "multi-user.target" ];
     after = [ "tinc.retiolum.service" ];
     serviceConfig = {

@@ -3,7 +3,7 @@
   perSystem =
     { pkgs, ... }:
     {
-      # Synced 24/7 channel (tv.lassul.us, configs/tv.nix).
+      # Synced 24/7 channel (glotz.lassul.us, configs/tv.nix).
       packages.tv = pkgs.buildGoModule {
         pname = "tv";
         version = "0.1.0";

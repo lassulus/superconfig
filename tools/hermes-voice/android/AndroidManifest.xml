@@ -36,7 +36,7 @@
                 android:resource="@xml/shortcuts" />
         </activity>
         <!-- The TV channel (tools/tv) in its own task, so it can shrink to
-             picture-in-picture alone. Opened or shared tv.lassul.us links
+             picture-in-picture alone. Opened or shared glotz.lassul.us (or old tv.lassul.us) links
              set its URL. -->
         <activity
             android:name=".TvActivity"
@@ -53,6 +53,7 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="glotz.lassul.us" />
                 <data android:scheme="https" android:host="tv.lassul.us" />
             </intent-filter>
             <intent-filter>

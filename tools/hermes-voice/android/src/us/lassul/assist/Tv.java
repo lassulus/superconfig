@@ -38,7 +38,9 @@ import org.json.JSONException;
  */
 final class Tv {
     private static final String PREFS = "tv";
-    private static final String HOST = "tv.lassul.us";
+    private static final String HOST = "glotz.lassul.us";
+    // the channel's old name, now a redirect to HOST
+    private static final String OLD_HOST = "tv.lassul.us";
     private static final Pattern LINK = Pattern.compile("https?://\\S+");
     private static final long POLL_MS = 5000;
     // In picture-in-picture the page's chrome goes and the subtitles grow to stay readable.
@@ -94,9 +96,18 @@ final class Tv {
 
     private Tv() {}
 
-    /** The channel's page, https://tv.lassul.us/<secret>/; null until set. */
+    /** The channel's page, https://glotz.lassul.us/<secret>/; null until set. */
     static String url(Context context) {
-        return prefs(context).getString("url", null);
+        return moved(prefs(context).getString("url", null));
+    }
+
+    /** url on the old host moved to HOST, since the page links only its own host to the TV. */
+    private static String moved(String url) {
+        if (url == null) {
+            return null;
+        }
+        Uri uri = Uri.parse(url);
+        return OLD_HOST.equals(uri.getHost()) ? uri.buildUpon().authority(HOST).build().toString() : url;
     }
 
     /** Saves the URL (from parse()); a running TV switches to it. */
@@ -115,7 +126,7 @@ final class Tv {
 
     /**
      * The first http(s) URL in the text, as a directory (the player loads api/ and media/
-     * relative to it); with tvOnly only one on tv.lassul.us. Null without one.
+     * relative to it); with tvOnly only one on HOST (or OLD_HOST, saved as HOST). Null without one.
      */
     static String parse(String text, boolean tvOnly) {
         if (text == null) {
@@ -124,14 +135,15 @@ final class Tv {
         Matcher link = LINK.matcher(text);
         while (link.find()) {
             Uri uri = Uri.parse(link.group());
-            if (uri.getHost() == null || (tvOnly && !HOST.equals(uri.getHost()))) {
+            if (uri.getHost() == null
+                    || (tvOnly && !HOST.equals(uri.getHost()) && !OLD_HOST.equals(uri.getHost()))) {
                 continue;
             }
             String path = uri.getEncodedPath() == null ? "" : uri.getEncodedPath();
             if (!path.endsWith("/")) {
                 uri = uri.buildUpon().encodedPath(path + "/").build();
             }
-            return uri.toString();
+            return moved(uri.toString());
         }
         return null;
     }

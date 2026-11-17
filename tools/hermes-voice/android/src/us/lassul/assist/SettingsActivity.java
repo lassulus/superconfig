@@ -90,8 +90,8 @@ public class SettingsActivity extends Activity {
                 + "Hold the headset's voice button to talk to Hermes, a short press hangs up;"
                 + " a tone says it listens. Pick Assist when Android asks which app handles voice"
                 + " commands. On GrapheneOS, Assist also needs the Network permission.\n\n"
-                + "The TV URL is the TV page with its secret path, https://tv.lassul.us/…/;"
-                + " sharing a tv.lassul.us link with Assist sets it too.");
+                + "The TV URL is the TV page with its secret path, https://glotz.lassul.us/…/;"
+                + " sharing a glotz.lassul.us link with Assist sets it too.");
         layout.addView(help);
 
         ScrollView scroll = new ScrollView(this);

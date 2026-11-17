@@ -6,7 +6,7 @@
   ...
 }:
 let
-  domain = "tv.lassul.us";
+  domain = "glotz.lassul.us";
   port = config.lass.servicePorts.tv;
   vars = config.clan.core.vars.generators;
   styx = self.inputs.kartei.hosts.styx.nets.retiolum.ip4.addr;
@@ -225,6 +225,13 @@ in
         proxy_buffering off;
       '';
     };
+  };
+
+  # the channel's old name: old links and saved app URLs keep working
+  services.nginx.virtualHosts."tv.lassul.us" = {
+    enableACME = true;
+    forceSSL = true;
+    globalRedirect = domain;
   };
 
   lass.backup.state.tv.folders = [ "/var/lib/private/tv" ];
