@@ -56,8 +56,13 @@ let
       llm_url = "https://generativelanguage.googleapis.com/v1beta/openai/";
       llm_model = "gemini-3.5-flash-lite";
       llm_key_file = "/run/credentials/tv.service/gemini";
-      look_ahead = "3h";
+      # plans a TV-guide day; ~3 Mbit/s of prepared files make 24 h about 35 GB of cache_max_bytes
+      look_ahead = "24h";
       admin_key_file = "/run/credentials/tv.service/admin";
+      # editors log in at id.lassul.us besides the admin key; the callback is outside the secret path
+      oidc_issuer = "https://id.lassul.us";
+      oidc_client_id_file = "/run/credentials/tv.service/oidc-client-id";
+      oidc_redirect_url = "https://${domain}/oidc/callback";
       jellyseerr_url = "http://${self.inputs.kartei.hosts.yellow.nets.retiolum.ip4.addr}:5055";
       jellyseerr_key_file = "/run/credentials/tv.service/jellyseerr";
       requests_per_day = 2;
@@ -81,11 +86,27 @@ in
 {
   lass.ports."8085" = "tv";
 
+  # only users an admin gave a user grant on the project tv in the console can log in to edit the schedule
+  lass.zitadel.projects.tv = {
+    access = "managed";
+    apps.web = {
+      redirectUris = [ "https://${domain}/oidc/callback" ];
+      authMethod = "none";
+    };
+  };
+
   systemd.services.tv = {
     description = "${domain} channel";
     wantedBy = [ "multi-user.target" ];
-    wants = [ "network-online.target" ];
-    after = [ "network-online.target" ];
+    # reads the client id that zitadel-reconcile writes
+    wants = [
+      "network-online.target"
+      "zitadel-reconcile.service"
+    ];
+    after = [
+      "network-online.target"
+      "zitadel-reconcile.service"
+    ];
     # yt-dlp solves YouTube's JavaScript challenges with deno, the PO token script runs on node
     path = [
       pkgs.deno
@@ -113,6 +134,7 @@ in
         "admin:${vars.tv-admin.files.key.path}"
         "jellyseerr:${vars.tv-jellyseerr.files.key.path}"
         "youtube:${vars.tv-youtube.files.cookies.path}"
+        "oidc-client-id:${config.lass.zitadel.projects.tv.apps.web.clientIdFile}"
       ];
       Restart = "on-failure";
       # transcodes take every free core; everything else on neoprism goes first
@@ -173,7 +195,7 @@ in
     type = "multiline-hidden";
     persist = true;
   };
-  # bearer key for POST /<secret>/api/skip, api/schedule/* and api/channels/{add,remove,approve,reject}
+  # bearer key for the editor endpoints: POST /<secret>/api/skip, api/schedule/*, api/channels/{add,remove,approve,reject}, api/slots/* and GET api/search
   clan.core.vars.generators.tv-admin = {
     files.key = { };
     runtimeInputs = [
