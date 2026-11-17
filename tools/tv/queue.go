@@ -132,16 +132,33 @@ func (s *server) lookup(ctx context.Context, c candidate) (candidate, error) {
 		return c, errors.New("no Jellyfin video with this id")
 	}
 	it := items[0]
-	c.Kind, c.Title, c.Duration = "movie", it.Name, it.RunTimeTicks/10_000_000
+	c.Kind, c.Title, c.Duration = "movie", itemTitle(it), it.RunTimeTicks/10_000_000
 	if it.Type == "Episode" {
-		c.Kind, c.Title = "episode", fmt.Sprintf("%s S%02dE%02d %s", it.SeriesName, it.Season, it.Episode, it.Name)
+		c.Kind = "episode"
 	}
 	return c, nil
+}
+
+// itemTitle is the name of a movie or "<series> SxxEyy <name>" of an episode.
+func itemTitle(it jellyfinItem) string {
+	if it.Type == "Episode" {
+		return fmt.Sprintf("%s S%02dE%02d %s", it.SeriesName, it.Season, it.Episode, it.Name)
+	}
+	return it.Name
 }
 
 func (s *server) isAdmin(r *http.Request) bool {
 	key, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	return ok && s.adminKey != "" && subtle.ConstantTimeCompare([]byte(key), []byte(s.adminKey)) == 1
+}
+
+// editor returns who may edit the schedule: "admin" for the admin key, or ""
+// for nobody.
+func (s *server) editor(r *http.Request) string {
+	if s.isAdmin(r) {
+		return "admin"
+	}
+	return ""
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -264,6 +281,9 @@ func (s *server) claim(c candidate, how placement, after *slot) (int, any, bool)
 	now := nowMs()
 	if i := s.st.scheduled(now, c.ID); i >= 0 {
 		e := s.st.Schedule[i]
+		if e.fixed() {
+			return http.StatusConflict, map[string]any{"error": fmt.Sprintf("%q is a slot, it stays at its time", e.Title), "start": e.Start}, true
+		}
 		if _, err := os.Stat(filepath.Join(s.cfg.CacheDir, e.File)); err != nil {
 			// unplayable, the new request replaces it
 			s.st.take(i)
@@ -302,7 +322,7 @@ func (s *server) claim(c candidate, how placement, after *slot) (int, any, bool)
 
 // schedule is the api/schedule response; callers hold s.mu.
 func (s *server) schedule(now int64) map[string]any {
-	return map[string]any{"entries": append([]entry{}, s.st.upcoming(now)...), "pending": s.pending(now)}
+	return map[string]any{"entries": append([]entry{}, s.st.upcoming(now)...), "pending": s.pending(now), "slots": s.slots()}
 }
 
 // handleEdit serves api/schedule/delete and api/schedule/move.

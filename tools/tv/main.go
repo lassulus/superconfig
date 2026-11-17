@@ -70,9 +70,10 @@ type server struct {
 	st state
 	// queued and play-now items until they are in the schedule
 	requests []*request
-	// file of the picker's running prepare
-	preparing string
-	wake      chan struct{}
+	// file of the picker's running prepare, and the slot it is for
+	preparing     string
+	preparingSlot string
+	wake          chan struct{}
 
 	// only used by the scheduler goroutine
 	queue   []candidate
@@ -159,11 +160,17 @@ func newServer(configPath string) (*server, error) {
 	if s.st, err = loadState(s.statePath); err != nil {
 		return nil, err
 	}
-	// entries whose file is gone (cache wiped) cannot play
-	s.st.dropMissing(nowMs(), func(file string) bool {
+	// entries whose file is gone (cache wiped) cannot play, slots prepare again
+	exists := func(file string) bool {
 		_, err := os.Stat(filepath.Join(cfg.CacheDir, file))
 		return err == nil
-	})
+	}
+	s.st.dropMissing(nowMs(), exists)
+	for i, sl := range s.st.Slots {
+		if sl.File != "" && !exists(sl.File) {
+			s.st.Slots[i].File = ""
+		}
+	}
 	if err := saveState(s.statePath, s.st); err != nil {
 		return nil, err
 	}
@@ -175,7 +182,10 @@ func nowMs() int64 { return time.Now().UnixMilli() }
 // handler serves everything under /<secret>/:
 //
 //	GET  api/time      server clock, unix ms
-//	GET  api/schedule  {"entries": [playing, upcoming...], "pending": [requests]}
+//	GET  api/schedule  {"entries": [playing, upcoming...], "pending": [requests],
+//	                   "slots": [{"id", "at", "item", "source", "title",
+//	                   "duration", "by", "state", "error"}...]}; an entry of a
+//	                   slot has its "slot" id
 //	POST api/queue     {"url"}: queue a YouTube video or Jellyfin item; 409 with
 //	                   its "start" if it is already scheduled or requested
 //	GET  media/<file>  prepared videos, their audio (.m4a) and subtitles
@@ -189,7 +199,14 @@ func nowMs() int64 { return time.Now().UnixMilli() }
 //	                   already or was rejected (or removed), 429 with 20
 //	                   suggestions waiting
 //
-// Admin, with "Authorization: Bearer <admin key>" (401 without):
+// Editors, with "Authorization: Bearer <admin key>" (401 without):
+//
+//	POST api/slots/add    {"url", "at"}: play a YouTube video or Jellyfin item
+//	                   at unix ms "at"; 200 with the slot, 400 for a time in the
+//	                   past or an item overlapping another slot's
+//	POST api/slots/remove {"id"}: drop a slot and its entry (409 while it plays)
+//	GET  api/search?q= Jellyfin movies and episodes by name:
+//	                   [{"id", "title", "year", "duration"}...]
 //
 //	POST api/skip      {}: skip the playing entry; {"url"}: play it now, an
 //	                   already scheduled entry of it moves to now
@@ -211,9 +228,10 @@ func nowMs() int64 { return time.Now().UnixMilli() }
 //	                   rejected (the last 200)
 //
 // Edits address entries by start (unix ms) and id; 409 if no upcoming entry
-// matches (the schedule moved) or it is the playing one. They answer 200 with
-// the new api/schedule. Channel changes answer 200 with the new api/channels,
-// 404 if the channel or suggestion to remove, approve or reject is not there.
+// matches (the schedule moved), it is the playing one or a slot's. They and
+// slot removals answer 200 with the new api/schedule. Channel changes answer
+// 200 with the new api/channels, 404 if the channel or suggestion to remove,
+// approve or reject is not there.
 func (s *server) handler() http.Handler {
 	static, _ := fs.Sub(staticFiles, "static")
 	files := http.FileServerFS(static)
@@ -243,8 +261,9 @@ func (s *server) handler() http.Handler {
 			writeJSON(w, http.StatusOK, out)
 		case rest == "api/channels/suggest":
 			s.handleChannel(w, r, "suggest")
-		case rest == "api/skip" || strings.HasPrefix(rest, "api/schedule/") || strings.HasPrefix(rest, "api/channels/"):
-			if !s.isAdmin(r) {
+		case rest == "api/skip" || rest == "api/search" || strings.HasPrefix(rest, "api/schedule/") || strings.HasPrefix(rest, "api/channels/") || strings.HasPrefix(rest, "api/slots/"):
+			by := s.editor(r)
+			if by == "" {
 				writeError(w, http.StatusUnauthorized, "admin key required")
 				return
 			}
@@ -259,6 +278,10 @@ func (s *server) handler() http.Handler {
 				s.handleEdit(w, r, false)
 			case "api/channels/add", "api/channels/remove", "api/channels/approve", "api/channels/reject":
 				s.handleChannel(w, r, strings.TrimPrefix(rest, "api/channels/"))
+			case "api/slots/add", "api/slots/remove":
+				s.handleSlot(w, r, by, rest == "api/slots/add")
+			case "api/search":
+				s.handleSearch(w, r)
 			default:
 				http.NotFound(w, r)
 			}

@@ -39,16 +39,26 @@ type ytList struct {
 }
 
 // next returns the next item to prepare, asking the picker when the queue
-// of its last answer is used up.
-func (s *server) next(ctx context.Context) (candidate, bool) {
+// of its last answer is used up: the first one that fits into gap (ms, the
+// time up to the next slot entry), else the shortest, which the slot cuts.
+func (s *server) next(ctx context.Context, gap int64) (candidate, bool) {
 	if len(s.queue) == 0 {
 		s.queue = s.pick(ctx)
 		if len(s.queue) == 0 {
 			return candidate{}, false
 		}
 	}
-	c := s.queue[0]
-	s.queue = s.queue[1:]
+	i := slices.IndexFunc(s.queue, func(c candidate) bool { return c.Duration*1000 <= gap })
+	if i < 0 {
+		i = 0
+		for j, c := range s.queue {
+			if c.Duration < s.queue[i].Duration {
+				i = j
+			}
+		}
+	}
+	c := s.queue[i]
+	s.queue = slices.Delete(s.queue, i, i+1)
 	return c, true
 }
 
@@ -328,6 +338,7 @@ type jellyfinItem struct {
 	LocationType string            `json:"LocationType"`
 	Type         string            `json:"Type"`
 	MediaType    string            `json:"MediaType"`
+	Year         int               `json:"ProductionYear"`
 	ProviderIDs  map[string]string `json:"ProviderIds"`
 	MediaStreams []mediaStream     `json:"MediaStreams"`
 	MediaSources []struct {

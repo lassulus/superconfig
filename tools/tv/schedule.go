@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io/fs"
 	"log"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -17,20 +18,28 @@ const (
 	repeatAfter = 30 * 24 * time.Hour
 	// lets clients load an item that cuts in before it starts
 	cutoverLead = 5 * time.Second
+	// slots are prepared this long before the look-ahead reaches them, so
+	// their entry is in the schedule before the filler gets there and it
+	// fills the gap up to it with items that fit
+	slotLead = 6 * time.Hour
 )
 
 type entry struct {
-	ID        string     `json:"id"`
-	Source    string     `json:"source"`
-	Title     string     `json:"title"`
-	Start     int64      `json:"start"`
-	Duration  int64      `json:"duration"`
-	File      string     `json:"file"`
+	ID       string `json:"id"`
+	Source   string `json:"source"`
+	Title    string `json:"title"`
+	Start    int64  `json:"start"`
+	Duration int64  `json:"duration"`
+	// the full length of File when a slot entry cuts it short (Duration)
+	Length int64  `json:"length,omitempty"`
+	File   string `json:"file"`
 	// the audio of File alone (media.go copyAudio), if it has any
 	Audio     string     `json:"audio,omitempty"`
 	Queued    bool       `json:"queued,omitempty"`
 	Link      string     `json:"link,omitempty"`
 	Subtitles []subtitle `json:"subtitles,omitempty"`
+	// id of the slot (state.Slots) this entry plays for; it stays at its start
+	Slot string `json:"slot,omitempty"`
 }
 
 type played struct {
@@ -59,6 +68,8 @@ type state struct {
 	// URLs of rejected suggestions and removed channels, oldest first; they
 	// cannot be suggested again
 	RejectedChannels []string `json:"rejected_channels,omitempty"`
+	// one-off items at a fixed time, until their entry played
+	Slots []timeSlot `json:"slots,omitempty"`
 }
 
 // upcoming returns the entry playing at t (unix ms), if any, and the ones
@@ -72,13 +83,80 @@ func (st *state) upcoming(t int64) []entry {
 	return nil
 }
 
+// fixed reports whether e is a slot's entry, which no edit moves.
+func (e entry) fixed() bool { return e.Slot != "" }
+
 // retime moves the entries from i on back to back, the first one starting at
-// start.
+// start. Slot entries keep their start: an entry that runs into one is cut
+// at it (and gets its full length back when a later retime leaves room), one
+// that would start at or after it goes behind it with the ones following.
 func (st *state) retime(i int, start int64) {
 	for ; i < len(st.Schedule); i++ {
-		st.Schedule[i].Start = start
-		start += st.Schedule[i].Duration
+		e := &st.Schedule[i]
+		if e.fixed() {
+			start = e.Start + e.Duration
+			continue
+		}
+		if e.Length == 0 {
+			e.Length = e.Duration
+		}
+		e.Duration = e.Length
+		if j := slices.IndexFunc(st.Schedule[i+1:], entry.fixed); j >= 0 {
+			j += i + 1
+			f := st.Schedule[j]
+			if start >= f.Start {
+				copy(st.Schedule[i+1:j+1], st.Schedule[i:j])
+				st.Schedule[i] = f
+				start = f.Start + f.Duration
+				continue
+			}
+			e.Duration = min(e.Duration, f.Start-start)
+		}
+		e.Start = start
+		start += e.Duration
 	}
+}
+
+// free returns where the filler puts its next item: the index after the
+// entries that run back to back from now, and the time they end. Only a slot
+// entry can follow a gap, so the item at the index, if any, is one.
+func (st *state) free(now int64) (int, int64) {
+	t := now
+	for i, e := range st.Schedule {
+		if e.fixed() && e.Start > t {
+			return i, t
+		}
+		t = max(t, e.Start+e.Duration)
+	}
+	return len(st.Schedule), t
+}
+
+// fill puts a filler item at the free spot (free) and returns its entry,
+// cut at the slot entry it runs into.
+func (st *state) fill(e entry, now int64) entry {
+	k, t := st.free(now)
+	st.Schedule = slices.Insert(st.Schedule, k, e)
+	st.retime(k, t)
+	return st.Schedule[k]
+}
+
+// place puts the entry of a slot into the schedule at its start: the entry
+// running then is cut there, the ones after it move behind it.
+func (st *state) place(e entry) {
+	i := slices.IndexFunc(st.Schedule, func(x entry) bool { return x.Start+x.Duration > e.Start })
+	if i < 0 {
+		i = len(st.Schedule)
+	}
+	if i < len(st.Schedule) && st.Schedule[i].Start < e.Start {
+		r := &st.Schedule[i]
+		if r.Length == 0 {
+			r.Length = r.Duration
+		}
+		r.Duration = e.Start - r.Start
+		i++
+	}
+	st.Schedule = slices.Insert(st.Schedule, i, e)
+	st.retime(i+1, e.Start+e.Duration)
 }
 
 // playing drops finished entries and reports whether the first one plays at
@@ -136,6 +214,7 @@ type slot struct {
 var (
 	errPlaying = errors.New("the playing entry cannot be edited, only skipped")
 	errStale   = errors.New("no upcoming entry with this start and id, the schedule moved")
+	errFixed   = errors.New("a slot's entry stays at its time, remove the slot instead")
 )
 
 // first drops finished entries and returns the index of the first entry
@@ -189,7 +268,7 @@ func (st *state) insertAt(e entry, now int64, i int) {
 	start := now
 	if i > 0 {
 		start = st.Schedule[i-1].Start + st.Schedule[i-1].Duration
-	} else if len(st.Schedule) > 0 {
+	} else if len(st.Schedule) > 0 && !st.Schedule[0].fixed() {
 		start = st.Schedule[0].Start
 	}
 	e.Queued = !slices.ContainsFunc(st.Schedule[f:i], func(e entry) bool { return !e.Queued })
@@ -213,6 +292,9 @@ func (st *state) after(now int64, after *slot) (int, error) {
 // remove deletes the upcoming entry at sl.
 func (st *state) remove(now int64, sl slot) (entry, error) {
 	i, err := st.find(now, sl)
+	if err == nil && st.Schedule[i].fixed() {
+		err = errFixed
+	}
 	if err != nil {
 		return entry{}, err
 	}
@@ -223,6 +305,9 @@ func (st *state) remove(now int64, sl slot) (entry, error) {
 // after the playing one for nil.
 func (st *state) move(now int64, sl slot, after *slot) (entry, error) {
 	i, err := st.find(now, sl)
+	if err == nil && st.Schedule[i].fixed() {
+		err = errFixed
+	}
 	if err != nil {
 		return entry{}, err
 	}
@@ -258,14 +343,15 @@ func (st *state) playNow(i int, now, t int64) {
 }
 
 // dropMissing removes entries without a file and retimes the rest back to
-// back from the playing entry, or from now if that one is gone too.
+// back after the playing entry, or from now if that one is gone too.
 func (st *state) dropMissing(now int64, exists func(file string) bool) {
-	start := now
+	i, start := 0, now
 	if st.playing(now) && exists(st.Schedule[0].File) {
-		start = st.Schedule[0].Start
+		// it may be cut short by a play-now, which a retime would undo
+		i, start = 1, st.Schedule[0].Start+st.Schedule[0].Duration
 	}
 	st.Schedule = slices.DeleteFunc(st.Schedule, func(e entry) bool { return !exists(e.File) })
-	st.retime(0, start)
+	st.retime(i, start)
 }
 
 func loadState(path string) (state, error) {
@@ -312,16 +398,18 @@ func (s *server) run(ctx context.Context) {
 	}
 }
 
-// covered reports whether the upcoming entries fill the look-ahead and
-// something follows the playing one, also when it alone runs past it.
+// covered reports whether the upcoming entries fill the look-ahead without a
+// gap and something follows the playing one, also when it alone runs past
+// it.
 func covered(upcoming []entry, now int64, lookAhead time.Duration) bool {
-	n := len(upcoming)
-	return n > 1 && time.Duration(upcoming[n-1].Start+upcoming[n-1].Duration-now)*time.Millisecond >= lookAhead
+	_, t := (&state{Schedule: upcoming}).free(now)
+	return len(upcoming) > 1 && time.Duration(t-now)*time.Millisecond >= lookAhead
 }
 
-// tick drops finished entries and prepares at most one new item; it reports
-// whether it added one, so the caller can go on filling right away. Pending
-// requests go first, so it waits while there are any.
+// tick drops finished entries and prepares at most one new item, a due slot
+// first; it reports whether it added one, so the caller can go on filling
+// right away. Pending requests go before filling, so it waits while there
+// are any.
 func (s *server) tick(ctx context.Context) bool {
 	if ctx.Err() != nil {
 		return false
@@ -337,14 +425,27 @@ func (s *server) tick(ctx context.Context) bool {
 		}
 	}
 	s.st.History = history
+	s.st.pruneSlots(now)
+	sl, due := s.st.dueSlot(now, s.lookAhead+slotLead)
 	busy := slices.ContainsFunc(s.requests, func(r *request) bool { return r.State != "failed" })
 	full := covered(s.st.Schedule, now, s.lookAhead)
+	// the gap before the slot entry the filler runs into, if any
+	gap := int64(math.MaxInt64)
+	if k, t := s.st.free(now); k < len(s.st.Schedule) {
+		gap = s.st.Schedule[k].Start - t
+	}
 	s.mu.Unlock()
 
-	if s.cleanCache() >= s.cfg.CacheMaxBytes || busy || full {
+	if s.cleanCache() >= s.cfg.CacheMaxBytes {
 		return false
 	}
-	c, ok := s.next(ctx)
+	if due {
+		return s.prepareSlot(ctx, sl)
+	}
+	if busy || full {
+		return false
+	}
+	c, ok := s.next(ctx, gap)
 	if !ok {
 		return false
 	}
@@ -362,16 +463,11 @@ func (s *server) tick(ctx context.Context) bool {
 	if err != nil {
 		log.Printf("preparing %s failed: %v", c.ID, err)
 	} else {
-		start := nowMs()
-		if n := len(s.st.Schedule); n > 0 {
-			start = max(start, s.st.Schedule[n-1].Start+s.st.Schedule[n-1].Duration)
-		}
-		e.Start = start
-		s.st.Schedule = append(s.st.Schedule, e)
+		e = s.st.fill(e, nowMs())
 		if c.Series != "" {
 			s.st.Series[c.Series] = c.ref
 		}
-		log.Printf("scheduled %s %q at %s for %s", c.ID, c.Title, time.UnixMilli(start).Format(time.TimeOnly), time.Duration(e.Duration)*time.Millisecond)
+		log.Printf("scheduled %s %q at %s for %s", c.ID, c.Title, time.UnixMilli(e.Start).Format(time.TimeOnly), time.Duration(e.Duration)*time.Millisecond)
 	}
 	s.save()
 	return err == nil
@@ -384,13 +480,17 @@ func (s *server) save() {
 	}
 }
 
-// cleanCache deletes everything in the cache dir that neither an entry nor a
-// running or pending prepare uses and returns the size of what is left.
+// cleanCache deletes everything in the cache dir that neither an entry, a
+// slot nor a running or pending prepare uses and returns the size of what is
+// left.
 func (s *server) cleanCache() int64 {
 	s.mu.Lock()
 	keep := map[string]bool{s.preparing: true}
 	for _, e := range s.st.Schedule {
 		keep[e.File] = true
+	}
+	for _, sl := range s.st.Slots {
+		keep[sl.File] = true
 	}
 	for _, r := range s.requests {
 		keep[r.file] = true

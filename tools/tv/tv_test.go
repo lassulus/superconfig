@@ -1620,3 +1620,200 @@ func TestUnderstandable(t *testing.T) {
 		}
 	}
 }
+
+// slotSchedule has a playing entry (at now 300), a slot entry with a gap
+// before it and two entries after it.
+func slotSchedule() []entry {
+	return []entry{
+		{ID: "a", Start: 0, Duration: 1000},
+		{ID: "b", Start: 1000, Duration: 1000},
+		{ID: "S", Start: 2500, Duration: 500, Slot: "s"},
+		{ID: "c", Start: 3000, Duration: 500},
+		{ID: "d", Start: 3500, Duration: 500},
+	}
+}
+
+func TestSlotStaysThroughEdits(t *testing.T) {
+	st := state{Schedule: slotSchedule()}
+	st.enqueue(entry{ID: "q", Duration: 800}, 300)
+	checkSchedule(t, "queued before the slot cuts the one running into it", st.Schedule,
+		"a 0s-1µs", "q 1µs-1.8µs queued", "b 1.8µs-2.5µs", "S 2.5µs-3µs", "c 3µs-3.5µs", "d 3.5µs-4µs")
+	if _, err := st.remove(300, slot{1000, "q"}); err != nil {
+		t.Fatal(err)
+	}
+	checkSchedule(t, "removing the queued one gives the cut one its length back", st.Schedule,
+		"a 0s-1µs", "b 1µs-2µs", "S 2.5µs-3µs", "c 3µs-3.5µs", "d 3.5µs-4µs")
+
+	for _, err := range []error{
+		func() error { _, err := st.remove(300, slot{2500, "S"}); return err }(),
+		func() error { _, err := st.move(300, slot{2500, "S"}, nil); return err }(),
+	} {
+		if err != errFixed {
+			t.Errorf("editing the slot entry: %v, want %v", err, errFixed)
+		}
+	}
+
+	if _, err := st.move(300, slot{3500, "d"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	checkSchedule(t, "moved to the front", st.Schedule,
+		"a 0s-1µs", "d 1µs-1.5µs queued", "b 1.5µs-2.5µs", "S 2.5µs-3µs", "c 3µs-3.5µs")
+	if _, err := st.move(300, slot{1500, "b"}, &slot{3000, "c"}); err != nil {
+		t.Fatal(err)
+	}
+	checkSchedule(t, "moved behind the slot, a gap stays before it", st.Schedule,
+		"a 0s-1µs", "d 1µs-1.5µs queued", "S 2.5µs-3µs", "c 3µs-3.5µs", "b 3.5µs-4.5µs")
+	if k, at := st.free(300); k != 2 || at != 1500 {
+		t.Errorf("free: %d at %d, want the gap before the slot at 1500", k, at)
+	}
+	if covered(st.Schedule, 300, 3*time.Second) {
+		t.Error("a gap before the slot within the look-ahead is not covered")
+	}
+	st.insert(entry{ID: "e", Duration: 2000}, 300, &slot{1000, "d"})
+	checkSchedule(t, "inserted into the gap and cut at the slot", st.Schedule,
+		"a 0s-1µs", "d 1µs-1.5µs queued", "e 1.5µs-2.5µs queued", "S 2.5µs-3µs", "c 3µs-3.5µs", "b 3.5µs-4.5µs")
+	if _, err := st.move(300, slot{3500, "b"}, &slot{1500, "e"}); err != nil {
+		t.Fatal(err)
+	}
+	checkSchedule(t, "one that would start at the slot goes behind it", st.Schedule,
+		"a 0s-1µs", "d 1µs-1.5µs queued", "e 1.5µs-2.5µs queued", "S 2.5µs-3µs", "b 3µs-4µs queued", "c 4µs-4.5µs")
+
+	st.playAt(entry{ID: "p", Duration: 5000}, 300, 305)
+	checkSchedule(t, "play now is cut at the slot", st.Schedule,
+		"a 0s-305ns", "p 305ns-2.5µs", "S 2.5µs-3µs", "d 3µs-3.5µs queued", "e 3.5µs-5.5µs queued", "b 5.5µs-6.5µs queued", "c 6.5µs-7µs")
+
+	st = state{Schedule: slotSchedule()}
+	st.skip(300)
+	checkSchedule(t, "skip", st.Schedule, "b 300ns-1.3µs", "S 2.5µs-3µs", "c 3µs-3.5µs", "d 3.5µs-4µs")
+	st.skip(300)
+	checkSchedule(t, "skip into a gap", st.Schedule, "S 2.5µs-3µs", "c 3µs-3.5µs", "d 3.5µs-4µs")
+}
+
+func TestPlaceAndRemoveSlot(t *testing.T) {
+	st := state{Schedule: editSchedule(), Slots: []timeSlot{{ID: "s", At: 1500, Duration: 1000}}}
+	st.place(entry{ID: "S", Start: 1500, Duration: 1000, Slot: "s"})
+	checkSchedule(t, "placed", st.Schedule, "a 0s-1µs", "b 1µs-1.5µs", "S 1.5µs-2.5µs", "c 2.5µs-3µs", "d 3µs-3.5µs")
+	if _, err := st.removeSlot(300, "x"); err != errNoSlot {
+		t.Errorf("unknown slot: %v", err)
+	}
+	if _, err := st.removeSlot(300, "s"); err != nil {
+		t.Fatal(err)
+	}
+	checkSchedule(t, "removed", st.Schedule, "a 0s-1µs", "b 1µs-2µs", "c 2µs-2.5µs", "d 2.5µs-3µs")
+	if len(st.Slots) != 0 {
+		t.Errorf("slots left: %v", st.Slots)
+	}
+
+	// the playing entry is cut, a playing slot cannot be removed
+	st = state{Schedule: editSchedule(), Slots: []timeSlot{{ID: "s", At: 500, Duration: 100}}}
+	st.place(entry{ID: "S", Start: 500, Duration: 100, Slot: "s"})
+	checkSchedule(t, "placed into the playing one", st.Schedule, "a 0s-500ns", "S 500ns-600ns", "b 600ns-1.6µs", "c 1.6µs-2.1µs", "d 2.1µs-2.6µs")
+	placed := slices.Clone(st.Schedule)
+	if _, err := st.removeSlot(550, "s"); err != errPlaying {
+		t.Errorf("removing the playing slot: %v", err)
+	}
+	st = state{Schedule: placed, Slots: []timeSlot{{ID: "s"}}}
+	if _, err := st.removeSlot(300, "s"); err != nil {
+		t.Fatal(err)
+	}
+	checkSchedule(t, "removed after the playing one", st.Schedule, "a 0s-500ns", "b 500ns-1.5µs", "c 1.5µs-2µs", "d 2µs-2.5µs")
+
+	// past the end it leaves a gap for the filler, which cuts its item at it
+	st = state{Schedule: editSchedule()}
+	st.place(entry{ID: "S", Start: 4000, Duration: 100, Slot: "s"})
+	if k, at := st.free(300); k != 4 || at != 3000 {
+		t.Errorf("free: %d at %d, want 4 at 3000", k, at)
+	}
+	if e := st.fill(entry{ID: "f", Duration: 2000}, 300); e.Start != 3000 || e.Duration != 1000 || e.Length != 2000 {
+		t.Errorf("filler entry %+v, want 3000 cut to 1000 of 2000", e)
+	}
+	checkSchedule(t, "filled", st.Schedule, "a 0s-1µs", "b 1µs-2µs", "c 2µs-2.5µs", "d 2.5µs-3µs", "f 3µs-4µs", "S 4µs-4.1µs")
+	if e := st.fill(entry{ID: "g", Duration: 50}, 300); e.Start != 4100 {
+		t.Errorf("filling after the slot: %+v", e)
+	}
+}
+
+func TestNextFitsGap(t *testing.T) {
+	s := &server{queue: []candidate{{ID: "movie", Duration: 5400}, {ID: "yt1", Duration: 900}, {ID: "yt2", Duration: 300}}}
+	for _, tc := range []struct {
+		gap  int64
+		want string
+	}{
+		{600_000, "yt2"},
+		// nothing fits: the shortest, which the slot cuts
+		{60_000, "yt1"},
+		{math.MaxInt64, "movie"},
+	} {
+		if c, ok := s.next(t.Context(), tc.gap); !ok || c.ID != tc.want {
+			t.Errorf("gap %d: %s, want %s", tc.gap, c.ID, tc.want)
+		}
+	}
+}
+
+func TestSlotLifecycle(t *testing.T) {
+	now := int64(10 * time.Hour / time.Millisecond)
+	h := time.Hour.Milliseconds()
+	st := state{
+		Schedule: []entry{{ID: "S", Start: now - 1, Duration: h, Slot: "playing", File: "p.mp4"}},
+		Slots: []timeSlot{
+			{ID: "missed", At: now - 2*h, Duration: h},
+			{ID: "played", At: now - 2*h, Duration: h, File: "x.mp4"},
+			{ID: "playing", At: now - 1, Duration: h, File: "p.mp4"},
+			{ID: "late", At: now - h/2, Duration: h},
+			{ID: "failed", At: now + h, Duration: h, failedAt: now - 1000},
+			{ID: "soon", At: now + 2*h, Duration: h},
+			{ID: "later", At: now + 30*h, Duration: h},
+		},
+	}
+	st.pruneSlots(now)
+	var ids []string
+	for _, sl := range st.Slots {
+		ids = append(ids, sl.ID)
+	}
+	if want := []string{"playing", "late", "failed", "soon", "later"}; !slices.Equal(ids, want) {
+		t.Errorf("after pruning: %v, want %v", ids, want)
+	}
+	if sl, ok := st.dueSlot(now, 24*time.Hour); !ok || sl.ID != "late" {
+		t.Errorf("due: %v %v, want late", sl.ID, ok)
+	}
+	st.Slots = st.Slots[2:]
+	if sl, ok := st.dueSlot(now, 24*time.Hour); !ok || sl.ID != "soon" {
+		t.Errorf("due after a recent failure: %v %v, want soon", sl.ID, ok)
+	}
+	if sl, ok := st.dueSlot(now+slotRetry.Milliseconds()+1, 24*time.Hour); !ok || sl.ID != "failed" {
+		t.Errorf("due after the retry wait: %v %v, want failed", sl.ID, ok)
+	}
+	st.Slots = st.Slots[1:]
+	if sl, ok := st.dueSlot(now, time.Hour); ok {
+		t.Errorf("due beyond the horizon: %v", sl.ID)
+	}
+
+	if err := st.addSlot(timeSlot{ID: "past", At: now}, now); err != errPast {
+		t.Errorf("past: %v", err)
+	}
+	if err := st.addSlot(timeSlot{ID: "clash", At: now + 2*h + h/2, Duration: h}, now); err == nil {
+		t.Error("an overlapping slot was added")
+	}
+	for _, at := range []int64{now + h, now + 3*h} {
+		if err := st.addSlot(timeSlot{ID: fmt.Sprint(at), At: at, Duration: h}, now); err != nil {
+			t.Errorf("right before or after another: %v", err)
+		}
+	}
+	if !slices.IsSortedFunc(st.Slots, func(a, b timeSlot) int { return int(a.At - b.At) }) {
+		t.Errorf("slots out of order: %+v", st.Slots)
+	}
+}
+
+func TestCleanCacheKeepsSlots(t *testing.T) {
+	dir := t.TempDir()
+	s := &server{cfg: config{CacheDir: dir}, st: state{Slots: []timeSlot{{ID: "s", File: "jf-s-1.mp4"}}}}
+	for _, f := range []string{"jf-s-1.mp4", "jf-s-1.mp4.m4a", "jf-s-1.mp4.0.vtt", "yt-old-1.mp4"} {
+		os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o644)
+	}
+	s.cleanCache()
+	for f, kept := range map[string]bool{"jf-s-1.mp4": true, "jf-s-1.mp4.m4a": true, "jf-s-1.mp4.0.vtt": true, "yt-old-1.mp4": false} {
+		if _, err := os.Stat(filepath.Join(dir, f)); (err == nil) != kept {
+			t.Errorf("%s kept: %t, want %t", f, err == nil, kept)
+		}
+	}
+}
