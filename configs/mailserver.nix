@@ -71,9 +71,14 @@ in
         hashedPasswordFile = config.clan.core.vars.generators.mailserver-id.files."password-hash".path;
         sendOnly = true;
       };
-      # Hermes agent on coaxmetal; shared password var, see hermes-mail-vars.nix.
-      "hermes@lassul.us" = {
+      # slopulus, the agent on coaxmetal; shared password var, see
+      # hermes-mail-vars.nix. hermes@ is its old address, slop@ agentd's.
+      "slopulus@lassul.us" = {
         hashedPasswordFile = config.clan.core.vars.generators.hermes-mail.files."password-hash".path;
+        aliases = [
+          "hermes@lassul.us"
+          "slop@lassul.us"
+        ];
       };
       # Fetched by paperless (configs/services/paperless) via IMAP.
       "scan@lassul.us" = {
@@ -82,11 +87,11 @@ in
     };
 
     aliases = {
-      # copies of Hermes' mail for lass
-      "hermes@lassul.us" = "lass@lassul.us";
+      # copies of slopulus' mail for lass
+      "slopulus@lassul.us" = "lass@lassul.us";
       # Google account for glotz.lassul.us's YouTube downloads (configs/tv.nix)
       "hermes_youtube@lassul.us" = [
-        "hermes@lassul.us"
+        "slopulus@lassul.us"
         "lass@lassul.us"
       ];
     };

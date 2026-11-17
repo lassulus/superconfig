@@ -109,9 +109,9 @@ in
       # agentd's account (configs/services/agentd), forks and PRs on
       # knot.lassul.us
       "slop@lassul.us"
-      # Hermes' account: its PRs from its fork (instead of crit reviews),
+      # slopulus' account: its PRs from its fork (instead of crit reviews),
       # also those of the update-pkgs and cve-watch bots
-      "hermes@lassul.us"
+      "slopulus@lassul.us"
     ];
     apps.web = {
       redirectUris = [ "https://${domain}/oauth/sso/callback" ];
