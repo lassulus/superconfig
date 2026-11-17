@@ -1,5 +1,5 @@
 # Login to audiobookshelf (audible.lassul.us) via id.lassul.us (Zitadel
-# project audible, configs/services/flix/proxy.nix), also from the apps.
+# project flix, configs/services/flix/proxy.nix), also from the apps.
 # audiobookshelf keeps these settings in its database, so they are written
 # there before every start; a first login creates the user.
 {
@@ -44,9 +44,9 @@ in
   clan.core.vars.generators.audible-oidc = {
     files.client-id.owner = config.services.audiobookshelf.user;
     files.client-secret.owner = config.services.audiobookshelf.user;
-    prompts.client-id.description = "Client id of the Zitadel app audible/audiobookshelf (CLIENT_ID in /var/lib/zitadel-apps/audible-audiobookshelf.env on neoprism)";
+    prompts.client-id.description = "Client id of the Zitadel app flix/audiobookshelf (CLIENT_ID in /var/lib/zitadel-apps/flix-audiobookshelf.env on neoprism)";
     prompts.client-secret = {
-      description = "Client secret of the Zitadel app audible/audiobookshelf (CLIENT_SECRET in the same file)";
+      description = "Client secret of the Zitadel app flix/audiobookshelf (CLIENT_SECRET in the same file)";
       type = "hidden";
     };
     script = ''

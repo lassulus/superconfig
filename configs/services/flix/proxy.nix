@@ -1,15 +1,10 @@
 {
   self,
   config,
-  pkgs,
   ...
 }:
 {
-  imports = [
-    ./bookshelf-proxy.nix
-    ./games-proxy.nix
-    ./transmission-proxy.nix
-  ];
+  imports = [ ./backend-proxy.nix ];
 
   # POST → ipfs-upload backend (writes file to /var/lib/ipfs/download/<path>
   # and returns the CID). Anything else → the kubo gateway.
@@ -51,26 +46,24 @@
     };
   };
 
-  # Login via id.lassul.us on Jellyfin (configs/services/flix/sso.nix), only
-  # for users an admin gave a user grant on the project in the console. A
-  # public client with PKCE; its client id is in the envFile and goes into
-  # the flix-oidc var of yellow.
+  # Logins via id.lassul.us for users an admin gave a user grant on the
+  # project in the console. Role admin = Jellyfin admin (sso.nix), role
+  # backend = the *arr backends (backend-proxy.nix).
   lass.zitadel.projects.flix = {
     access = "managed";
-    # Jellyfin admin (sso.nix), added to a user's grant in the console.
-    roles = [ "admin" ];
+    roles = [
+      "admin"
+      "backend"
+    ];
+    # A public client with PKCE; its client id goes into the flix-oidc var
+    # of yellow.
     apps.jellyfin = {
       redirectUris = [ "https://flix.lassul.us/sso/OID/redirect/id.lassul.us" ];
       authMethod = "none";
     };
-  };
-
-  # audiobookshelf on yellow (default.nix), logins via id.lassul.us for users
-  # an admin gave a user grant on project audible in the console. Its client
-  # id and secret go into the audible-oidc var of yellow
-  # (audiobookshelf-sso.nix); mobile-redirect is the apps' login.
-  lass.zitadel.projects.audible = {
-    access = "managed";
+    # audiobookshelf on yellow (default.nix); client id and secret go into
+    # the audible-oidc var of yellow (audiobookshelf-sso.nix);
+    # mobile-redirect is the apps' login.
     apps.audiobookshelf.redirectUris = [
       "https://audible.lassul.us/audiobookshelf/auth/openid/callback"
       "https://audible.lassul.us/audiobookshelf/auth/openid/mobile-redirect"
@@ -88,51 +81,6 @@
     };
   };
 
-  services.nginx.virtualHosts."flex.lassul.us" = {
-    forceSSL = true;
-    enableACME = true;
-    locations."/" = {
-      proxyPass = "http://radar.r:7878";
-      proxyWebsockets = true;
-      recommendedProxySettings = true;
-      extraConfig = ''
-        auth_basic "Restricted Content";
-        auth_basic_user_file ${pkgs.writeText "flix-user-pass" ''
-          krebs:$apr1$1Fwt/4T0$YwcUn3OBmtmsGiEPlYWyq0
-        ''};
-      '';
-    };
-  };
-  services.nginx.virtualHosts."flux.lassul.us" = {
-    forceSSL = true;
-    enableACME = true;
-    locations."/" = {
-      proxyPass = "http://sonar.r:8989";
-      proxyWebsockets = true;
-      recommendedProxySettings = true;
-      extraConfig = ''
-        auth_basic "Restricted Content";
-        auth_basic_user_file ${pkgs.writeText "flix-user-pass" ''
-          krebs:$apr1$1Fwt/4T0$YwcUn3OBmtmsGiEPlYWyq0
-        ''};
-      '';
-    };
-  };
-  services.nginx.virtualHosts."flax.lassul.us" = {
-    forceSSL = true;
-    enableACME = true;
-    locations."/" = {
-      proxyPass = "http://yellow.r";
-      proxyWebsockets = true;
-      recommendedProxySettings = true;
-      extraConfig = ''
-        auth_basic "Restricted Content";
-        auth_basic_user_file ${pkgs.writeText "flix-user-pass" ''
-          krebs:$apr1$1Fwt/4T0$YwcUn3OBmtmsGiEPlYWyq0
-        ''};
-      '';
-    };
-  };
   services.nginx.virtualHosts."flox.lassul.us" = {
     forceSSL = true;
     enableACME = true;

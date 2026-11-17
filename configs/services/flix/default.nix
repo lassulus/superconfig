@@ -449,7 +449,7 @@
     group = "download";
   };
   # audiobooks: Bookshelf (maintained Readarr fork), web ui on yellow.r:8787,
-  # public on bookshelf.lassul.us (bookshelf-proxy.nix on neoprism)
+  # public on bookshelf.lassul.us (backend-proxy.nix on neoprism)
   services.readarr = {
     enable = true;
     package = self.packages.${pkgs.stdenv.hostPlatform.system}.bookshelf.override {
@@ -479,7 +479,7 @@
   systemd.services.gamarr = {
     environment = {
       GAMARR__SERVER__PORT = toString config.lass.servicePorts.gamarr;
-      # login happens on games.lassul.us (games-proxy.nix on neoprism)
+      # login happens on games.lassul.us (backend-proxy.nix on neoprism)
       GAMARR__AUTH__METHOD = "External";
     };
     after = [ "network.target" ];
