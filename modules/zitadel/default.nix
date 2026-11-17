@@ -18,6 +18,7 @@ let
       stateDir = appsDir;
       inherit patFile;
       inherit (cfg) loginPolicy idps smtp;
+      groupsClaimScript = builtins.readFile ./groups-claim.js;
       projects = lib.mapAttrs (_: project: {
         inherit (project) access users roles;
         apps = lib.mapAttrs (_: app: {
@@ -179,8 +180,11 @@ in
                   Role keys of the project. Admins give them to users as part
                   of their user grant in the console. With roles, Zitadel
                   asserts them on authentication: the userinfo response
-                  carries `urn:zitadel:iam:org:project:roles`. Roles removed
-                  from here are left in Zitadel.
+                  carries `urn:zitadel:iam:org:project:roles` (an object) and,
+                  through the action groupsClaim (reconcile.py), the same
+                  role keys as a flat list in `groups`; both only for the
+                  project of the requesting app. Roles removed from here are
+                  left in Zitadel.
                 '';
               };
               apps = lib.mkOption {

@@ -170,6 +170,48 @@ for idp in config["idps"].values():
         print(f"idp {name}: added to the login policy")
 
 
+# Flat "groups" claim (default organization): role keys of the requesting
+# app's project, for clients that can't read the object in
+# urn:zitadel:iam:org:project:roles (oauth2-proxy's --allowed-group).
+
+action = {
+    # also the name of the script's function
+    "name": "groupsClaim",
+    "script": config["groupsClaimScript"],
+    # a failing or slow script must never block a login
+    "timeout": "5s",
+    "allowedToFail": True,
+}
+existing = by_name(search("/management/v1/actions/_search"), action["name"])
+if existing is None:
+    action_id = call("POST", "/management/v1/actions", action)["id"]
+    print(f"action {action['name']}: created")
+else:
+    action_id = existing["id"]
+    if differs(existing, action):
+        call("PUT", f"/management/v1/actions/{action_id}", action)
+        print(f"action {action['name']}: updated")
+    if existing.get("state") != "ACTION_STATE_ACTIVE":
+        call("POST", f"/management/v1/actions/{action_id}/_reactivate", {})
+        print(f"action {action['name']}: reactivated")
+
+# Complement Token flow; pre userinfo creation (userinfo, ID tokens,
+# introspection) and pre access token creation (JWT access tokens).
+# Setting a trigger replaces its list, so other actions on it are kept.
+COMPLEMENT_TOKEN = "2"
+flow = call("GET", f"/management/v1/flows/{COMPLEMENT_TOKEN}")["flow"]
+triggers = {
+    t["triggerType"]["id"]: [a["id"] for a in t.get("actions", [])]
+    for t in flow.get("triggerActions", [])
+}
+for trigger in ["4", "5"]:
+    ids = triggers.get(trigger, [])
+    if action_id not in ids:
+        path = f"/management/v1/flows/{COMPLEMENT_TOKEN}/trigger/{trigger}"
+        call("POST", path, {"actionIds": ids + [action_id]})
+        print(f"action {action['name']}: added to trigger {trigger}")
+
+
 # projects, OIDC apps and user grants (default organization)
 
 def find_user(email):
