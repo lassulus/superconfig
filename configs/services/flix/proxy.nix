@@ -6,6 +6,7 @@
 }:
 {
   imports = [
+    ./bookshelf-proxy.nix
     ./games-proxy.nix
     ./transmission-proxy.nix
   ];

@@ -448,7 +448,8 @@
     user = "download";
     group = "download";
   };
-  # audiobooks: Bookshelf (maintained Readarr fork), web ui on yellow.r:8787
+  # audiobooks: Bookshelf (maintained Readarr fork), web ui on yellow.r:8787,
+  # public on bookshelf.lassul.us (bookshelf-proxy.nix on neoprism)
   services.readarr = {
     enable = true;
     package = self.packages.${pkgs.stdenv.hostPlatform.system}.bookshelf.override {
