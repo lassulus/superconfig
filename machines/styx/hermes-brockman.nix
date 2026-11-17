@@ -56,21 +56,32 @@ in
     ];
   };
 
-  # Tool shells and cron scopes do not see $CREDENTIALS_DIRECTORY, so ssh
-  # needs the key in ~/.ssh.
-  systemd.services.hermes-agent.serviceConfig = {
-    LoadCredential = [ "id_ed25519:${vars.hermes-brockman-ssh.files.id_ed25519.path}" ];
-    ExecStartPre = [
-      "${pkgs.writeShellScript "hermes-brockman-home" ''
-        set -eu
-        PATH=${pkgs.coreutils}/bin:${pkgs.git}/bin:${pkgs.openssh}/bin
-        install -d -m 0700 "$HOME/.ssh"
-        install -m 0600 "$CREDENTIALS_DIRECTORY/id_ed25519" "$HOME/.ssh/id_ed25519"
-        ssh-keygen -y -f "$HOME/.ssh/id_ed25519" > "$HOME/.ssh/id_ed25519.pub"
-        git config --global user.name hermes-brockman
-        git config --global user.email hermes-brockman@lassul.us
-      ''}"
+  # The agent's own credentials (ssh key, gh login of the GitHub account
+  # hermes-brockman, git identity) live in its home, so it can rotate them
+  # itself; the backup below keeps them.
+  programs.ssh.knownHosts."github.com".publicKey =
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl";
+
+  # SQLite files are dumped with .backup instead of copied live.
+  lass.backup.state.hermes-brockman = {
+    folders = [ cfg.stateDir ];
+    exclude = [
+      "${cfg.stateDir}/.cache"
+      "${cfg.stateDir}/.hermes/cache"
+      "${cfg.stateDir}/*.db"
+      "${cfg.stateDir}/*.db-wal"
+      "${cfg.stateDir}/*.db-shm"
     ];
+    preBackup = ''
+      rm -rf /var/backup/hermes-brockman
+      cd ${cfg.stateDir}
+      ${pkgs.findutils}/bin/find . -name '*.db' -not -path './.hermes/cache/*' -type f | while read -r f; do
+        mkdir -p "/var/backup/hermes-brockman/$(dirname "$f")"
+        ${pkgs.sqlite}/bin/sqlite3 -cmd ".timeout 60000" "$f" ".backup '/var/backup/hermes-brockman/$f'"
+      done
+    '';
+    # sqlite needs the WAL/shm files next to each database
+    readWritePaths = [ cfg.stateDir ];
   };
 
   clan.core.vars.generators.hermes-brockman-matrix = {
@@ -89,14 +100,5 @@ in
     description = "Model provider env lines for hermes-brockman (e.g. ANTHROPIC_API_KEY=...)";
     type = "multiline-hidden";
     persist = true;
-  };
-
-  clan.core.vars.generators.hermes-brockman-ssh = {
-    files.id_ed25519 = { };
-    files."id_ed25519.pub".secret = false;
-    runtimeInputs = [ pkgs.openssh ];
-    script = ''
-      ssh-keygen -t ed25519 -N "" -C "hermes-brockman@${config.networking.hostName}" -f "$out/id_ed25519"
-    '';
   };
 }
