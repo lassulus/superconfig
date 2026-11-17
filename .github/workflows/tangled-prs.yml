@@ -4,7 +4,7 @@ name: tangled-prs
 # live on knot.lassul.us, not here, so this polls tangled.org every 5 minutes
 # (and on demand) for rounds not built yet (.github/tangled-prs.sh) and runs
 # ci.yml on each. The result is posted as a comment on the Tangled PR (as
-# hermes.pds.lassul.us).
+# slopulus).
 #
 # Workflows and scripts always come from master; the PR commit is only
 # evaluated and built by Nix, and nothing is pushed to cache.lassul.us

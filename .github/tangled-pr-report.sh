@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Comments the result of a ci.yml run for a tangled.org PR round on the PR,
-# as hermes.pds.lassul.us (app password TANGLED_APP_PASSWORD).
+# as slopulus (app password TANGLED_APP_PASSWORD).
 # Env: PR, SHA, RESULTS (the needed jobs' results), ANY_JOBS (a machine was
 # built), GH_TOKEN (read the run's jobs), TANGLED_APP_PASSWORD.
 set -euo pipefail
@@ -23,7 +23,7 @@ echo "$body" | tee -a "$GITHUB_STEP_SUMMARY"
 
 # a comment on the PR itself (not on the round, which the web UI only shows
 # inside that round), written to the repo's knot with service auth from
-# Hermes's PDS
+# slopulus' PDS
 repo=did:plc:xtz34eivhh2bcj7pgvoipkn5
 ticket='' cursor=''
 while [ -z "$ticket" ]; do
@@ -32,7 +32,8 @@ while [ -z "$ticket" ]; do
   cursor=$(jq -r '.cursor // empty' <<<"$page")
   [ -n "$ticket" ] || [ -n "$cursor" ] || { echo "PR $PR not found" >&2; exit 1; }
 done
-access=$(jq -n --arg p "$TANGLED_APP_PASSWORD" '{identifier: "hermes.pds.lassul.us", password: $p}' |
+# slopulus' account by DID: its handle may change, the DID stays
+access=$(jq -n --arg p "$TANGLED_APP_PASSWORD" '{identifier: "did:plc:vhearieesyugq7ortfgncciv", password: $p}' |
   curl -fsS -H 'Content-Type: application/json' -d @- https://pds.lassul.us/xrpc/com.atproto.server.createSession | jq -r .accessJwt)
 token=$(curl -fsS -H "Authorization: Bearer $access" \
   "https://pds.lassul.us/xrpc/com.atproto.server.getServiceAuth?aud=$repo&lxm=com.atproto.repo.createRecord" | jq -r .token)

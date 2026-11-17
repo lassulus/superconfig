@@ -515,7 +515,7 @@ jobs:
         run: .github/hestia-nar-debug.sh
 
   # Summary of the jobs above; for a tangled.org PR it also comments the
-  # result there (as hermes.pds.lassul.us). Skipped jobs: no machine to
+  # result there (as slopulus). Skipped jobs: no machine to
   # build, or a job they need failed.
   ci:
     needs:
