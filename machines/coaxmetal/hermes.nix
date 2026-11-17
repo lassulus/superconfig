@@ -52,7 +52,7 @@ let
   # Posts into the calling session's room/thread, the home room otherwise.
   # `hermes send -t matrix` is no substitute: outside the gateway it opens a
   # second Matrix client on the gateway's device and crypto store, and the two
-  # desync the Olm sessions until no client can decrypt Hermes any more.
+  # desync the Olm sessions until no client can decrypt slopulus any more.
   hermes-notify = pkgs.writeShellApplication {
     name = "hermes-notify";
     runtimeInputs = [
@@ -98,11 +98,11 @@ in
     ../../configs/phonetpm.nix
   ];
 
-  # Hermes Agent (Nous Research) — autonomous agent run as a native systemd
-  # gateway, reachable over Matrix (@hermes:lassul.us). Model backend is our
-  # shared llama cluster: one vLLM instance behind an OpenAI-compatible
-  # endpoint, so the model is whatever the cluster currently serves and a swap
-  # is a one-line settings.model.default change.
+  # slopulus: Hermes Agent (Nous Research), an autonomous agent run as a
+  # native systemd gateway, reachable over Matrix (@slopulus:lassul.us). Model
+  # backend is our shared llama cluster: one vLLM instance behind an
+  # OpenAI-compatible endpoint, so the model is whatever the cluster currently
+  # serves and a swap is a one-line settings.model.default change.
   services.hermes-agent = {
     enable = true;
 
@@ -309,8 +309,8 @@ in
     };
 
     # The one shared calendar (configs/radicale.nix): lass's own events, the
-    # book.lassul.us requests and bookings, and anything Hermes adds. Hermes
-    # authenticates as its own radicale user, which may only touch this
+    # book.lassul.us requests and bookings, and anything slopulus adds. It
+    # authenticates as its own radicale user (hermes), which may only touch this
     # collection. Booking events are read back by book, so deleting, moving
     # or confirming them in CalDAV manages the booking (tools/book).
     hermesHomeFiles."skills/calendar/SKILL.md" = ''
@@ -369,7 +369,7 @@ in
 
       ## Adding, changing, removing your own events
 
-      - Add: pick a UID (`uuidgen`-style, suffix `@hermes`), then
+      - Add: pick a UID (`uuidgen`-style, suffix `@slopulus`), then
         `PUT "$CALDAV_CALENDAR_URL<uid>.ics"` with
         `-H 'Content-Type: text/calendar; charset=utf-8' -H 'If-None-Match: *'`
         and a body of one `VCALENDAR` (VERSION:2.0, PRODID) holding one
@@ -430,7 +430,7 @@ in
     # only these MXIDs can make the agent act, in any room it's joined.
     environment = {
       MATRIX_HOMESERVER = "https://matrix.lassul.us";
-      MATRIX_USER_ID = "@hermes:lassul.us";
+      MATRIX_USER_ID = "@slopulus:lassul.us";
       MATRIX_ALLOWED_USERS = "@lassulus:lassul.us";
       # The DM with lassulus: default target for deliver=matrix (cron jobs,
       # the voice-approval webhook and the matrix_dm_send tool of
@@ -582,10 +582,10 @@ in
     "-/run/hermes-api/host.env"
   ];
 
-  # Matrix bot access token for @hermes:lassul.us (minted against the neoprism
+  # Matrix bot access token for @slopulus:lassul.us (minted against the neoprism
   # Synapse). persist=true so the prompt value is stored once.
   clan.core.vars.generators.hermes-matrix.prompts.matrix-access-token = {
-    description = "Matrix access token for @hermes:lassul.us";
+    description = "Matrix access token for @slopulus:lassul.us";
     type = "hidden";
     persist = true;
   };
@@ -613,7 +613,7 @@ in
     '';
   };
 
-  # Hermes's radicale login (configs/radicale.nix). Shared with neoprism, where
+  # slopulus' radicale login (configs/radicale.nix). Shared with neoprism, where
   # radicale runs; a shared generator has to be declared identically on every
   # machine that uses it, hence the common definition.
   clan.core.vars.generators.radicale-hermes =
@@ -635,7 +635,7 @@ in
   # (HA profile -> Security -> Long-lived access tokens). persist=true so the
   # prompt value is stored once.
   clan.core.vars.generators.hermes-homeassistant.prompts.token = {
-    description = "Home Assistant long-lived access token for hermes";
+    description = "Home Assistant long-lived access token for slopulus";
     type = "hidden";
     persist = true;
   };

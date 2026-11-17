@@ -28,7 +28,7 @@
     "lass"
   ];
 
-  # Hermes on coaxmetal manages atlas; merges with the keys from configs/default.nix
+  # slopulus on coaxmetal manages atlas; merges with the keys from configs/default.nix
   users.users.root.openssh.authorizedKeys.keys = [
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOdxrE1taDjoPXX5aoz63u9vy48avCmniEmGnkpb0y3C hermes@coaxmetal"
   ];

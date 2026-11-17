@@ -142,8 +142,9 @@ h1 {
   border-left: 2px solid var(--accent);
   padding-left: 0.5rem;
 }
+/* "hermes": the speaker key saved conversations use for the agent */
 .log .hermes::before {
-  content: "hermes: ";
+  content: "slopulus: ";
 }
 .log .error {
   color: var(--live);

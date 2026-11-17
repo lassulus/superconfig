@@ -21,7 +21,7 @@ let
         # the first back pagination. Show the latest events instead.
         ./cinny-empty-live-timeline.patch
         # getLastActiveTimestamp only sees the live timeline, so after a reload
-        # a DM whose recent events are all thread replies (hermes, with
+        # a DM whose recent events are all thread replies (slopulus, with
         # MATRIX_DM_AUTO_THREAD) sorted last in the room lists, out of view.
         # Count the latest thread reply as activity.
         ./cinny-thread-activity-sort.patch

@@ -15,19 +15,19 @@ in
 
   lass.ports."8790" = "hermes-voice";
 
-  # hermes-voice (tools/hermes-voice): live voice conversations with Hermes
-  # through OpenAI's gpt-live-1. Runs next to Hermes so its API key never
+  # hermes-voice (tools/hermes-voice): live voice conversations with slopulus
+  # through OpenAI's gpt-live-1. Runs next to slopulus so its API key never
   # leaves this host; reachable over retiolum and publicly as
   # https://assist.lassul.us through neoprism (configs/hermes-proxy.nix).
   #
-  # SECURITY: the page drives Hermes, which has terminal tools and code
+  # SECURITY: the page drives slopulus, which has terminal tools and code
   # execution as lass (machines/coaxmetal/hermes.nix). The access token
   # (configs/hermes-voice-vars.nix) and the Android app's token
   # (hermes-voice-app below) are the gates on every API route; treat both
   # like the hermes-api key. The app takes calls from the headset button with
   # the phone locked, approvals by voice included.
   systemd.services.hermes-voice = {
-    description = "hermes-voice: live voice conversations with Hermes";
+    description = "hermes-voice: live voice conversations with slopulus";
     wantedBy = [ "multi-user.target" ];
     wants = [ "network-online.target" ];
     after = [

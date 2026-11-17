@@ -87,7 +87,7 @@ public class SettingsActivity extends Activity {
         help.setPadding(0, pad, 0, 0);
         help.setTextColor(Conversation.DIM);
         help.setText("The token: clan vars get coaxmetal hermes-voice-app/token\n\n"
-                + "Hold the headset's voice button to talk to Hermes, a short press hangs up;"
+                + "Hold the headset's voice button to talk to slopulus, a short press hangs up;"
                 + " a tone says it listens. Pick Assist when Android asks which app handles voice"
                 + " commands. On GrapheneOS, Assist also needs the Network permission.\n\n"
                 + "The TV URL is the TV page with its secret path, https://glotz.lassul.us/…/;"

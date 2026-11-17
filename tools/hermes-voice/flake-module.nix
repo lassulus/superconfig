@@ -27,7 +27,7 @@
       android = pkgs.callPackage ./android { inherit icon androidenv; };
     in
     {
-      # Full-duplex voice conversations with Hermes: gpt-live-1 in the
+      # Full-duplex voice conversations with slopulus: gpt-live-1 in the
       # browser, delegating real work to the Hermes API server.
       packages.hermes-voice =
         (pkgs.writeShellApplication {

@@ -188,7 +188,7 @@ public class MainActivity extends Activity {
 
         Conversation current = Conversation.current(this);
         if (current == null || current.lines.isEmpty()) {
-            transcript.setText("New conversation. What you and Hermes say shows up here.");
+            transcript.setText("New conversation. What you and slopulus say shows up here.");
             transcript.setTextColor(Conversation.DIM);
         } else {
             transcript.setText(current.render());

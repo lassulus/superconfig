@@ -1,4 +1,4 @@
-"""hermes-voice: talk to Hermes through OpenAI's full-duplex gpt-live-1.
+"""hermes-voice: talk to slopulus through OpenAI's full-duplex gpt-live-1.
 
 The browser holds a WebRTC session with gpt-live-1, which listens and speaks at
 the same time and chats on its own. Whenever the user asks for real work, the
@@ -14,21 +14,21 @@ newer delegation within the same call stops the previous run (the user
 corrected or replaced the request); hanging up just ends the call, and the run
 finishes whatever the user asked for. On hang-up the page sends what the user
 said since the last delegation, so a request spoken right before hanging up
-still reaches Hermes, and the whole call (both sides), which goes to the
+still reaches slopulus, and the whole call (both sides), which goes to the
 owner's Matrix DM as its transcript. When a run asks for approval while no page is listening,
 the question goes to the owner's Matrix DM (the gateway's Matrix home room,
 through its webhook platform), and the hermes-voice plugin's
 `/assist approve|deny <code>` command answers it.
 
-Hermes ends a call itself: when the user says goodbye, the voice model
-delegates that like any request, and Hermes calls the plugin's end_call tool.
+slopulus ends a call itself: when the user says goodbye, the voice model
+delegates that like any request, and slopulus calls the plugin's end_call tool.
 This server sees the call in the run's events and tells a listening page to
 close the session once the voice has spoken the reply.
 
 This server exists so neither secret reaches the browser: it exchanges the
-page's SDP offer for a Live session with the OpenAI key, and it calls Hermes
+page's SDP offer for a Live session with the OpenAI key, and it calls slopulus
 with the API server's bearer token. That token is root-equivalent for the
-Hermes host, so whoever can use this server can drive the agent: every API
+agent's host, so whoever can use this server can drive the agent: every API
 route requires the page's own access token (--access-token-file), and serving
 beyond loopback without one is refused.
 
@@ -117,7 +117,7 @@ END_CALL_TOOL = "end_call"
 # Frontend persona, adapted from Hermes's own (tools/voice_live.py): role,
 # style and a labelled delegation policy. The backend carries the real
 # instructions, tools and memory.
-PERSONA = """You are Hermes, the user's warm, upbeat and genuinely helpful voice assistant. Sound friendly and glad to help: positive and encouraging, never curt, annoyed, bored or sarcastic, even when delivering bad news or when the user is short with you. Talk fast: speak at a rapid, energetic pace, like someone who talks quickly by nature, with no slow drawn-out words and no long pauses between sentences. Keep replies short; a brief warm acknowledgment before the facts is good.
+PERSONA = """You are slopulus, the user's warm, upbeat and genuinely helpful voice assistant. Sound friendly and glad to help: positive and encouraging, never curt, annoyed, bored or sarcastic, even when delivering bad news or when the user is short with you. Talk fast: speak at a rapid, energetic pace, like someone who talks quickly by nature, with no slow drawn-out words and no long pauses between sentences. Keep replies short; a brief warm acknowledgment before the facts is good.
 
 Backchannel policy: Use moderate backchannels. Acknowledge naturally without competing with the main response.
 
@@ -125,23 +125,23 @@ Interruption policy: Stop speaking when the user interrupts. Listen to what they
 
 Delegation policy:
 Backend tools:
-- Hermes agent: a full AI agent with tools. It can run commands on the user's machines, read and edit files, manage the calendar, write and read messages in the user's Matrix chat, browse the web, search, and remember things across sessions. It is the one who actually does work and knows facts. You yourself cannot do anything.
+- slopulus agent: a full AI agent with tools. It can run commands on the user's machines, read and edit files, manage the calendar, write and read messages in the user's Matrix chat, browse the web, search, and remember things across sessions. It is the one who actually does work and knows facts. You yourself cannot do anything.
 
 Delegate to the backend when:
 - The user asks a question that needs facts, current information, or careful reasoning.
 - The user asks you to do, check, find, make, fix, run or remember anything, or to change or control something such as lights, devices, music or messages. Delegate every single time, also when it repeats or varies something done earlier in the call.
 - A correction changes work already requested.
 
-- The user says goodbye, says that is all, asks you to hang up, or says they are leaving. Hermes ends the call after your reply; you may still say a short goodbye, but never end the call yourself.
+- The user says goodbye, says that is all, asks you to hang up, or says they are leaving. slopulus ends the call after your reply; you may still say a short goodbye, but never end the call yourself.
 
 Do not delegate to the backend when:
 - The user greets you, makes small talk, or asks you to repeat a result already provided.
 - You need a brief clarification to understand the request.
 
-Delegate before giving an answer that depends on backend work. Emit the delegation first; only together with it may you say briefly and cheerfully that you are on it, then wait for the result. Never say you are on it, say it is done or describe the action without delegating. Do not guess the result while waiting, and never report something as done until the backend result says so. While waiting you get notes on what Hermes is doing right now (its own words, its current tool and command); when the user asks what is taking so long or what is happening, describe only those notes in plain words, and if there is none yet, say Hermes is still working on it. Never invent what Hermes is doing.
+Delegate before giving an answer that depends on backend work. Emit the delegation first; only together with it may you say briefly and cheerfully that you are on it, then wait for the result. Never say you are on it, say it is done or describe the action without delegating. Do not guess the result while waiting, and never report something as done until the backend result says so. While waiting you get notes on what slopulus is doing right now (its own words, its current tool and command); when the user asks what is taking so long or what is happening, describe only those notes in plain words, and if there is none yet, say slopulus is still working on it. Never invent what slopulus is doing.
 
 Approval policy:
-Hermes sometimes needs the user's approval before it runs a command. When you are told so, explain in plain words what Hermes wants to do and ask whether to approve or deny it. When the user answers, delegate to the backend so the answer reaches Hermes. Never decide an approval yourself."""
+slopulus sometimes needs the user's approval before it runs a command. When you are told so, explain in plain words what slopulus wants to do and ask whether to approve or deny it. When the user answers, delegate to the backend so the answer reaches slopulus. Never decide an approval yourself."""
 
 # Ephemeral system prompt for every delegated Hermes turn (Hermes layers system
 # messages on top of its core prompt without storing them).
@@ -215,7 +215,7 @@ def voice_param(voice):
 
 def live_history(lines):
     """Seed history for a new Live session from the page's transcript lines
-    (spoken dialogue only; Hermes answers were spoken through the voice)."""
+    (spoken dialogue only; slopulus' answers were spoken through the voice)."""
     items = []
     dialogue = [line for line in lines if line.get("speaker") in ("user", "assistant")]
     for line in dialogue[-24:]:
@@ -383,10 +383,10 @@ def hermes_follow_run(config, run_id):
                 return
             elif event in ("run.failed", "run.cancelled", "run.interrupted"):
                 status = event.removeprefix("run.")
-                error = payload.get("error") or f"Hermes run {status}"
+                error = payload.get("error") or f"slopulus' run {status}"
                 yield {"type": "done", "finish_reason": status, "error": error}
                 return
-    yield {"type": "error", "message": "Hermes event stream ended early"}
+    yield {"type": "error", "message": "slopulus' event stream ended early"}
 
 
 def hermes_approve(config, run_id, approval, choice):
@@ -462,9 +462,9 @@ class Run:
                 self.add(item)
         except urllib.error.HTTPError as error:
             detail = error.read().decode("utf-8", "replace")[:400]
-            self.add({"type": "error", "message": f"Hermes {error.code}: {detail}"})
+            self.add({"type": "error", "message": f"slopulus {error.code}: {detail}"})
         except (urllib.error.URLError, OSError, ValueError) as error:
-            self.add({"type": "error", "message": f"Hermes unreachable: {error}"})
+            self.add({"type": "error", "message": f"slopulus unreachable: {error}"})
         settle_approvals(self)
         with self.cond:
             self.finished = True
@@ -548,7 +548,7 @@ def ask_matrix(config, code, item):
         log.info("approval %s has no listener and no Matrix webhook", code)
         return
     text = (
-        "Hermes needs your approval for work from a voice call: "
+        "slopulus needs your approval for work from a voice call: "
         + (item.get("description") or "run a command")
     )
     if item.get("command"):
@@ -724,10 +724,10 @@ class Handler(BaseHTTPRequestHandler):
             )
         except urllib.error.HTTPError as error:
             detail = error.read().decode("utf-8", "replace")[:400]
-            self.send_json(HTTPStatus.BAD_GATEWAY, {"error": f"Hermes {error.code}: {detail}"})
+            self.send_json(HTTPStatus.BAD_GATEWAY, {"error": f"slopulus {error.code}: {detail}"})
             return
         except (urllib.error.URLError, OSError, ValueError, KeyError) as error:
-            self.send_json(HTTPStatus.BAD_GATEWAY, {"error": f"Hermes unreachable: {error}"})
+            self.send_json(HTTPStatus.BAD_GATEWAY, {"error": f"slopulus unreachable: {error}"})
             return
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "application/x-ndjson")
@@ -782,10 +782,10 @@ class Handler(BaseHTTPRequestHandler):
             run_id = hermes_start_run(self.config, hermes_session, lines, hung_up=True)
         except urllib.error.HTTPError as error:
             detail = error.read().decode("utf-8", "replace")[:400]
-            self.send_json(HTTPStatus.BAD_GATEWAY, {"error": f"Hermes {error.code}: {detail}"})
+            self.send_json(HTTPStatus.BAD_GATEWAY, {"error": f"slopulus {error.code}: {detail}"})
             return
         except (urllib.error.URLError, OSError, ValueError, KeyError) as error:
-            self.send_json(HTTPStatus.BAD_GATEWAY, {"error": f"Hermes unreachable: {error}"})
+            self.send_json(HTTPStatus.BAD_GATEWAY, {"error": f"slopulus unreachable: {error}"})
             return
         Run(self.config, hermes_session, run_id, hung_up=True)
         log.info("hang-up of %s left a request: run %s", hermes_session, run_id)
@@ -828,10 +828,10 @@ class Handler(BaseHTTPRequestHandler):
             result = hermes_approve(self.config, run.run_id, item, choice)
         except urllib.error.HTTPError as error:
             detail = error.read().decode("utf-8", "replace")[:400]
-            self.send_json(HTTPStatus.BAD_GATEWAY, {"error": f"Hermes {error.code}: {detail}"})
+            self.send_json(HTTPStatus.BAD_GATEWAY, {"error": f"slopulus {error.code}: {detail}"})
             return
         except (urllib.error.URLError, OSError, ValueError) as error:
-            self.send_json(HTTPStatus.BAD_GATEWAY, {"error": f"Hermes unreachable: {error}"})
+            self.send_json(HTTPStatus.BAD_GATEWAY, {"error": f"slopulus unreachable: {error}"})
             return
         with APPROVALS_LOCK:
             APPROVALS.pop(code, None)

@@ -6,7 +6,7 @@
   installShellFiles,
 }:
 
-# Terminal client for Tangled (like gh for GitHub): Hermes and agentd open
+# Terminal client for Tangled (like gh for GitHub): slopulus and agentd open
 # and update their superconfig PRs on tangled.org with it. Built from the
 # tangled.org source; the GitHub mirror's flake lags behind.
 buildGoModule {

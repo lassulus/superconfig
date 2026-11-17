@@ -29,8 +29,8 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 /**
- * A conversation with Hermes across calls, like the web page's localStorage state: the
- * transcript, how much of it went to Hermes already, and Hermes's session id. Every conversation
+ * A conversation with slopulus across calls, like the web page's localStorage state: the
+ * transcript, how much of it went to slopulus already, and the Hermes session id. Every conversation
  * is a file in conversations/; the current one continues with the next call unless the last call
  * is over an hour old or "New conversation" was chosen.
  */
@@ -54,7 +54,7 @@ final class Conversation {
     final String hermesSession;
     final long started;
     final List<Line> lines = new ArrayList<>();
-    // Lines before this index went to Hermes (delegation or hang-up) already.
+    // Lines before this index went to slopulus (delegation or hang-up) already.
     int delegated;
     double billedSeconds;
     private final Context context;
@@ -176,7 +176,7 @@ final class Conversation {
         save();
     }
 
-    /** Lines since the last hand-over to Hermes, of the given speakers. */
+    /** Lines since the last hand-over to slopulus, of the given speakers. */
     List<Line> undelegated(String... speakers) {
         return since(delegated, speakers);
     }
@@ -203,7 +203,7 @@ final class Conversation {
         return "(nothing said)";
     }
 
-    /** The transcript as the web page shows it: colored speaker labels, Hermes dimmed. */
+    /** The transcript as the web page shows it: colored speaker labels, slopulus dimmed. */
     CharSequence render() {
         SpannableStringBuilder out = new SpannableStringBuilder();
         for (Line line : lines) {
@@ -231,8 +231,8 @@ final class Conversation {
                     labelColor = LIVE;
                     textColor = LIVE;
                     break;
-                default:
-                    label = line.speaker + ": ";
+                default: // "hermes", the key saved conversations use for the agent
+                    label = "slopulus: ";
                     labelColor = ACCENT;
                     textColor = DIM;
                     break;

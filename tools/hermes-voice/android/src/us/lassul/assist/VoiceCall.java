@@ -37,7 +37,7 @@ import org.webrtc.SessionDescription;
 import org.webrtc.audio.JavaAudioDeviceModule;
 
 /**
- * One call with gpt-live-1 over WebRTC, delegating to Hermes through hermes-voice: the web page's
+ * One call with gpt-live-1 over WebRTC, delegating to slopulus through hermes-voice: the web page's
  * Call (static/app.js) in Java, with the same events, delegation, voice approvals, end_call and
  * idle rules. Lives on the main thread; WebRTC and network callbacks are posted to it.
  */
@@ -54,7 +54,7 @@ final class VoiceCall {
     private static final int APPEND_CHAR_LIMIT = 1400;
     // Transcript deltas can trail the delegation event; wait for the last words.
     private static final long DELEGATION_SETTLE_MS = 400;
-    // Once Hermes ended the call (end_call item), the call closes when the voice has been quiet
+    // Once slopulus ended the call (end_call item), the call closes when the voice has been quiet
     // this long after speaking the reply, at the latest after END_CALL_MAX_MS.
     private static final long END_CALL_QUIET_MS = 800;
     private static final long END_CALL_MAX_MS = 30_000;
@@ -133,7 +133,7 @@ final class VoiceCall {
         }
     };
 
-    /** A Hermes turn: the /delegate stream for one delegation of the voice model. */
+    /** A slopulus turn: the /delegate stream for one delegation of the voice model. */
     private static final class Delegation {
         final String id;
         final StringBuilder answer = new StringBuilder();
@@ -378,8 +378,8 @@ final class VoiceCall {
     }
 
     private void delegate(String id) {
-        // One Hermes turn at a time: a newer delegation (usually a correction) supersedes the
-        // running one, and the server stops the old run. While Hermes waits for an approval,
+        // One slopulus turn at a time: a newer delegation (usually a correction) supersedes the
+        // running one, and the server stops the old run. While slopulus waits for an approval,
         // the next delegation is the user's answer, not a new request.
         if (approval != null) {
             answerApproval(id);
@@ -491,12 +491,12 @@ final class VoiceCall {
             askApproval(current.id, item);
             return;
         }
-        // Anything after an approval request means Hermes moved on (answered here, from Matrix,
+        // Anything after an approval request means slopulus moved on (answered here, from Matrix,
         // or by its own timeout).
         approval = null;
         if (type.equals("tool") && item.optString("status").equals("running")) {
             append("session.thinking.append", current.id,
-                    "Hermes is working on it. " + item.optString("note") + " (" + item.optString("label")
+                    "slopulus is working on it. " + item.optString("note") + " (" + item.optString("label")
                             + ": " + item.optString("preview") + ")");
         } else if (type.equals("end_call")) {
             current.endCall = true;
@@ -521,16 +521,16 @@ final class VoiceCall {
         if (failure != null && answer.isEmpty()) {
             conversation.add("error", failure);
             append("session.commentary.append", current.id,
-                    "The request to Hermes failed: " + failure);
+                    "The request to slopulus failed: " + failure);
         } else {
-            String text = answer.isEmpty() ? "Hermes finished without an answer." : answer;
+            String text = answer.isEmpty() ? "slopulus finished without an answer." : answer;
             conversation.add("hermes", text);
             for (String chunk : chunks(text)) {
                 append("session.commentary.append", current.id, chunk);
             }
         }
         if (current.endCall) {
-            // Hermes ended the call: close it once the voice has spoken the reply just handed over.
+            // slopulus ended the call: close it once the voice has spoken the reply just handed over.
             ending = true;
             endingSpoken = false;
             main.postDelayed(endNow, END_CALL_MAX_MS);
@@ -560,7 +560,7 @@ final class VoiceCall {
         conversation.add("hermes",
                 "Approval needed: " + what + (command.isEmpty() ? "" : "\n" + command));
         append("session.commentary.append", id,
-                "Hermes needs the user's approval before it continues: " + what + "."
+                "slopulus needs the user's approval before it continues: " + what + "."
                         + (command.isEmpty() ? "" : " The command is: " + command + ".")
                         + " Ask the user whether to approve or deny it.");
     }
@@ -616,10 +616,10 @@ final class VoiceCall {
                             .put("choice", choice));
                     ok = true;
                     message = choice.equals("deny")
-                            ? "Denied. Hermes will not run it."
-                            : "Approved. Hermes is continuing.";
+                            ? "Denied. slopulus will not run it."
+                            : "Approved. slopulus is continuing.";
                 } catch (Exception error) {
-                    message = "Could not send the answer to Hermes: " + error.getMessage();
+                    message = "Could not send the answer to slopulus: " + error.getMessage();
                 }
                 final String reply = message;
                 final boolean sent = ok;
@@ -717,7 +717,7 @@ final class VoiceCall {
     }
 
     // Tell the server the call is over, with what the user said since the last delegation (a
-    // request spoken right before hanging up still reaches Hermes) and the whole call for its
+    // request spoken right before hanging up still reaches slopulus) and the whole call for its
     // transcript.
     private void hangUp() {
         List<Conversation.Line> lines = conversation.undelegated("user", "assistant");

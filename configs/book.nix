@@ -35,7 +35,7 @@ let
     horizonDays = 28;
     # lass/calendar is the only calendar (configs/radicale.nix): free/busy is
     # read from it, and requests and bookings are mirrored into it, next to
-    # lass's own events and whatever Hermes adds. Book reads its events back:
+    # lass's own events and whatever slopulus adds. Book reads its events back:
     # deleting, moving or confirming one there manages the booking.
     caldav = {
       url = "http://127.0.0.1:${toString config.lass.servicePorts.radicale}";

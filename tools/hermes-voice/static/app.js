@@ -1,5 +1,5 @@
 // hermes-voice page: one WebRTC session with gpt-live-1 per "call", client
-// delegation answered by Hermes through the local server (/delegate).
+// delegation answered by slopulus through the local server (/delegate).
 "use strict";
 
 const PRICE_PER_MINUTE = 0.05;
@@ -7,7 +7,7 @@ const PRICE_PER_MINUTE = 0.05;
 const APPEND_CHAR_LIMIT = 1400;
 // Transcript deltas can trail the delegation event; wait for the last words.
 const DELEGATION_SETTLE_MS = 400;
-// Once Hermes ended the call (end_call item), the call closes when the voice
+// Once slopulus ended the call (end_call item), the call closes when the voice
 // has been quiet this long after speaking the reply, at the latest after
 // END_CALL_MAX_MS.
 const END_CALL_QUIET_MS = 800;
@@ -277,7 +277,7 @@ class Call {
     if (!this.reconnectTimer) return;
     clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
-    // Status updates meanwhile (Hermes progress) stay.
+    // Status updates meanwhile (slopulus' progress) stay.
     if (statusLine.textContent === "Reconnecting…")
       setStatus(this.statusBeforeDrop);
   }
@@ -348,9 +348,9 @@ class Call {
   }
 
   async delegate(id) {
-    // One Hermes turn at a time: a newer delegation (usually a correction)
+    // One slopulus turn at a time: a newer delegation (usually a correction)
     // supersedes the running one, and the server stops the old run.
-    // While Hermes waits for an approval, the next delegation is the user's
+    // While slopulus waits for an approval, the next delegation is the user's
     // answer, not a new request: the turn must keep running.
     if (this.approval) {
       this.answerApproval(id);
@@ -361,7 +361,7 @@ class Call {
     const controller = new AbortController();
     const delegation = { id, controller };
     this.delegation = delegation;
-    setStatus("Hermes is working…");
+    setStatus("slopulus is working…");
 
     await new Promise((resolve) => setTimeout(resolve, DELEGATION_SETTLE_MS));
     // A hang-up meanwhile sent these lines along itself.
@@ -418,16 +418,16 @@ class Call {
             this.askApproval(id, item);
             continue;
           }
-          // Anything after an approval request means Hermes moved on
+          // Anything after an approval request means slopulus moved on
           // (answered here, by button, or by its own timeout).
           if (this.approval) this.clearApproval();
           if (item.type === "tool" && item.status === "running") {
-            setStatus(`Hermes: ${item.label}`);
+            setStatus(`slopulus: ${item.label}`);
             this.send({
               type: "session.thinking.append",
               delegation_id: id,
               content:
-                `Hermes is working on it. ${item.note} (${item.label}: ${item.preview})`.slice(
+                `slopulus is working on it. ${item.note} (${item.label}: ${item.preview})`.slice(
                   0,
                   APPEND_CHAR_LIMIT,
                 ),
@@ -457,13 +457,13 @@ class Call {
       this.send({
         type: "session.commentary.append",
         delegation_id: id,
-        content: `The request to Hermes failed: ${failure}`.slice(
+        content: `The request to slopulus failed: ${failure}`.slice(
           0,
           APPEND_CHAR_LIMIT,
         ),
       });
     } else {
-      const text = answer.trim() || "Hermes finished without an answer.";
+      const text = answer.trim() || "slopulus finished without an answer.";
       addLine("hermes", text);
       for (const chunk of chunks(text))
         this.send({
@@ -476,7 +476,7 @@ class Call {
     else setStatus("Listening");
   }
 
-  // Hermes ended the call: close it once the voice has spoken the reply just
+  // slopulus ended the call: close it once the voice has spoken the reply just
   // handed over.
   endAfterReply() {
     this.ending = { spoken: false };
@@ -487,7 +487,7 @@ class Call {
   askApproval(id, item) {
     this.approval = { delegationId: id, code: item.code };
     const what = item.description || "run a command";
-    setStatus("Hermes needs your approval");
+    setStatus("slopulus needs your approval");
     addLine(
       "hermes",
       `Approval needed: ${what}${item.command ? `\n${item.command}` : ""}`,
@@ -498,7 +498,7 @@ class Call {
       type: "session.commentary.append",
       delegation_id: id,
       content: (
-        `Hermes needs the user's approval before it continues: ${what}.` +
+        `slopulus needs the user's approval before it continues: ${what}.` +
         (item.command ? ` The command is: ${item.command}.` : "") +
         " Ask the user whether to approve or deny it."
       ).slice(0, APPEND_CHAR_LIMIT),
@@ -549,17 +549,17 @@ class Call {
       ok = response.ok;
       message = ok
         ? choice === "deny"
-          ? "Denied. Hermes will not run it."
-          : "Approved. Hermes is continuing."
-        : `Could not send the answer to Hermes: ${result.error}`;
+          ? "Denied. slopulus will not run it."
+          : "Approved. slopulus is continuing."
+        : `Could not send the answer to slopulus: ${result.error}`;
     } catch (error) {
-      message = `Could not send the answer to Hermes: ${error.message || error}`;
+      message = `Could not send the answer to slopulus: ${error.message || error}`;
     }
     addLine(ok ? "hermes" : "error", message);
     // A fast turn can finish before this reply returns; its result was
     // already handed to the voice, so an "is continuing" would be stale.
     if (ok && !this.delegation) return;
-    setStatus(ok ? "Hermes is working…" : "Listening");
+    setStatus(ok ? "slopulus is working…" : "Listening");
     this.send({
       type: "session.commentary.append",
       delegation_id: replyId || approval.delegationId,
@@ -588,7 +588,7 @@ class Call {
 
   // Tell the server the call is over, with what the user said since the last
   // delegation (a request spoken right before hanging up still reaches
-  // Hermes) and the whole call for its transcript. keepalive lets the
+  // slopulus) and the whole call for its transcript. keepalive lets the
   // request outlive the page.
   hangUp() {
     const spoken = (line) =>
@@ -632,7 +632,7 @@ class Call {
     talk.textContent = "Talk";
     talk.disabled = false;
     setStatus(`Idle (${reason})`);
-    // Not hung up from here (button, idle, Hermes): say why it ended.
+    // Not hung up from here (button, idle, slopulus): say why it ended.
     if (!this.closing && reason !== "page closed")
       addLine("error", `Call ended: ${reason}`);
     renderCost();

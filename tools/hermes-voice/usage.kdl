@@ -1,5 +1,5 @@
 bin "hermes-voice"
-about "Serve a page for live voice conversations with Hermes through OpenAI gpt-live-1"
+about "Serve a page for live voice conversations with slopulus through OpenAI gpt-live-1"
 
 flag "--listen" help="host:port to serve on; IPv6 as [::]:port (default: 127.0.0.1:8790)" {
   arg "<host:port>"
@@ -13,7 +13,7 @@ flag "--hermes-key-file" help="File holding the Hermes API_SERVER_KEY (clan vars
 flag "--openai-key-file" help="File holding the OpenAI API key" required=#true {
   arg "<file>"
 }
-flag "--access-token-file" help="File holding the token every API route requires; mandatory unless listening on loopback, since the page drives Hermes" {
+flag "--access-token-file" help="File holding the token every API route requires; mandatory unless listening on loopback, since the page drives slopulus" {
   arg "<file>"
 }
 flag "--config" help="JSON file with voice, model, idle_seconds, glossary and instructions" {

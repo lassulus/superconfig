@@ -3,7 +3,7 @@
 # Runs as its own `agentd` user; the harness logins (~/.omp, ...) live in
 # /var/lib/agentd. omp needs a one-time login per host:
 # `runuser -u agentd -- omp`, then /login.
-# Reachable only over retiolum and locally. Hermes is a client with the API
+# Reachable only over retiolum and locally. slopulus is a client with the API
 # token from the shared `agentd` vars generator below, agentd-web (web.nix)
 # with the user's id.lassul.us login (oidc.nix).
 #
@@ -103,8 +103,8 @@ in
     "L+ ${home}/.ssh/config - - - - ${sshConfig}"
   ];
 
-  # Hermes' API token, one for every agentd host: shared, so the token in
-  # Hermes' .env (hermes-env generator in machines/coaxmetal/hermes.nix) is
+  # slopulus' API token, one for every agentd host: shared, so the token in
+  # slopulus' .env (hermes-env generator in machines/coaxmetal/hermes.nix) is
   # the one each agentd checks. agentd only gets its sha256; the raw token is
   # only read at generation time.
   clan.core.vars.generators.agentd = {

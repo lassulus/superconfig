@@ -31,7 +31,7 @@ log = logging.getLogger(__name__)
 SEND_SCHEMA = {
     "name": "matrix_dm_send",
     "description": (
-        "Send a message to the user's Matrix chat with you (their DM with the Hermes bot). Use "
+        "Send a message to the user's Matrix chat with you (their DM with the slopulus bot). Use "
         "it when the user asks you to tell or send them something there, or when you need to ask "
         "them something while no conversation with them is open: their answer arrives in that "
         "Matrix chat. To read that chat, look up the Matrix DM session with session_search "
@@ -172,7 +172,7 @@ def assist(raw_args):
     what = result.get("description") or "the command"
     if answer["choice"] == "deny":
         return f"Denied: {what}."
-    return f"Approved: {what}. Hermes continues."
+    return f"Approved: {what}. slopulus continues."
 
 
 def register(ctx):

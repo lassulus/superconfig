@@ -173,8 +173,8 @@ public class CallService extends Service {
         CallAttributes attributes = new CallAttributes.Builder(
                         account,
                         CallAttributes.DIRECTION_OUTGOING,
-                        "Hermes",
-                        Uri.fromParts(PhoneAccount.SCHEME_SIP, "hermes@assist.lassul.us", null))
+                        "slopulus",
+                        Uri.fromParts(PhoneAccount.SCHEME_SIP, "slopulus@assist.lassul.us", null))
                 .setCallType(CallAttributes.AUDIO_CALL)
                 .build();
         getSystemService(TelecomManager.class).addCall(
@@ -248,7 +248,7 @@ public class CallService extends Service {
         Notification.Builder builder = new Notification.Builder(this, CHANNEL)
                 .setSmallIcon(android.R.drawable.sym_action_call)
                 .setStyle(Notification.CallStyle.forOngoingCall(
-                        new Person.Builder().setName("Hermes").build(), hangUp))
+                        new Person.Builder().setName("slopulus").build(), hangUp))
                 .setOngoing(true);
         if (Tv.url(this) != null) {
             builder.addAction(new Notification.Action.Builder(

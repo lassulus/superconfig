@@ -8,14 +8,15 @@
 let
   # The one and only calendar, lass/calendar: own events (phone via DAVx⁵,
   # calendar.lassul.us), booking requests and bookings mirrored by tools/book
-  # (configs/book.nix), and whatever Hermes adds. The rights below make it the
-  # only writable collection: nobody can create, delete or replace calendars.
+  # (configs/book.nix), and whatever slopulus adds. The rights below make it
+  # the only writable collection: nobody can create, delete or replace
+  # calendars.
   calendar = "lass/calendar";
 
   # lass: phone, web client and tools/book.
-  # hermes: the agent on coaxmetal (machines/coaxmetal/hermes.nix). Its var is
-  # shared (and declared there too) so coaxmetal's hermes-env can read the
-  # password without radicale running there.
+  # hermes: slopulus, the agent on coaxmetal (machines/coaxmetal/hermes.nix).
+  # Its var is shared (and declared there too) so coaxmetal's hermes-env can
+  # read the password without radicale running there.
   users = [
     "lass"
     "hermes"
