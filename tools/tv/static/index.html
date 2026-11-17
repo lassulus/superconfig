@@ -67,9 +67,15 @@
         text-decoration: underline;
       }
       #next,
-      #pending {
+      #pending,
+      #guide {
         opacity: 0.8;
         margin-top: 0.3em;
+      }
+      #guide {
+        display: block;
+        color: inherit;
+        font-size: 0.85em;
       }
       #controls {
         position: absolute;
@@ -139,6 +145,7 @@
       <a id="now" target="_blank" rel="noopener"></a>
       <div id="next"></div>
       <div id="pending"></div>
+      <a id="guide" href="schedule">Schedule</a>
     </div>
     <div id="controls">
       <button id="cc" title="Subtitles" hidden>CC: off</button>

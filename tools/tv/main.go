@@ -205,6 +205,8 @@ func nowMs() int64 { return time.Now().UnixMilli() }
 
 // handler serves everything under /<secret>/:
 //
+//	GET  /             the player
+//	GET  schedule      the schedule page
 //	GET  api/time      server clock, unix ms
 //	GET  api/schedule  {"entries": [playing, upcoming...], "pending": [requests],
 //	                   "slots": [{"id", "at", "item", "source", "title",
@@ -353,6 +355,9 @@ func (s *server) handler() http.Handler {
 		default:
 			r2 := r.Clone(r.Context())
 			r2.URL.Path = "/" + rest
+			if rest == "schedule" {
+				r2.URL.Path = "/schedule.html"
+			}
 			files.ServeHTTP(w, r2)
 		}
 	})

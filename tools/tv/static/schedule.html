@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TV schedule</title>
+    <style>
+      body {
+        margin: 0 auto;
+        max-width: 50em;
+        padding: 0.8em;
+        background: #111;
+        color: #eee;
+        font-family: sans-serif;
+        line-height: 1.4;
+      }
+      a {
+        color: #9cf;
+      }
+      header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.5em 1em;
+      }
+      h1 {
+        flex: 1;
+        margin: 0;
+        font-size: 1.5em;
+      }
+      h2 {
+        margin: 1.2em 0 0.4em;
+        font-size: 1.1em;
+        border-bottom: 1px solid #444;
+      }
+      form {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4em;
+        margin: 0.4em 0;
+      }
+      input,
+      button {
+        font-size: 1em;
+      }
+      input:not([type]),
+      input[type="search"],
+      input[type="password"] {
+        flex: 1;
+        min-width: 12em;
+      }
+      ul,
+      ol {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      li {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 0 0.6em;
+        padding: 0.35em 0.3em;
+        border-bottom: 1px solid #222;
+      }
+      .time {
+        min-width: 3.2em;
+        font-variant-numeric: tabular-nums;
+        font-weight: bold;
+      }
+      .title {
+        flex: 1;
+        min-width: 10em;
+      }
+      .meta {
+        opacity: 0.7;
+        font-size: 0.9em;
+      }
+      .playing {
+        background: #233a23;
+      }
+      .slot {
+        border-left: 0.3em solid #e93;
+      }
+      .tag {
+        padding: 0 0.3em;
+        border-radius: 0.2em;
+        background: #e93;
+        color: #000;
+        font-size: 0.8em;
+      }
+      .playing .tag {
+        background: #6c6;
+      }
+      li form {
+        margin: 0;
+        gap: 0.2em;
+      }
+      #results button {
+        text-align: left;
+      }
+      .error {
+        color: #f88;
+      }
+      [hidden] {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <a href="./">Player</a>
+      <h1>Schedule</h1>
+      <span id="who"></span>
+      <a id="login" href="login" hidden>Log in</a>
+      <button id="logout" hidden>Log out</button>
+    </header>
+    <form id="keyform" hidden>
+      <input id="key" type="password" placeholder="Admin key" required />
+      <button>Use admin key</button>
+    </form>
+    <section id="editor" hidden>
+      <h2>Add a slot</h2>
+      <form id="search">
+        <input id="q" type="search" placeholder="Search Jellyfin" required />
+        <button>Search</button>
+      </form>
+      <ul id="results"></ul>
+      <form id="add">
+        <input id="item" placeholder="YouTube URL or Jellyfin id" required />
+        <input id="at" type="datetime-local" required />
+        <button>Add slot</button>
+      </form>
+      <div id="added"></div>
+    </section>
+    <section id="slotbox" hidden>
+      <h2>Slots</h2>
+      <ul id="slots"></ul>
+    </section>
+    <section id="pendingbox" hidden>
+      <h2>Requests</h2>
+      <ul id="pending"></ul>
+    </section>
+    <div id="status" class="error"></div>
+    <main id="days"></main>
+    <script src="schedule.js"></script>
+  </body>
+</html>
