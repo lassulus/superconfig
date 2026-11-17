@@ -240,11 +240,13 @@ function control(raw, at) {
     return;
   }
   // some browsers (Firefox) stall the sound for ~65 ms on every rate change, which needs another nudge and
-  // another change: a jump right after one that a nudge of at most 5 % cannot explain means seek instead
+  // another change: a drop right after one that a nudge of at most 5 % cannot explain means seek instead;
+  // only a drop, a stalled sound falls behind, and not in the first second after a seek, which still settles
   if (
     sync.rateWorks &&
+    at - sync.landedAt > 1000 &&
     at - sync.rateSetAt < 500 &&
-    Math.abs(raw - sync.rateSetRaw) > 40
+    raw - sync.rateSetRaw < -40
   ) {
     sync.rateWorks = false;
     sync.correctiveSeekAt = at;
