@@ -152,15 +152,6 @@ func (s *server) isAdmin(r *http.Request) bool {
 	return ok && s.adminKey != "" && subtle.ConstantTimeCompare([]byte(key), []byte(s.adminKey)) == 1
 }
 
-// editor returns who may edit the schedule: "admin" for the admin key, or ""
-// for nobody.
-func (s *server) editor(r *http.Request) string {
-	if s.isAdmin(r) {
-		return "admin"
-	}
-	return ""
-}
-
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")

@@ -1,12 +1,15 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1815,5 +1818,253 @@ func TestCleanCacheKeepsSlots(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(dir, f)); (err == nil) != kept {
 			t.Errorf("%s kept: %t, want %t", f, err == nil, kept)
 		}
+	}
+}
+
+func TestSlotAPI(t *testing.T) {
+	jellyfin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		items := []map[string]any{}
+		if id := q.Get("Ids"); id != "" {
+			items = append(items, map[string]any{"Id": id, "Name": "Alien", "Type": "Movie", "MediaType": "Video", "RunTimeTicks": 2 * 3600 * 10_000_000})
+		} else if q.Get("searchTerm") == "alien" && q.Get("IncludeItemTypes") == "Movie,Episode" && q.Get("Recursive") == "true" {
+			items = append(items,
+				map[string]any{"Id": "a1", "Name": "Alien", "Type": "Movie", "ProductionYear": 1979, "RunTimeTicks": 117 * 60 * 10_000_000},
+				map[string]any{"Id": "e1", "Name": "Pilot", "Type": "Episode", "SeriesName": "Alien Show", "ParentIndexNumber": 1, "IndexNumber": 2, "RunTimeTicks": 30 * 60 * 10_000_000},
+				map[string]any{"Id": "v1", "Name": "Missing", "Type": "Episode", "LocationType": "Virtual", "RunTimeTicks": 1})
+		}
+		json.NewEncoder(w).Encode(map[string]any{"Items": items})
+	}))
+	defer jellyfin.Close()
+	s := &server{secret: "s", adminKey: "k", statePath: filepath.Join(t.TempDir(), "state.json"), cookieKey: []byte("key"),
+		cfg: config{JellyfinURL: jellyfin.URL}}
+	cookie := &http.Cookie{Name: sessionCookie, Value: s.sign(session{Sub: "1", Name: "Lass", Exp: nowMs() + 60_000})}
+	do := func(method, path, body string, auth any) (int, map[string]any, string) {
+		req := httptest.NewRequest(method, "/s/"+path, strings.NewReader(body))
+		switch a := auth.(type) {
+		case string:
+			req.Header.Set("Authorization", "Bearer "+a)
+		case *http.Cookie:
+			req.AddCookie(a)
+		}
+		rec := httptest.NewRecorder()
+		s.handler().ServeHTTP(rec, req)
+		var out map[string]any
+		json.Unmarshal(rec.Body.Bytes(), &out)
+		return rec.Code, out, rec.Body.String()
+	}
+	at := nowMs() + time.Hour.Milliseconds()
+	add := func(at int64) string {
+		return fmt.Sprintf(`{"url": "0123456789abcdef0123456789abcdef", "at": %d}`, at)
+	}
+	for _, auth := range []any{nil, "wrong", &http.Cookie{Name: sessionCookie, Value: cookie.Value + "x"}} {
+		if code, _, _ := do("POST", "api/slots/add", add(at), auth); code != http.StatusUnauthorized {
+			t.Errorf("adding with %v: %d, want 401", auth, code)
+		}
+	}
+	code, out, _ := do("POST", "api/slots/add", add(at), cookie)
+	if code != http.StatusOK || out["title"] != "Alien" || out["at"] != float64(at) || out["by"] != "Lass" || out["source"] != "jellyfin" || out["duration"] != float64(2*time.Hour.Milliseconds()) {
+		t.Fatalf("adding: %d %v", code, out)
+	}
+	id := out["id"].(string)
+	for name, body := range map[string]string{
+		"past":    add(nowMs() - 1000),
+		"overlap": add(at + time.Hour.Milliseconds()),
+		"bad url": `{"url": "https://example.org/", "at": 99999999999999}`,
+	} {
+		if code, out, _ := do("POST", "api/slots/add", body, "k"); code != http.StatusBadRequest || out["error"] == nil {
+			t.Errorf("%s: %d %v, want 400", name, code, out)
+		}
+	}
+	if code, out, _ := do("POST", "api/slots/add", add(at+2*time.Hour.Milliseconds()), "k"); code != http.StatusOK || out["by"] != "admin" {
+		t.Errorf("right after: %d %v", code, out)
+	}
+	_, sched, _ := do("GET", "api/schedule", "", nil)
+	if slots, _ := sched["slots"].([]any); len(slots) != 2 || slots[0].(map[string]any)["state"] != "waiting" {
+		t.Errorf("slots in api/schedule: %v", sched["slots"])
+	}
+	if code, _, _ := do("POST", "api/slots/remove", fmt.Sprintf(`{"id": %q}`, id), cookie); code != http.StatusOK || len(s.st.Slots) != 1 {
+		t.Errorf("removing: %d, slots %v", code, s.st.Slots)
+	}
+	if code, _, _ := do("POST", "api/slots/remove", fmt.Sprintf(`{"id": %q}`, id), "k"); code != http.StatusNotFound {
+		t.Errorf("removing again: %d, want 404", code)
+	}
+
+	if code, _, _ := do("GET", "api/search?q=alien", "", nil); code != http.StatusUnauthorized {
+		t.Errorf("search without login: %d", code)
+	}
+	req := httptest.NewRequest("GET", "/s/api/search?q=alien", nil)
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	s.handler().ServeHTTP(rec, req)
+	var found []map[string]any
+	json.Unmarshal(rec.Body.Bytes(), &found)
+	want := []map[string]any{
+		{"id": "a1", "title": "Alien", "year": 1979.0, "duration": float64(117 * 60_000)},
+		{"id": "e1", "title": "Alien Show S01E02 Pilot", "duration": float64(30 * 60_000)},
+	}
+	if !reflect.DeepEqual(found, want) {
+		t.Errorf("search: %d %v, want %v", rec.Code, found, want)
+	}
+}
+
+func TestSignedCookies(t *testing.T) {
+	s := &server{secret: "s", cookieKey: []byte("key")}
+	v := s.sign(session{Sub: "1", Name: "Lass", Exp: nowMs() + 60_000})
+	var se session
+	if !s.verify(v, &se) || se.Name != "Lass" {
+		t.Fatalf("verifying a signed value: %+v", se)
+	}
+	payload, sig, _ := strings.Cut(v, ".")
+	forged := base64.RawURLEncoding.EncodeToString([]byte(`{"sub":"2","name":"Mallory","exp":99999999999999}`))
+	other := &server{cookieKey: []byte("other")}
+	for name, bad := range map[string]string{
+		"forged payload":   forged + "." + sig,
+		"changed sig":      payload + "." + strings.ToUpper(sig),
+		"no sig":           payload,
+		"other key":        other.sign(session{Sub: "1", Name: "Lass", Exp: nowMs() + 60_000}),
+		"payload not JSON": base64.RawURLEncoding.EncodeToString([]byte("x")) + "." + sig,
+	} {
+		if s.verify(bad, &session{}) {
+			t.Errorf("%s verified", name)
+		}
+	}
+	for name, value := range map[string]string{
+		"valid":   v,
+		"expired": s.sign(session{Sub: "1", Name: "Lass", Exp: nowMs() - 1}),
+		"forged":  forged + "." + sig,
+	} {
+		req := httptest.NewRequest("GET", "/s/api/me", nil)
+		req.AddCookie(&http.Cookie{Name: sessionCookie, Value: value})
+		if got, want := s.editor(req), map[bool]string{true: "Lass"}[name == "valid"]; got != want {
+			t.Errorf("editor with a %s cookie: %q, want %q", name, got, want)
+		}
+	}
+}
+
+func TestOIDCLogin(t *testing.T) {
+	const redirect = "https://tv.example.org/oidc/callback"
+	challenges := map[string]string{}
+	var issuer *httptest.Server
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /.well-known/openid-configuration", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]string{
+			"issuer": issuer.URL, "authorization_endpoint": issuer.URL + "/authorize",
+			"token_endpoint": issuer.URL + "/token", "userinfo_endpoint": issuer.URL + "/userinfo",
+		})
+	})
+	mux.HandleFunc("GET /authorize", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		if q.Get("client_id") != "cid" || q.Get("redirect_uri") != redirect || q.Get("response_type") != "code" ||
+			q.Get("code_challenge_method") != "S256" || q.Get("code_challenge") == "" || q.Get("state") == "" || !strings.Contains(q.Get("scope"), "openid") {
+			http.Error(w, "bad authorize request "+r.URL.RawQuery, http.StatusBadRequest)
+			return
+		}
+		code := fmt.Sprintf("code%d", len(challenges))
+		challenges[code] = q.Get("code_challenge")
+		http.Redirect(w, r, redirect+"?"+url.Values{"code": {code}, "state": {q.Get("state")}}.Encode(), http.StatusFound)
+	})
+	mux.HandleFunc("POST /token", func(w http.ResponseWriter, r *http.Request) {
+		r.ParseForm()
+		sum := sha256.Sum256([]byte(r.Form.Get("code_verifier")))
+		challenge, ok := challenges[r.Form.Get("code")]
+		delete(challenges, r.Form.Get("code"))
+		if !ok || challenge != base64.RawURLEncoding.EncodeToString(sum[:]) || r.Form.Get("grant_type") != "authorization_code" ||
+			r.Form.Get("client_id") != "cid" || r.Form.Get("redirect_uri") != redirect {
+			http.Error(w, `{"error": "invalid_grant"}`, http.StatusBadRequest)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"access_token": "at", "token_type": "Bearer"})
+	})
+	mux.HandleFunc("GET /userinfo", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer at" {
+			http.Error(w, "", http.StatusUnauthorized)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"sub": "1234", "name": "Lass", "preferred_username": "lass"})
+	})
+	issuer = httptest.NewServer(mux)
+	defer issuer.Close()
+
+	s := &server{secret: "s", cookieKey: []byte("key"), oidcClientID: "cid", callbackPath: "/oidc/callback",
+		cfg: config{OIDCIssuer: issuer.URL, OIDCRedirectURL: redirect}}
+	serve := func(path string, cookies ...*http.Cookie) *http.Response {
+		req := httptest.NewRequest("GET", path, nil)
+		for _, c := range cookies {
+			req.AddCookie(c)
+		}
+		rec := httptest.NewRecorder()
+		s.handler().ServeHTTP(rec, req)
+		return rec.Result()
+	}
+	cookieOf := func(resp *http.Response, name string) *http.Cookie {
+		for _, c := range resp.Cookies() {
+			if c.Name == name {
+				return c
+			}
+		}
+		t.Fatalf("no %s cookie in %v", name, resp.Header)
+		return nil
+	}
+	// login: to the issuer, which sends the browser back to the callback
+	start := func() (*http.Cookie, *url.URL) {
+		resp := serve("/s/login")
+		if resp.StatusCode != http.StatusFound {
+			t.Fatalf("login: %d", resp.StatusCode)
+		}
+		lc := cookieOf(resp, loginCookie)
+		if lc.Path != "/oidc/callback" || !lc.HttpOnly || !lc.Secure || lc.SameSite != http.SameSiteLaxMode {
+			t.Errorf("login cookie %+v", lc)
+		}
+		client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+		auth, err := client.Get(resp.Header.Get("Location"))
+		if err != nil || auth.StatusCode != http.StatusFound {
+			t.Fatalf("authorize: %v %v", auth, err)
+		}
+		back, _ := url.Parse(auth.Header.Get("Location"))
+		return lc, back
+	}
+
+	lc, back := start()
+	if resp := serve(back.RequestURI()); resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("callback without the login cookie: %d", resp.StatusCode)
+	}
+	q := back.Query()
+	q.Set("state", "other")
+	if resp := serve("/oidc/callback?"+q.Encode(), lc); resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("callback with another state: %d", resp.StatusCode)
+	}
+	if resp := serve(back.RequestURI(), &http.Cookie{Name: loginCookie, Value: lc.Value + "x"}); resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("callback with a tampered login cookie: %d", resp.StatusCode)
+	}
+	resp := serve(back.RequestURI(), lc)
+	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/s/schedule" {
+		t.Fatalf("callback: %d %v", resp.StatusCode, resp.Header)
+	}
+	sc := cookieOf(resp, sessionCookie)
+	if sc.Path != "/s/" || !sc.HttpOnly || !sc.Secure || sc.SameSite != http.SameSiteLaxMode {
+		t.Errorf("session cookie %+v", sc)
+	}
+	var me map[string]any
+	json.NewDecoder(serve("/s/api/me", sc).Body).Decode(&me)
+	if me["name"] != "Lass" || me["login"] != true {
+		t.Errorf("api/me: %v", me)
+	}
+	if resp := serve(back.RequestURI(), lc); resp.StatusCode != http.StatusBadGateway {
+		t.Errorf("code used twice: %d", resp.StatusCode)
+	}
+
+	// a user without a grant comes back with an error instead of a code
+	lc, back = start()
+	if resp := serve("/oidc/callback?"+url.Values{"error": {"access_denied"}, "state": {back.Query().Get("state")}}.Encode(), lc); resp.StatusCode != http.StatusForbidden {
+		t.Errorf("refused login: %d", resp.StatusCode)
+	}
+	// without OIDC there is no login and no callback
+	s.oidcClientID, s.callbackPath = "", ""
+	if resp := serve("/s/login"); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("login without OIDC: %d", resp.StatusCode)
+	}
+	if resp := serve(back.RequestURI(), lc); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("callback without OIDC: %d", resp.StatusCode)
 	}
 }

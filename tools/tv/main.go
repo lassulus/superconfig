@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -54,6 +55,12 @@ type config struct {
 	YouTubeShare float64 `json:"youtube_share"`
 	// channels the LLM suggests once a week, 0 = off
 	ChannelSuggestionsPerWeek int `json:"channel_suggestions_per_week"`
+	// login for editors besides the admin key: OIDC issuer, the file with
+	// the client id of a public (PKCE) client and its redirect URI, served at
+	// the URI's path outside the secret prefix
+	OIDCIssuer       string `json:"oidc_issuer"`
+	OIDCClientIDFile string `json:"oidc_client_id_file"`
+	OIDCRedirectURL  string `json:"oidc_redirect_url"`
 }
 
 type server struct {
@@ -64,7 +71,11 @@ type server struct {
 	jellyseerrKey string
 	adminKey      string
 	lookAhead     time.Duration
-	statePath     string
+	oidcClientID  string
+	callbackPath  string
+	// signs the session and login cookies
+	cookieKey []byte
+	statePath string
 
 	mu sync.Mutex
 	st state
@@ -152,10 +163,23 @@ func newServer(configPath string) (*server, error) {
 	if s.jellyseerrKey, err = readSecret(cfg.JellyseerrKeyFile); err != nil {
 		return nil, err
 	}
+	if s.oidcClientID, err = readSecret(cfg.OIDCClientIDFile); err != nil {
+		return nil, err
+	}
+	if s.oidcClientID != "" {
+		u, err := url.Parse(cfg.OIDCRedirectURL)
+		if err != nil || cfg.OIDCIssuer == "" || u.Path == "" {
+			return nil, errors.New("config: oidc_client_id_file needs oidc_issuer and an oidc_redirect_url with a path")
+		}
+		s.callbackPath = u.Path
+	}
 	for _, dir := range []string{cfg.StateDir, cfg.CacheDir} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return nil, err
 		}
+	}
+	if s.cookieKey, err = cookieKey(filepath.Join(cfg.StateDir, "cookie.key")); err != nil {
+		return nil, err
 	}
 	if s.st, err = loadState(s.statePath); err != nil {
 		return nil, err
@@ -186,6 +210,10 @@ func nowMs() int64 { return time.Now().UnixMilli() }
 //	                   "slots": [{"id", "at", "item", "source", "title",
 //	                   "duration", "by", "state", "error"}...]}; an entry of a
 //	                   slot has its "slot" id
+//	GET  api/me        {"name": editor or "", "login": whether OIDC is set up}
+//	GET  login         log in at the OIDC issuer, back at oidc_redirect_url
+//	                   (outside the secret prefix), then to schedule
+//	POST api/logout    drop the session cookie
 //	POST api/queue     {"url"}: queue a YouTube video or Jellyfin item; 409 with
 //	                   its "start" if it is already scheduled or requested
 //	GET  media/<file>  prepared videos, their audio (.m4a) and subtitles
@@ -199,7 +227,8 @@ func nowMs() int64 { return time.Now().UnixMilli() }
 //	                   already or was rejected (or removed), 429 with 20
 //	                   suggestions waiting
 //
-// Editors, with "Authorization: Bearer <admin key>" (401 without):
+// Editors, with "Authorization: Bearer <admin key>" or the session cookie of
+// a login (401 without):
 //
 //	POST api/slots/add    {"url", "at"}: play a YouTube video or Jellyfin item
 //	                   at unix ms "at"; 200 with the slot, 400 for a time in the
@@ -238,6 +267,10 @@ func (s *server) handler() http.Handler {
 	prefix := "/" + s.secret + "/"
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rest, ok := strings.CutPrefix(r.URL.Path, prefix)
+		if s.callbackPath != "" && r.URL.Path == s.callbackPath {
+			s.handleCallback(w, r)
+			return
+		}
 		if !ok {
 			http.NotFound(w, r)
 			return
@@ -261,10 +294,17 @@ func (s *server) handler() http.Handler {
 			writeJSON(w, http.StatusOK, out)
 		case rest == "api/channels/suggest":
 			s.handleChannel(w, r, "suggest")
+		case rest == "api/me":
+			writeJSON(w, http.StatusOK, map[string]any{"name": s.editor(r), "login": s.oidcClientID != ""})
+		case rest == "login" && s.oidcClientID != "":
+			s.handleLogin(w, r)
+		case rest == "api/logout":
+			setCookie(w, sessionCookie, "", prefix, -1)
+			w.WriteHeader(http.StatusNoContent)
 		case rest == "api/skip" || rest == "api/search" || strings.HasPrefix(rest, "api/schedule/") || strings.HasPrefix(rest, "api/channels/") || strings.HasPrefix(rest, "api/slots/"):
 			by := s.editor(r)
 			if by == "" {
-				writeError(w, http.StatusUnauthorized, "admin key required")
+				writeError(w, http.StatusUnauthorized, "admin key or login required")
 				return
 			}
 			switch rest {
