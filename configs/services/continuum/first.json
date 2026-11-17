@@ -1,0 +1,42 @@
+{
+  "federation": 1,
+  "number": 0,
+  "changes": null,
+  "keys": {
+    "lass": {
+      "since": 0,
+      "keys": [
+        "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBA5mmwz050HU1ay7aonRsQ70p6GhvlYc1BYV9Yq3RJ6+iTVSwBgzlCEv+5UMqh4or285qepCIUt+cvQfpHAm0w0=",
+        "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBAN/r3yYX/GXLtshzwrxRtTSe1lAG0ylTYMeKp0vpx+lKEoVCvnRNnlXgp1DqNBEUDa7qcyYrPmLpNNnTwELGDA=",
+        "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBJZGxQmZeh7mm40vj6BQovhb0//meQXUrBEFI4afNXrLfYFtYEVMmXPEEEfTNi9vuoz2D06JCJptGcOtLaAproM=",
+        "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBKJgmNpAQtiGJNAJg4QbYydoVzeyRpw8UYQGdQNx85YZRwReJ/hnoT7nS2q51OVbtEO65GL4lOWuXs94uB1Amxc="
+      ]
+    },
+    "tv": {
+      "since": 0,
+      "keys": [
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILKNcS1LK1FXEfnBxOLo4OwfggGJS5H4AvzUEoU4buz1"
+      ]
+    }
+  },
+  "nodes": {
+    "lass": {
+      "since": 0,
+      "nodes": [
+        "continuum:9eccd20b34ca751f536af1c474b6ce5faff853c17967e7b889a9fa12b53b45ea"
+      ]
+    },
+    "tv": {
+      "since": 0,
+      "nodes": [
+        "continuum:fb3d024f79f54363e009f69bb1151d2fb42c7016b810e7b1cdcebc7404c0069b"
+      ]
+    }
+  },
+  "rules": [
+    {
+      "path": "home/{party}/**",
+      "writer": "{party}"
+    }
+  ]
+}

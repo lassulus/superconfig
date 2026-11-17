@@ -18,6 +18,7 @@
     ../../configs/rad.nix
     ../../configs/crit.nix
     ../../configs/services/agentd
+    ../../configs/services/continuum
     ../../configs/monitoring/server.nix
     ./strom.nix
     ./hermes.nix
