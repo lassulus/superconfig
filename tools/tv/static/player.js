@@ -124,6 +124,8 @@ function load(video, e) {
   video.src =
     "media/" + encodeURIComponent(video.playsAudio ? e.audio : e.file);
   video.playbackRate = 1;
+  // a switch to sound only or back plays the new file silently until it takes over
+  video.volume = 1;
   // a track removed while showing leaves its cue drawn (Android WebView), so hide the old ones first
   for (const t of video.textTracks) t.mode = "disabled";
   // tracks follow the element's currentTime, so they stay in sync without help
@@ -140,13 +142,65 @@ function load(video, e) {
   showSubtitles(video);
 }
 
-// reloads both elements with the other files; the active one starts again with one seek (tick)
+// sound only and back without a gap: the other file loads into the standby element and plays there
+// silently, and takes over once it plays in sync (tick); until then the active one plays on
+let switching = null;
 function setAudioOnly(on) {
   if (on === audioOnly) return;
   audioOnly = on;
-  for (const v of [active, standby]) if (v.entry) load(v, v.entry);
-  if (active.entry) sync.needsStart = true;
   updateCC();
+  if (!active.entry) return;
+  switching = standby;
+  load(switching, active.entry);
+  // not 0: a silent element starts its sound output only when it gets louder, ~0.5 s late (Android WebView)
+  switching.volume = 0.0001;
+  switching.landedAt = -Infinity;
+  switching.seeked = false;
+  switching.lead = sync.seekLead;
+  // a hidden video never finishes a seek (Android WebView); the sound copy shows nothing anyway
+  if (!on) showOnly(switching);
+}
+
+function showOnly(video) {
+  for (const v of [active, standby]) v.classList.toggle("standby", v !== video);
+}
+
+// when the last seek landed, so the silent element is judged after a second of play
+for (const v of [active, standby])
+  v.addEventListener("seeked", () => (v.landedAt = performance.now()));
+
+function stepSwitch() {
+  const v = switching;
+  const now = performance.now();
+  if (
+    v.readyState < HTMLMediaElement.HAVE_METADATA ||
+    v.seeking ||
+    now - v.landedAt < 1000
+  )
+    return;
+  const err = v.currentTime * 1000 - (serverNow() - v.entry.start);
+  if (!v.paused && v.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) {
+    if (Math.abs(err) < 100 && v.playbackRate === 1) {
+      switching = null;
+      swap();
+      active.volume = 1;
+      // how late this one started says nothing about the next item
+      sync.learn = null;
+      return;
+    }
+    // inaudible, so the rate can pull it in where a seek would land somewhere else again
+    if (Math.abs(err) < 1000) {
+      v.playbackRate =
+        Math.abs(err) < 30 ? 1 : clamp(1 - err / 2000, 0.75, 1.25);
+      return;
+    }
+  }
+  // it plays silently, so seeking it again costs nothing audible; each landing corrects the next lead
+  if (v.seeked) v.lead = clamp(v.lead - err / 1000, 0, 4);
+  v.seeked = true;
+  v.playbackRate = 1;
+  v.currentTime = Math.max(0, (serverNow() - v.entry.start) / 1000 + v.lead);
+  v.play().catch(() => {});
 }
 
 // whether [t, t + 3 s] is loaded: a seek there lands without waiting for the
@@ -368,6 +422,12 @@ function tick() {
   // skips and insertions move entries while an element holds them
   for (const v of [active, standby])
     v.entry = entries.find((e) => e.file === v.entry?.file) ?? v.entry;
+  // a new item before the switch finished: it loads in the new mode below
+  if (switching && active.entry?.file !== cur.file) {
+    switching = null;
+    showOnly(active);
+  }
+  if (switching) stepSwitch();
   if (active.entry?.file !== cur.file) {
     if (standby.entry?.file === cur.file) {
       swap();
@@ -397,7 +457,8 @@ function tick() {
     active.play().catch(() => {});
   }
   const next = entryAfter(now);
-  if (next && standby.entry?.file !== next.file) load(standby, next);
+  if (next && !switching && standby.entry?.file !== next.file)
+    load(standby, next);
   if (next && next.start - now < 200 && !swapTimer) {
     swapTimer = setTimeout(
       () => {
