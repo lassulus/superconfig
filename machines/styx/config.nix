@@ -18,6 +18,8 @@
     ../../configs/health-dav.nix
     ../../configs/services/matrix/bridges
     ../../configs/tv-proxy.nix
+    # Hermes agent for brockman development with kmein
+    ./hermes-brockman.nix
     ./backup.nix
   ];
 
