@@ -1,4 +1,4 @@
-bin "hermes-voice"
+bin "slopulus-voice"
 about "Serve a page for live voice conversations with slopulus through OpenAI gpt-live-1"
 
 flag "--listen" help="host:port to serve on; IPv6 as [::]:port (default: 127.0.0.1:8790)" {
@@ -19,6 +19,6 @@ flag "--access-token-file" help="File holding the token every API route requires
 flag "--config" help="JSON file with voice, model, idle_seconds, glossary and instructions" {
   arg "<file>"
 }
-flag "--static" help="Page directory (default: $HERMES_VOICE_STATIC, set by the package)" {
+flag "--static" help="Page directory (default: $SLOPULUS_VOICE_STATIC, set by the package)" {
   arg "<dir>"
 }

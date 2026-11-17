@@ -13,7 +13,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 /**
- * hermes-voice's API (tools/hermes-voice/hermes_voice.py) behind assist.lassul.us/app/, where the
+ * slopulus-voice's API (tools/slopulus-voice/slopulus_voice.py) behind assist.lassul.us/app/, where the
  * proxy passes the app's own bearer token through instead of asking for the web login.
  */
 final class Api {

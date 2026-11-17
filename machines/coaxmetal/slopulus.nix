@@ -34,8 +34,8 @@ let
   # nixpkgs' piper instead: no runtime pip, no runtime voice download.
   #
   # Contract: hermes writes the reply text to $1 and expects audio at $2.
-  hermes-tts = pkgs.writeShellApplication {
-    name = "hermes-tts";
+  slopulus-tts = pkgs.writeShellApplication {
+    name = "slopulus-tts";
     runtimeInputs = [ self.packages.${pkgs.stdenv.hostPlatform.system}.piper-tts ];
     text = ''
       piper --model ${piperVoice}/model.onnx --output-file "$2" < "$1"
@@ -92,7 +92,7 @@ in
 
   imports = [
     ../../configs/hermes-agent
-    ../../configs/hermes-mail-vars.nix
+    ../../configs/slopulus-mail-vars.nix
     # Phone-approved ssh for the agent: the phonetpm user service runs in the
     # hermes user manager (the module sets linger), see SSH_AUTH_SOCK below.
     ../../configs/phonetpm.nix
@@ -130,7 +130,7 @@ in
       # piper's WAV to Ogg/Opus (native MSC3245 voice bubbles in Element) and
       # to ffprobe for the duration + waveform metadata those bubbles carry.
       pkgs.ffmpeg
-      hermes-tts
+      slopulus-tts
       # CalDAV (calendar skill below) is plain HTTP; curl is not otherwise on
       # the gateway PATH.
       pkgs.curl
@@ -173,11 +173,11 @@ in
     # recognizes plugins/homeassistant: without the marker it would see
     # HASS_TOKEN, call the plugin missing, and warn on every start that it
     # cannot fetch it (lazy installs are off in the sealed venv).
-    # settings does not merge lists, so hermes-voice.nix's plugin is enabled
+    # settings does not merge lists, so slopulus-voice.nix's plugin is enabled
     # here as well.
     settings.plugins.enabled = [
       "homeassistant"
-      "hermes-voice"
+      "slopulus-voice"
     ];
     settings._left_core_installed = [ "homeassistant" ];
 
@@ -247,14 +247,14 @@ in
       provider = "piper-local";
       providers.piper-local = {
         type = "command";
-        command = "${hermes-tts}/bin/hermes-tts {input_path} {output_path}";
+        command = "${slopulus-tts}/bin/slopulus-tts {input_path} {output_path}";
         output_format = "wav";
         voice_compatible = true;
       };
     };
 
-    # Text replies only: live voice moved to hermes-voice (assist.lassul.us,
-    # hermes-voice.nix). Voice notes still reach the agent through STT, and
+    # Text replies only: live voice moved to slopulus-voice (assist.lassul.us,
+    # slopulus-voice.nix). Voice notes still reach the agent through STT, and
     # `/voice tts` in a chat still turns spoken replies on there.
     settings.voice.auto_tts = false;
 
@@ -290,7 +290,7 @@ in
 
     # deliver_only routes post their rendered prompt to the Matrix home room
     # through the gateway, no agent turn. Signed with WEBHOOK_SECRET, the API
-    # server key again (hermes-env). hermes-voice.nix adds voice-approval.
+    # server key again (hermes-env). slopulus-voice.nix adds voice-approval.
     settings.platforms.webhook = {
       enabled = true;
       extra = {
@@ -434,7 +434,7 @@ in
       MATRIX_ALLOWED_USERS = "@lassulus:lassul.us";
       # The DM with lassulus: default target for deliver=matrix (cron jobs,
       # the voice-approval webhook and the matrix_dm_send tool of
-      # hermes-voice.nix). Without it cron delivery fails with "no delivery
+      # slopulus-voice.nix). Without it cron delivery fails with "no delivery
       # target resolved for deliver=matrix".
       MATRIX_HOME_ROOM = "!QSmQTYGdeExThpCqNh:lassul.us";
 
@@ -483,8 +483,8 @@ in
     # Secrets (MATRIX_ACCESS_TOKEN, LLAMA_API_TOKEN, API_SERVER_KEY,
     # EMAIL_PASSWORD, HASS_TOKEN) come from clan vars below,
     # merged into $HERMES_HOME/.env at activation. WEBHOOK_SECRET is the API
-    # server key again: hermes-voice signs its webhook posts with it
-    # (hermes-voice.nix).
+    # server key again: slopulus-voice signs its webhook posts with it
+    # (slopulus-voice.nix).
     environmentFiles = [
       config.clan.core.vars.generators.hermes-env.files."hermes.env".path
     ];

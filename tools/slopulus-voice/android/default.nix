@@ -28,10 +28,10 @@ let
     hash = "sha256-ChYnsaSMK8F9mkDWL8R71FFm9EoxHpWRfxR8QC3jebA=";
   };
 in
-# Unsigned release APK; tools/hermes-voice/flake-module.nix has the signer.
+# Unsigned release APK; tools/slopulus-voice/flake-module.nix has the signer.
 # arm64 only: the app runs on Pixels.
 stdenvNoCC.mkDerivation {
-  pname = "hermes-voice-android";
+  pname = "slopulus-voice-android";
   version = versionName;
   src = ./.;
   nativeBuildInputs = [
@@ -65,7 +65,7 @@ stdenvNoCC.mkDerivation {
     runHook postBuild
   '';
   installPhase = ''
-    install -Dm444 unsigned.apk $out/hermes-voice-android-unsigned.apk
+    install -Dm444 unsigned.apk $out/slopulus-voice-android-unsigned.apk
   '';
   passthru = { inherit buildTools; };
 }

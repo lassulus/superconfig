@@ -14,7 +14,7 @@ let
   calendar = "lass/calendar";
 
   # lass: phone, web client and tools/book.
-  # hermes: slopulus, the agent on coaxmetal (machines/coaxmetal/hermes.nix).
+  # hermes: slopulus, the agent on coaxmetal (machines/coaxmetal/slopulus.nix).
   # Its var is shared (and declared there too) so coaxmetal's hermes-env can
   # read the password without radicale running there.
   users = [

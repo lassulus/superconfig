@@ -30,7 +30,7 @@
     ../../configs/hass/proxy.nix
     ../../configs/monitoring/grafana-proxy.nix
     ../../configs/health-dav-proxy.nix
-    ../../configs/hermes-proxy.nix
+    ../../configs/slopulus-proxy.nix
     ../../configs/crit-proxy.nix
 
     # sync-containers

@@ -86,7 +86,7 @@ in
   };
 
   # Login for /results. services.oauth2-proxy is single-instance and taken
-  # by assist.lassul.us (configs/hermes-proxy.nix), so this one is its own
+  # by assist.lassul.us (configs/slopulus-proxy.nix), so this one is its own
   # unit, with its own Zitadel project, client and cookie.
   lass.zitadel.projects.nixcontalks = {
     access = "declarative";

@@ -2,7 +2,7 @@
 {
   # Mailbox password for slopulus@lassul.us. Generated once and shared:
   # neoprism (configs/mailserver.nix) consumes the hash, coaxmetal
-  # (machines/coaxmetal/hermes.nix) the plaintext, but only at generation time
+  # (machines/coaxmetal/slopulus.nix) the plaintext, but only at generation time
   # via the hermes-env generator, so the plaintext is never deployed. Both
   # machines import this file so the shared generator definition stays identical.
   clan.core.vars.generators.hermes-mail = {

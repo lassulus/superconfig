@@ -21,8 +21,8 @@
     ../../configs/services/continuum
     ../../configs/monitoring/server.nix
     ./strom.nix
-    ./hermes.nix
-    ./hermes-voice.nix
+    ./slopulus.nix
+    ./slopulus-voice.nix
     ./backup.nix
   ];
 

@@ -50,9 +50,9 @@ let
   ];
 in
 {
-  imports = [ ./hermes-voice-vars.nix ];
+  imports = [ ./slopulus-voice-vars.nix ];
 
-  # Public door to the Hermes API server on coaxmetal (machines/coaxmetal/hermes.nix).
+  # Public door to the Hermes API server on coaxmetal (machines/coaxmetal/slopulus.nix).
   # This is what the WakeHermesClaw app on massulus points at when it is not on
   # retiolum: the assistant button posts to /v1/chat/completions here.
   #
@@ -88,12 +88,12 @@ in
     };
   };
 
-  # Public door to hermes-voice on coaxmetal (machines/coaxmetal/hermes-voice.nix):
+  # Public door to slopulus-voice on coaxmetal (machines/coaxmetal/slopulus-voice.nix):
   # the voice page for the phone. Everything but the files Chrome fetches
   # without cookies to install the page needs a login on id.lassul.us
   # (oauth2-proxy below, via auth_request); logged-in requests get
-  # hermes-voice's access token added. /app/ is the Android app's door: no
-  # web login, the app's own bearer token goes through to hermes-voice, which
+  # slopulus-voice's access token added. /app/ is the Android app's door: no
+  # web login, the app's own bearer token goes through to slopulus-voice, which
   # checks it. /delegate streams NDJSON for the length of a Hermes turn, so
   # the streaming settings apply.
   services.nginx.virtualHosts.${assist} = {
@@ -198,7 +198,7 @@ in
     '';
   };
 
-  # The Authorization header with hermes-voice's access token, as an nginx
+  # The Authorization header with slopulus-voice's access token, as an nginx
   # include readable only by nginx. A switch reloads nginx through
   # nginx-config-reload instead of starting nginx, so the include has to be in
   # place before either, and multi-user.target starts it on a switch that

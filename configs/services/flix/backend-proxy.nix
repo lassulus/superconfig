@@ -118,7 +118,7 @@ in
   # Backends of flix, only for users whose grant on the Zitadel project flix
   # (proxy.nix) has the role backend; the role arrives as the flat groups
   # claim (modules/zitadel). services.oauth2-proxy is taken by
-  # assist.lassul.us (configs/hermes-proxy.nix), so this is its own unit.
+  # assist.lassul.us (configs/slopulus-proxy.nix), so this is its own unit.
   lass.zitadel.projects.flix.apps.backends = {
     redirectUris = map (host: "https://${host}/oauth2/callback") (lib.attrNames backends);
     envFile = {

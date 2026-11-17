@@ -1,4 +1,4 @@
-"""hermes-voice: talk to slopulus through OpenAI's full-duplex gpt-live-1.
+"""slopulus-voice: talk to slopulus through OpenAI's full-duplex gpt-live-1.
 
 The browser holds a WebRTC session with gpt-live-1, which listens and speaks at
 the same time and chats on its own. Whenever the user asks for real work, the
@@ -17,7 +17,7 @@ said since the last delegation, so a request spoken right before hanging up
 still reaches slopulus, and the whole call (both sides), which goes to the
 owner's Matrix DM as its transcript. When a run asks for approval while no page is listening,
 the question goes to the owner's Matrix DM (the gateway's Matrix home room,
-through its webhook platform), and the hermes-voice plugin's
+through its webhook platform), and the slopulus-voice plugin's
 `/assist approve|deny <code>` command answers it.
 
 slopulus ends a call itself: when the user says goodbye, the voice model
@@ -57,7 +57,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-log = logging.getLogger("hermes-voice")
+log = logging.getLogger("slopulus-voice")
 
 OPENAI_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_MODEL = "gpt-live-1"
@@ -573,7 +573,7 @@ def stop_run(config, run_id):
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "hermes-voice"
+    server_version = "slopulus-voice"
     config: Config
     static: Path
     access_token: "str | None" = None
@@ -581,7 +581,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def authorized(self, also_hermes_key=False):
         """Check the page's bearer token (or, where allowed, the API server key
-        the hermes-voice plugin in the gateway holds); answer 401 when it is
+        the slopulus-voice plugin in the gateway holds); answer 401 when it is
         wrong."""
         if self.access_token is None:
             return True
@@ -865,8 +865,8 @@ def main():
     parser.add_argument("--config", help="JSON file: voice, model, idle_seconds, glossary, instructions")
     parser.add_argument(
         "--static",
-        default=os.environ.get("HERMES_VOICE_STATIC"),
-        help="directory with index.html, app.js, style.css (default: $HERMES_VOICE_STATIC)",
+        default=os.environ.get("SLOPULUS_VOICE_STATIC"),
+        help="directory with index.html, app.js, style.css (default: $SLOPULUS_VOICE_STATIC)",
     )
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")

@@ -11,7 +11,7 @@
       type = lib.types.attrsOf lib.types.str;
       default = { };
       example = {
-        "8790" = "hermes-voice";
+        "8790" = "slopulus-voice";
       };
       description = "Allocated ports: port number -> the service listening on it.";
     };

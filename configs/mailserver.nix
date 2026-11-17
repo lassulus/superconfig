@@ -19,7 +19,7 @@ in
 {
   imports = [
     self.inputs.nixos-mailserver.nixosModules.default
-    ./hermes-mail-vars.nix
+    ./slopulus-mail-vars.nix
   ];
 
   # fixed in nixos-mailserver
@@ -72,7 +72,7 @@ in
         sendOnly = true;
       };
       # slopulus, the agent on coaxmetal; shared password var, see
-      # hermes-mail-vars.nix. hermes@ is its old address, slop@ agentd's.
+      # slopulus-mail-vars.nix. hermes@ is its old address, slop@ agentd's.
       "slopulus@lassul.us" = {
         hashedPasswordFile = config.clan.core.vars.generators.hermes-mail.files."password-hash".path;
         aliases = [

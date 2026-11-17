@@ -191,7 +191,7 @@ in
     };
   };
   # services.oauth2-proxy is single-instance and taken by assist.lassul.us
-  # (configs/hermes-proxy.nix), so this is its own unit.
+  # (configs/slopulus-proxy.nix), so this is its own unit.
   systemd.services.sunshine-web-oauth2-proxy = {
     description = "${domain} login (id.lassul.us)";
     wantedBy = [ "multi-user.target" ];

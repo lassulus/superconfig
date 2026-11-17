@@ -1,4 +1,4 @@
-"""hermes-voice's side inside the Hermes gateway (tools/hermes-voice).
+"""slopulus-voice's side inside the Hermes gateway (tools/slopulus-voice).
 
 matrix_dm_send lets every session, the voice calls on the API server included,
 write to the owner's Matrix DM (the gateway's Matrix home room). Hermes
@@ -8,11 +8,11 @@ room, through the gateway's live Matrix adapter. Sent messages are mirrored into
 Matrix side sees what was asked when the user answers there.
 
 end_call ends the voice call the session belongs to. The tool itself only
-checks that it runs in a voice session and says so; hermes-voice sees the
+checks that it runs in a voice session and says so; slopulus-voice sees the
 call in the run's event stream and lets the page close the call once the
 current reply has been spoken.
 
-/assist approve|deny [code] answers an approval that hermes-voice asked in the
+/assist approve|deny [code] answers an approval that slopulus-voice asked in the
 DM because no call could hear it. The gateway only dispatches commands of
 allowed users (MATRIX_ALLOWED_USERS), so the answer is the user's own; the
 agent cannot issue it. The code may be left out while exactly one approval
@@ -59,7 +59,7 @@ END_CALL_SCHEMA = {
     "parameters": {"type": "object", "properties": {}},
 }
 
-# hermes-voice names the Hermes session of a call voice-<date>-<random>.
+# slopulus-voice names the Hermes session of a call voice-<date>-<random>.
 VOICE_SESSION_PREFIX = "voice-"
 
 CHOICES = {"approve": "once", "deny": "deny"}
@@ -92,7 +92,7 @@ def send(args, **_kw):
 def voice_call_id(session_id):
     """The voice-* session a session's lineage starts at (context compression
     continues a session under a new id, with the old one as parent), or
-    None when it is no hermes-voice call."""
+    None when it is no slopulus-voice call."""
     from hermes_state import SessionDB
 
     db = SessionDB(read_only=True)
@@ -110,7 +110,7 @@ def voice_call_id(session_id):
 
 
 def voice_session(session_id):
-    """Whether the calling session is a hermes-voice call: an API server
+    """Whether the calling session is a slopulus-voice call: an API server
     session whose lineage starts at a voice-* session."""
     from gateway.session_context import get_session_env
 
@@ -150,7 +150,7 @@ def assist(raw_args):
     if len(words) == 2:
         answer["code"] = words[1]
     request = urllib.request.Request(
-        os.environ["HERMES_VOICE_URL"].rstrip("/") + "/approve",
+        os.environ["SLOPULUS_VOICE_URL"].rstrip("/") + "/approve",
         data=json.dumps(answer).encode(),
         method="POST",
         headers={
@@ -166,9 +166,9 @@ def assist(raw_args):
             reason = json.load(error).get("error")
         except ValueError:
             reason = error.reason
-        return f"hermes-voice: {reason}"
+        return f"slopulus-voice: {reason}"
     except (urllib.error.URLError, OSError) as error:
-        return f"hermes-voice unreachable: {error}"
+        return f"slopulus-voice unreachable: {error}"
     what = result.get("description") or "the command"
     if answer["choice"] == "deny":
         return f"Denied: {what}."

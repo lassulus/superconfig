@@ -1,4 +1,4 @@
-// hermes-voice page: one WebRTC session with gpt-live-1 per "call", client
+// slopulus-voice page: one WebRTC session with gpt-live-1 per "call", client
 // delegation answered by slopulus through the local server (/delegate).
 "use strict";
 

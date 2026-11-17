@@ -104,7 +104,7 @@ in
   ];
 
   # slopulus' API token, one for every agentd host: shared, so the token in
-  # slopulus' .env (hermes-env generator in machines/coaxmetal/hermes.nix) is
+  # slopulus' .env (hermes-env generator in machines/coaxmetal/slopulus.nix) is
   # the one each agentd checks. agentd only gets its sha256; the raw token is
   # only read at generation time.
   clan.core.vars.generators.agentd = {

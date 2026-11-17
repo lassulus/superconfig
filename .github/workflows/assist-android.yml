@@ -1,6 +1,6 @@
 name: assist-android
 
-# Builds the Android app of hermes-voice (packages.hermes-voice-android),
+# Builds the Android app of slopulus-voice (packages.slopulus-voice-android),
 # signs it and publishes it as assist.apk of a new release
 # assist-android-v<run number>, so Obtainium sees every build.
 # Stable URL: https://github.com/lassulus/superconfig/releases/latest/download/assist.apk
@@ -15,8 +15,8 @@ on:
   push:
     branches: [master]
     paths:
-      - tools/hermes-voice/android/**
-      - tools/hermes-voice/flake-module.nix
+      - tools/slopulus-voice/android/**
+      - tools/slopulus-voice/flake-module.nix
       - flake.lock
       - .github/workflows/assist-android.yml
   workflow_dispatch:
@@ -44,11 +44,11 @@ jobs:
           VERSION_CODE: ${{ github.run_number }}
         run: |
           unsigned=$(nix build -L --no-link --print-out-paths --impure --expr "
-            (builtins.getFlake \"git+file://$PWD\").packages.x86_64-linux.hermes-voice-android.override {
+            (builtins.getFlake \"git+file://$PWD\").packages.x86_64-linux.slopulus-voice-android.override {
               versionCode = $VERSION_CODE;
               versionName = \"${GITHUB_SHA::8}\";
             }")
-          echo "apk=$unsigned/hermes-voice-android-unsigned.apk" >> "$GITHUB_OUTPUT"
+          echo "apk=$unsigned/slopulus-voice-android-unsigned.apk" >> "$GITHUB_OUTPUT"
 
       - env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
@@ -62,7 +62,7 @@ jobs:
       - env:
           UNSIGNED: ${{ steps.build.outputs.apk }}
         run: |
-          nix run .#hermes-voice-android-sign -- \
+          nix run .#slopulus-voice-android-sign -- \
             "$RUNNER_TEMP/keystore" "$RUNNER_TEMP/password" "$RUNNER_TEMP/assist.apk" "$UNSIGNED"
 
       - env:
