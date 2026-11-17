@@ -4,7 +4,7 @@ about "Serve a page for live voice conversations with slopulus through OpenAI gp
 flag "--listen" help="host:port to serve on; IPv6 as [::]:port (default: 127.0.0.1:8790)" {
   arg "<host:port>"
 }
-flag "--hermes-url" help="Hermes API server base URL, e.g. https://hermes.lassul.us" required=#true {
+flag "--hermes-url" help="Hermes API server base URL, e.g. https://slopulus.lassul.us" required=#true {
   arg "<url>"
 }
 flag "--hermes-key-file" help="File holding the Hermes API_SERVER_KEY (clan vars get coaxmetal hermes-api/api_key)" required=#true {

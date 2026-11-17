@@ -463,7 +463,7 @@ in
 
       # The OpenAI-compatible API server: the assistant-button lane, reached
       # both directly from massulus.r and through the public
-      # hermes.lassul.us proxy on neoprism. API_SERVER_KEY comes from clan
+      # slopulus.lassul.us proxy on neoprism. API_SERVER_KEY comes from clan
       # vars via environmentFiles; API_SERVER_HOST is written at start by the
       # ExecStartPre below (the retiolum address). Unlike Matrix there is no
       # per-user allowlist here — the bearer token is the whole gate.
@@ -508,7 +508,7 @@ in
   # The second entry resolves the API server's bind address (see the
   # API_SERVER_* environment above). Retiolum, because both consumers live
   # there: massulus.r talks to it directly, and neoprism reverse-proxies it
-  # to hermes.lassul.us. This host joins untrusted networks, so binding the
+  # to slopulus.lassul.us. This host joins untrusted networks, so binding the
   # mesh address rather than "::" keeps the listener off café wifi even
   # before the packet filter sees it; the public door is nginx on neoprism,
   # which we control.
@@ -571,7 +571,7 @@ in
   # The packet filter drops INPUT by default here (configs/default.nix sets
   # filter.INPUT.policy = "DROP"), so the API server's port has to be opened
   # for the interface it binds. Without this neoprism's proxy_pass times out
-  # and hermes.lassul.us answers 504, while a local curl to the same
+  # and slopulus.lassul.us answers 504, while a local curl to the same
   # address:port returns 200 — traffic to the host's own address goes through
   # lo, which is accepted.
   networking.firewall.interfaces.retiolum.allowedTCPPorts = [ config.lass.servicePorts.hermes-api ];

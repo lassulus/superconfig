@@ -64,7 +64,9 @@ in
   # not an option without patching it. That token is therefore a
   # root-equivalent credential for that laptop: rotate it by regenerating the
   # hermes-api var. The hardening below is damage control, not authentication.
-  services.nginx.virtualHosts."hermes.lassul.us" = {
+  # hermes.lassul.us is the old name, still saved in the phone app.
+  services.nginx.virtualHosts."slopulus.lassul.us" = {
+    serverAliases = [ "hermes.lassul.us" ];
     enableACME = true;
     forceSSL = true;
 
