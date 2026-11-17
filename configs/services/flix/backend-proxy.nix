@@ -44,6 +44,30 @@ let
     };
     # yellow's download index
     "flax.lassul.us".proxyPass = "http://yellow.r";
+    "bazarr.lassul.us" = {
+      proxyPass = "http://${yellow}:6767";
+      api = true;
+    };
+    # Prowlarr trusts the proxy (auth method External, default.nix)
+    "prowlarr.lassul.us" = {
+      proxyPass = "http://${yellow}:9696";
+      api = true;
+    };
+    # SABnzbd's API is /api?mode=..., the key is checked by SABnzbd
+    "sabnzbd.lassul.us" = {
+      proxyPass = "http://${yellow}:8080";
+      api = true;
+      apiPath = "/api";
+      # its hostname check only knows yellow's own names
+      recommendedProxySettings = false;
+      extraConfig = ''
+        proxy_set_header Host yellow.r;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # .nzb uploads through the web UI
+        client_max_body_size 50m;
+      '';
+    };
   };
 
   vhost =
@@ -51,6 +75,7 @@ let
       proxyPass,
       extraConfig ? "",
       api ? false,
+      apiPath ? "/api/",
       recommendedProxySettings ? true,
     }:
     {
@@ -81,9 +106,8 @@ let
         "@login".return = "307 /oauth2/start?rd=$request_uri";
       }
       // lib.optionalAttrs api {
-        "/api/" = {
-          inherit proxyPass;
-          recommendedProxySettings = true;
+        ${apiPath} = {
+          inherit proxyPass extraConfig recommendedProxySettings;
         };
       };
     };

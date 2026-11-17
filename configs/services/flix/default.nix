@@ -513,6 +513,8 @@
   services.prowlarr = {
     enable = true;
     settings.server.port = config.lass.servicePorts.prowlarr;
+    # login happens on prowlarr.lassul.us (backend-proxy.nix on neoprism)
+    settings.auth.method = "External";
     openFirewall = true;
   };
 
