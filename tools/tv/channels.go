@@ -31,10 +31,18 @@ type channel struct {
 
 var channelHandle = regexp.MustCompile(`^[\pL\pN._-]{3,30}$`)
 
-var errChannelURL = errors.New("not a YouTube channel URL or @handle")
+var playlistID = regexp.MustCompile(`^[A-Za-z0-9_-]{10,64}$`)
+
+var errChannelURL = errors.New("not a YouTube channel URL, @handle or playlist URL")
+
+// isPlaylist tells a playlist URL from channelURL apart from a channel.
+func isPlaylist(u string) bool {
+	return strings.HasPrefix(u, "https://www.youtube.com/playlist?list=")
+}
 
 // channelURL turns "@handle", "/@handle" or a youtube.com/@handle URL with
-// any tab into https://www.youtube.com/@<handle>/videos.
+// any tab into https://www.youtube.com/@<handle>/videos, and a playlist URL
+// into https://www.youtube.com/playlist?list=<id>.
 func channelURL(raw string) (string, error) {
 	raw = strings.TrimSpace(raw)
 	path := "/" + strings.TrimPrefix(raw, "/")
@@ -50,6 +58,9 @@ func channelURL(raw string) (string, error) {
 		case "youtube.com", "www.youtube.com", "m.youtube.com":
 		default:
 			return "", errChannelURL
+		}
+		if id := u.Query().Get("list"); u.Path == "/playlist" && playlistID.MatchString(id) {
+			return "https://www.youtube.com/playlist?list=" + id, nil
 		}
 		path = u.Path
 	}
@@ -78,7 +89,8 @@ func (s *server) channelTitle(ctx context.Context, u string) (string, error) {
 	if err := json.Unmarshal(out, &v); err != nil {
 		return "", err
 	}
-	if v.Channel != "" {
+	// a playlist is named by its own title, not by its uploader
+	if v.Channel != "" && !isPlaylist(u) {
 		return v.Channel, nil
 	}
 	if v.Title == "" {

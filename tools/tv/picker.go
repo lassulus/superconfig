@@ -450,7 +450,7 @@ func (s *server) youtubeCandidates(ctx context.Context, channel string) ([]candi
 		return nil, err
 	}
 	group := list.Channel
-	if group == "" {
+	if group == "" || isPlaylist(channel) {
 		group = list.Title
 	}
 	var cands []candidate

@@ -1233,13 +1233,14 @@ func TestChannelURL(t *testing.T) {
 		"https://youtube.com/@foo.bar/featured":       "https://www.youtube.com/@foo.bar/videos",
 		"m.youtube.com/@a-b-c?si=x":                   "https://www.youtube.com/@a-b-c/videos",
 		"http://www.youtube.com/@ÄÖü":                 "https://www.youtube.com/@ÄÖü/videos",
+		"https://youtube.com/playlist?list=PL0aUrP1vC-6B1jSPGkpEIKkJe_8RY5KjR&si=ao_-pSJypgaf0ZuM": "https://www.youtube.com/playlist?list=PL0aUrP1vC-6B1jSPGkpEIKkJe_8RY5KjR",
 	} {
 		if got, err := channelURL(in); got != want || err != nil {
 			t.Errorf("%q: %q, %v, want %q", in, got, err, want)
 		}
 	}
 	for _, in := range []string{"", "@", "@ab", "veritasium", "https://example.org/@veritasium", "https://www.youtube.com/channel/UCHnyfMqiRRG1u-2MsSQLbXA",
-		"https://www.youtube.com/watch?v=dQw4w9WgXcQ", "ftp://youtube.com/@veritasium", "@a/b/../c", "@x y z", "@" + strings.Repeat("a", 31)} {
+		"https://www.youtube.com/watch?v=dQw4w9WgXcQ", "ftp://youtube.com/@veritasium", "@a/b/../c", "@x y z", "https://www.youtube.com/playlist?list=a&b", "https://www.youtube.com/playlist", "https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PL0aUrP1vC-6B1jSPGkpEIKkJe_8RY5KjR", "@" + strings.Repeat("a", 31)} {
 		if got, err := channelURL(in); err == nil {
 			t.Errorf("%q: %q, want an error", in, got)
 		}
