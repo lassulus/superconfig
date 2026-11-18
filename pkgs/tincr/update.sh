@@ -17,7 +17,7 @@ if [ "$old_rev" = "$new_rev" ]; then
   exit 0
 fi
 
-new_date=$(curl -fsSL "https://api.github.com/repos/$owner/$repo/commits/$new_rev" | jq -r .commit.author.date | cut -d T -f1)
+new_date=$(curl -fsSL "https://api.github.com/repos/$owner/$repo/commits/$new_rev" | jq -r .commit.committer.date | cut -d T -f1)
 new_version="0-unstable-$new_date"
 
 # Bump rev + version, leave hashes for nix to complain about.

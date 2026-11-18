@@ -41,7 +41,7 @@ lib.throwIf (srcHas "crates/tincd/src/udp_path.rs" "fn release_unanswered_seen("
   rustPlatform.buildRustPackage
   {
     pname = "tincr";
-    version = "0-unstable-2026-11-08";
+    version = "0-unstable-2026-11-17";
 
     inherit src;
 
