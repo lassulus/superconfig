@@ -17,9 +17,10 @@ let
           }'
         )"
     '';
-  # mIRC strikethrough (0x1e) around a word; the meetup moved from Wednesday
-  # to Thursday
-  struck = word: "$(printf '\\036')${word}$(printf '\\036')";
+  # struck through with a combining long stroke (U+0336) after each letter;
+  # IRC's own strikethrough code is dropped by many clients and bridges.
+  # The meetup moved from Wednesday to Thursday.
+  struck = word: lib.concatMapStrings (c: c + "̶") (lib.stringToCharacters word);
   animals = ''
     Erdferkel
     Paviane
