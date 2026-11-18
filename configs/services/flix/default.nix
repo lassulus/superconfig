@@ -529,6 +529,16 @@
   services.bazarr = {
     enable = true;
     settings.general.port = config.lass.servicePorts.bazarr;
+    # sync every downloaded subtitle to the audio with ffsubsync: those for
+    # another release are often off by a constant offset (41 s seen)
+    settings.subsync = {
+      use_subsync = true;
+      # no score thresholds, sync them all
+      use_subsync_threshold = false;
+      use_subsync_movie_threshold = false;
+      # the audio, not an embedded subtitle track, which can be forced-only
+      force_audio = true;
+    };
     openFirewall = true;
     user = "download";
     group = "download";
