@@ -313,7 +313,9 @@ func (s *server) claim(c candidate, how placement, after *slot) (int, any, bool)
 
 // schedule is the api/schedule response; callers hold s.mu.
 func (s *server) schedule(now int64) map[string]any {
-	return map[string]any{"entries": append([]entry{}, s.st.upcoming(now)...), "pending": s.pending(now), "slots": s.slots()}
+	viewers, audio := s.viewers.count(now)
+	return map[string]any{"entries": append([]entry{}, s.st.upcoming(now)...), "pending": s.pending(now), "slots": s.slots(),
+		"viewers": viewers, "audio": audio}
 }
 
 // handleEdit serves api/schedule/delete and api/schedule/move.

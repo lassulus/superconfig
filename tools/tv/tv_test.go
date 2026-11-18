@@ -2069,3 +2069,54 @@ func TestOIDCLogin(t *testing.T) {
 		t.Errorf("callback without OIDC: %d", resp.StatusCode)
 	}
 }
+
+func TestViewersAPI(t *testing.T) {
+	s := &server{secret: "s"}
+	h := s.handler()
+	for _, q := range []string{"v=0123456789abcdef", "v=fedcba9876543210&a=1", "v=0123456789abcdef", "", "v=0123456789ABCDEF", "v=0123456789abcdef0", "v=../etc"} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest("GET", "/s/api/time?"+q, nil))
+		if _, err := strconv.ParseFloat(rec.Body.String(), 64); err != nil || rec.Header().Get("Cache-Control") != "no-store" {
+			t.Errorf("api/time?%s: %q, %v", q, rec.Body.String(), rec.Header())
+		}
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/s/api/schedule", nil))
+	var out struct{ Viewers, Audio int }
+	json.Unmarshal(rec.Body.Bytes(), &out)
+	if out.Viewers != 2 || out.Audio != 1 {
+		t.Errorf("viewers %d, audio %d; want 2, 1", out.Viewers, out.Audio)
+	}
+}
+
+func TestViewersExpire(t *testing.T) {
+	var v viewers
+	v.see("000000000000000a", false, 0)
+	v.see("000000000000000b", true, viewerPoll)
+	if n, a := v.count(viewerWindow); n != 2 || a != 1 {
+		t.Errorf("within the window: %d, %d audio", n, a)
+	}
+	if n, a := v.count(viewerWindow + 1); n != 1 || a != 1 {
+		t.Errorf("a gone a window after its last poll: %d, %d audio", n, a)
+	}
+	v.see("000000000000000b", false, 2*viewerWindow)
+	if n, a := v.count(2 * viewerWindow); n != 1 || a != 0 {
+		t.Errorf("b polled again without audio: %d, %d audio", n, a)
+	}
+}
+
+func TestViewersCap(t *testing.T) {
+	var v viewers
+	for i := range maxViewers + 10 {
+		v.see(fmt.Sprintf("%016x", i), false, 0)
+	}
+	if n, _ := v.count(0); n != maxViewers {
+		t.Errorf("%d viewers, want the cap %d", n, maxViewers)
+	}
+	// a known id still polls at the cap, and expired ones make room
+	v.see(fmt.Sprintf("%016x", 0), false, viewerWindow+1)
+	v.see("ffffffffffffffff", false, viewerWindow+1)
+	if n, _ := v.count(viewerWindow + 1); n != 2 {
+		t.Errorf("%d viewers after the others expired, want 2", n)
+	}
+}

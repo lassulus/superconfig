@@ -85,6 +85,8 @@ type server struct {
 	preparing     string
 	preparingSlot string
 	wake          chan struct{}
+	// players polling api/time; own lock
+	viewers viewers
 
 	// only used by the scheduler goroutine
 	queue   []candidate
@@ -207,11 +209,15 @@ func nowMs() int64 { return time.Now().UnixMilli() }
 //
 //	GET  /             the player
 //	GET  schedule      the schedule page
-//	GET  api/time      server clock, unix ms
+//	GET  api/time      server clock, unix ms; ?v=<id> (16 hex digits, random
+//	                   per player) counts the player as a viewer, &a=1 as one
+//	                   playing audio only
 //	GET  api/schedule  {"entries": [playing, upcoming...], "pending": [requests],
 //	                   "slots": [{"id", "at", "item", "source", "title",
-//	                   "duration", "by", "state", "error"}...]}; an entry of a
-//	                   slot has its "slot" id
+//	                   "duration", "by", "state", "error"}...], "viewers",
+//	                   "audio": players that polled api/time within
+//	                   viewerWindow, those of them playing audio only}; an
+//	                   entry of a slot has its "slot" id
 //	GET  api/me        {"name": editor or "", "login": whether OIDC is set up}
 //	GET  login         log in at the OIDC issuer, back at oidc_redirect_url
 //	                   (outside the secret prefix), then to schedule
@@ -282,6 +288,8 @@ func (s *server) handler() http.Handler {
 			t := time.Now()
 			w.Header().Set("Cache-Control", "no-store")
 			w.Write(strconv.AppendFloat(nil, float64(t.UnixNano())/1e6, 'f', 3, 64))
+			q := r.URL.Query()
+			s.viewers.see(q.Get("v"), q.Get("a") == "1", t.UnixMilli())
 		case rest == "api/schedule":
 			s.mu.Lock()
 			out := s.schedule(nowMs())
