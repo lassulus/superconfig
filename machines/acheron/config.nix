@@ -10,6 +10,7 @@
     ../../configs/gg23/tv-hass.nix
     ./backup.nix
     ../../configs/gg23/wan-failover.nix
+    ../../configs/gg23/retiolum-nat-log.nix
   ];
 
   services.earlyoom.enable = true;

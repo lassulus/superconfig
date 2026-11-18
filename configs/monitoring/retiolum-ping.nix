@@ -3,7 +3,8 @@
 # size, e.g. small packets on an udp_confirmed node with pmtu 0). Results go
 # to VictoriaMetrics as retiolum_ping_{loss_ratio,rtt_seconds}{to,size}
 # (RetiolumPathLoss in alerts.nix). On loss the tinc node state of the peer
-# is logged, so VictoriaLogs has it for the moment of the failure.
+# and the addresses its neighbours advertise for it are logged, so
+# VictoriaLogs has them for the moment of the failure.
 {
   config,
   lib,
@@ -26,6 +27,7 @@ let
     runtimeInputs = with pkgs; [
       coreutils
       fping
+      gawk
       gnugrep
     ];
     text = ''
@@ -63,7 +65,10 @@ let
               echo "$now" >"$state"
               info=$(${tinc} info "$to" 2>&1 | grep -Ev '^(Node|Node ID|Protocol|Subnets):' | tr -s ' \n' ' ;' || true)
               node=$(${tinc} dump nodes 2>&1 | grep "^$to " || echo "not in node dump")
-              echo "loss to=$to size=$size sent=$xmt received=$rcv | info: $info | node: $node"
+              # Where the peer's neighbours say it is (NAT ports included):
+              # a stale port here keeps every NATed node probing a dead one.
+              edges=$(${tinc} dump edges 2>&1 | awk -v to="$to" '$2 == "to" && $3 == to { printf "%s@%s:%s ", $1, $5, $7 }')
+              echo "loss to=$to size=$size sent=$xmt received=$rcv | info: $info | node: $node | edges: $edges"
             fi
           elif [ -e "$state" ]; then
             rm "$state"
