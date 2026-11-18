@@ -10,8 +10,8 @@ let
   src = fetchFromGitHub {
     owner = "Mic92";
     repo = "tincr";
-    rev = "d7cf54aff49694abb8b3b6388ca2024042c68193";
-    hash = "sha256-wmM6LtP/96NXxYr/xgs86hknHpXdbMT5dTT0weHFjSQ=";
+    rev = "fd92f2164f8f4e2927d6c983a116bf41ac2337d5";
+    hash = "sha256-dT/Ny0jbVMeeW1TGp/YDPQGiDwspvhd8/k/OgULz57Y=";
   };
 
   # Reads the pinned source at eval time (a locked fetch, no IFD). Skipped
@@ -41,7 +41,7 @@ lib.throwIf (srcHas "crates/tincd/src/udp_path.rs" "fn release_unanswered_seen("
   rustPlatform.buildRustPackage
   {
     pname = "tincr";
-    version = "0-unstable-2026-11-15";
+    version = "0-unstable-2026-11-08";
 
     inherit src;
 
@@ -50,7 +50,7 @@ lib.throwIf (srcHas "crates/tincd/src/udp_path.rs" "fn release_unanswered_seen("
       ./advertise-nat-udp-port.patch
     ];
 
-    cargoHash = "sha256-fXW+8t4QuD1cuHjI9t6B/fCvmYYWgPdFz5iLnr/3JSo=";
+    cargoHash = "sha256-GZBCoFmtnhm3VqoMxIPl0+STJmz33pPsS+fgU7ic+D4=";
 
     # Just the deployable bin crates; --workspace would pull tinc-ffi's cc.
     cargoBuildFlags = [
