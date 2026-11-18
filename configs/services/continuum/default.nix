@@ -24,10 +24,13 @@ let
     store-file = "${stateDir}/store.json";
     store-root = storeRoot;
     store-party = "lass";
-    # nodes to join through, by their onion services: tv's and coaxmetal's
+    # nodes to join through, by their onion services: tv's, coaxmetal's, atlas', styx', ignavia's
     seeds = [
       "tor:ggktase65blt4plqinsqpx5xfykrlba7pejcrtssxantmkxrtyfzdoid.onion:9662"
       "tor:krydkcoqjsfgc7mdse4vlqyg6s5lfa24t7mtj6huowwkcqsc3xu4n2yd.onion:9662"
+      "tor:4ddulvy3yas5ksi4xw2qwgtwcug2o6ojdz3742kow6apx6ujv2w77lqd.onion:9662"
+      "tor:6pplml2rjn6pa27nusgznlnx2zuifdjv46bq4suihwzehifgzggtc5ad.onion:9662"
+      "tor:c3ntxfuxjqjltmoysiedslnx2zsnons55cegdzdksyx3qxd4fsrsz7yd.onion:9662"
     ];
     tor = {
       enable = true;
