@@ -21,6 +21,9 @@ neoprism IN A 95.217.192.59
 4.neoprism IN A 95.217.192.59
 neoprism IN AAAA 2a01:4f9:4a:4f1a::2
 6.neoprism IN AAAA 2a01:4f9:4a:4f1a::2
+; Moonlight to atlas through neoprism (configs/atlas-sunshine-forward.nix),
+; IPv4 only: no AAAA, so clients don't try a path that isn't forwarded
+atlas IN A 95.217.192.59
 prism IN CNAME neoprism
 ipfs IN CNAME neoprism
 starkstrom IN A 194.110.87.67

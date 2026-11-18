@@ -100,6 +100,7 @@
 
     # Moonlight in the browser for the sunray hosts (sunshine.lassul.us)
     ../../configs/sunshine-web.nix
+    ../../configs/atlas-sunshine-forward.nix
 
     # synced 24/7 channel (glotz.lassul.us)
     ../../configs/tv.nix
