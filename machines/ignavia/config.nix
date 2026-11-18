@@ -10,6 +10,7 @@
   imports = [
     ../../configs
     ../../configs/retiolum.nix
+    ../../configs/services/continuum
     ../../configs/tpm2.nix
     ../../configs/phonetpm-ssh.nix
     ../../configs/desktops/sway/default.nix

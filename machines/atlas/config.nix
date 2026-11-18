@@ -13,6 +13,7 @@
     ../../configs/bluetooth.nix
     ../../configs/network-manager.nix
     ../../configs/retiolum.nix
+    ../../configs/services/continuum
     ../../configs/steam.nix
     ./llm.nix
     self.wrapperModules.workspace-manager

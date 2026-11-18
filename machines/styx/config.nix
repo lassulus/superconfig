@@ -7,6 +7,7 @@
   imports = [
     ../../configs
     ../../configs/retiolum.nix
+    ../../configs/services/continuum
     ../../configs/pipewire.nix
     ../../configs/green-host.nix
     ../../configs/syncthing.nix

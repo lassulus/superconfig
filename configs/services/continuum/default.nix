@@ -24,8 +24,11 @@ let
     store-file = "${stateDir}/store.json";
     store-root = storeRoot;
     store-party = "lass";
-    # the other parties' nodes, by their onion services
-    seeds = [ "tor:ggktase65blt4plqinsqpx5xfykrlba7pejcrtssxantmkxrtyfzdoid.onion:9662" ];
+    # nodes to join through, by their onion services: tv's and coaxmetal's
+    seeds = [
+      "tor:ggktase65blt4plqinsqpx5xfykrlba7pejcrtssxantmkxrtyfzdoid.onion:9662"
+      "tor:krydkcoqjsfgc7mdse4vlqyg6s5lfa24t7mtj6huowwkcqsc3xu4n2yd.onion:9662"
+    ];
     tor = {
       enable = true;
       state-dir = "${stateDir}/tor";
