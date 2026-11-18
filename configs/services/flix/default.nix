@@ -538,10 +538,39 @@
       use_subsync_movie_threshold = false;
       # the audio, not an embedded subtitle track, which can be forced-only
       force_audio = true;
+      # also subtitles of 25 fps releases; this turns on ffsubsync's quality
+      # check, which leaves anti-correlated alignments unshifted
+      no_fix_framerate = false;
+      # the standard 23.976/24/25 ratios and the one from the lengths, no
+      # golden-section search over any ratio
+      gss = false;
+      # the default 30 s rejects offsets like the 41 s seen
+      quality_max_offset_seconds = 60;
     };
     openFirewall = true;
     user = "download";
     group = "download";
+  };
+  # Bazarr syncs only while downloading: this syncs every subtitle it knows
+  # once (per file version), with its own sync, and blacklists those that
+  # cannot be synced, so it deletes them and downloads others.
+  # Run by hand: systemctl start bazarr-subsync
+  systemd.services.bazarr-subsync = {
+    after = [ "bazarr.service" ];
+    startAt = "daily";
+    serviceConfig = {
+      Type = "oneshot";
+      # reads the API key from Bazarr's config.yaml and stats the subtitles
+      User = config.services.bazarr.user;
+      Group = config.services.bazarr.group;
+      StateDirectory = "bazarr-subsync";
+      ExecStart = "${
+        pkgs.writers.writePython3 "bazarr-subsync" {
+          libraries = [ pkgs.python3Packages.pyyaml ];
+          flakeIgnore = [ "E501" ];
+        } ./bazarr-subsync.py
+      } http://127.0.0.1:${toString config.lass.servicePorts.bazarr} ${config.services.bazarr.dataDir}/config/config.yaml /var/lib/bazarr-subsync/state.json";
+    };
   };
 
   # usenet download client
