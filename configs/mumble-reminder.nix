@@ -99,6 +99,8 @@ in
   };
   systemd.services.mumble-reminder-nixos = {
     description = "weekly reminder for nixos mumble";
+    # only the timer sends it; a deploy that changes the unit must not
+    restartIfChanged = false;
     startAt = "Thu *-*-* 18:00:00 Europe/Berlin";
     serviceConfig = {
       ExecStart = pkgs.writers.writeDash "mumble_reminder" ''
@@ -112,6 +114,8 @@ in
   };
   systemd.services.mumble-reminder-krebs = {
     description = "weekly reminder for nixos mumble";
+    # only the timer sends it; a deploy that changes the unit must not
+    restartIfChanged = false;
     startAt = "Thu *-*-* 18:00:00 Europe/Berlin";
     serviceConfig = {
       ExecStart = pkgs.writers.writeDash "mumble_reminder" ''
