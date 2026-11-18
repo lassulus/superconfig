@@ -21,14 +21,19 @@
 # inputstream.adaptive stalls on after a few seconds ("stream stalled"), so
 # for those ffmpeg copies the best video and audio track into one MPEG-TS
 # stream that Kodi reads from GET /live.ts here. Answers 200 with the
-# video's title, or 4xx/5xx with the reason as text. Usage:
-# tv-play PORT KODI_URL KODI_PASSWORD_FILE M3U_FILE
+# video's title, or 4xx/5xx with the reason as text. glotz (the browser
+# kiosk unit in ./tv.nix) and Kodi take turns on the TV: POST /glotz/start
+# and /glotz/stop start and stop it (Kodi comes back when it stops), POST
+# /kodi stops it and answers once Kodi does, which /play does on its own.
+# Usage:
+# tv-play PORT KODI_URL KODI_PASSWORD_FILE M3U_FILE GLOTZ_UNIT
 import base64
 import json
 import os
 import re
 import subprocess
 import sys
+import time
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -37,6 +42,7 @@ kodi_url = sys.argv[2]
 with open(sys.argv[3]) as f:
     kodi_auth = "Basic " + base64.b64encode(b"kodi:" + f.read().strip().encode()).decode()
 playlist = sys.argv[4]
+glotz_unit = sys.argv[5]
 live_ts = f"http://127.0.0.1:{port}/live.ts"
 # input URLs of the current livestream, for GET /live.ts
 live_inputs = []
@@ -157,19 +163,44 @@ def write_playlist(title, stream, adaptive):
     os.replace(tmp, playlist)
 
 
-def kodi_play(stream):
-    body = json.dumps(
-        {"jsonrpc": "2.0", "id": 1, "method": "Player.Open", "params": {"item": {"file": stream}}}
-    ).encode()
+def kodi_rpc(method, params=None, timeout=10):
+    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params or {}}).encode()
     req = urllib.request.Request(
         kodi_url,
         data=body,
         headers={"Content-Type": "application/json", "Authorization": kodi_auth},
     )
-    with urllib.request.urlopen(req, timeout=10) as resp:
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
         reply = json.load(resp)
     if "error" in reply:
         raise RuntimeError(f"Kodi: {reply['error'].get('message')}")
+
+
+def kodi_play(stream):
+    kodi_rpc("Player.Open", {"item": {"file": stream}})
+
+
+def glotz(verb):
+    """start or stop glotz; allowed to this user by the polkit rule in ./tv.nix"""
+    run = subprocess.run(
+        ["systemctl", "--no-ask-password", verb, glotz_unit], capture_output=True, text=True, timeout=60
+    )
+    if run.returncode != 0:
+        raise RuntimeError(f"systemctl {verb} {glotz_unit}: {run.stderr.strip()}")
+
+
+def kodi_back():
+    """stop glotz (a no-op when it doesn't run) and wait until Kodi, which starts when glotz stops, answers"""
+    glotz("stop")
+    deadline = time.monotonic() + 60
+    while True:
+        try:
+            kodi_rpc("JSONRPC.Ping", timeout=2)
+            return
+        except (OSError, ValueError):
+            if time.monotonic() > deadline:
+                raise RuntimeError("Kodi did not start within 60 s")
+            time.sleep(1)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -215,6 +246,19 @@ class Handler(BaseHTTPRequestHandler):
             ffmpeg.wait()
 
     def do_POST(self):
+        switch = {
+            "/glotz/start": lambda: glotz("start"),
+            "/glotz/stop": lambda: glotz("stop"),
+            "/kodi": kodi_back,
+        }.get(self.path)
+        if switch:
+            try:
+                switch()
+            except (RuntimeError, subprocess.TimeoutExpired) as e:
+                print(f"{self.path}: {e}", flush=True)
+                return self.answer(502, str(e))
+            print(f"{self.path}: done", flush=True)
+            return self.answer(200, "ok")
         if self.path != "/play":
             return self.answer(404, "not found")
         try:
@@ -227,6 +271,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             title, stream, adaptive = resolve(link)
             write_playlist(title, stream, adaptive)
+            kodi_back()
             kodi_play(playlist)
         except (ValueError, RuntimeError, subprocess.TimeoutExpired, OSError) as e:
             print(f"{link}: {e}", flush=True)

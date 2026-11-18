@@ -3,9 +3,10 @@
 # (./audio/hub.nix), which shows it as the "TV" source in Home Assistant's
 # routing matrix. Home Assistant's Kodi integration talks to the web server
 # (./tv-hass.nix), and tv-play (./tv-play.py) plays video links (YouTube,
-# ...) it gets from there. The Jellyfin add-on is signed in as Jellyfin user
-# `media` before Kodi starts; which libraries to sync is asked on the TV at
-# the first start.
+# ...) it gets from there and switches the TV between Kodi and glotz (the
+# synced channel, ../tv.nix) in a browser kiosk. The Jellyfin add-on is
+# signed in as Jellyfin user `media` before Kodi starts; which libraries to
+# sync is asked on the TV at the first start.
 {
   config,
   lib,
@@ -49,6 +50,45 @@ let
       </jsonrpc>
     </advancedsettings>
   '';
+  # glotz (../tv.nix, on neoprism) instead of Kodi: its own player page in a
+  # browser kiosk, so the TV stays in sync with every other viewer. Its sound
+  # is late by the same ROC hops as Kodi's (see above), so the player runs
+  # that far ahead of the channel's clock (?latency, tools/tv/static/player.js).
+  glotzLatency = 80;
+  glotzUrl = config.clan.core.vars.generators.glotz-url.files.url.path;
+  glotzKiosk = pkgs.writeShellApplication {
+    name = "glotz-kiosk";
+    runtimeInputs = [ pkgs.wlr-randr ];
+    text = ''
+      # the EDID prefers 4K at 30 Hz, so 1080p at 60 Hz like Kodi; at 4K it
+      # still plays, so go on if the mode can't be set
+      wlr-randr --output HDMI-A-2 --mode 1920x1080@60 ||
+        echo "glotz-kiosk: can't switch HDMI-A-2 to 1920x1080@60" >&2
+      url=$(cat "$CREDENTIALS_DIRECTORY/glotz-url")
+      case $url in
+        *\?*) url="$url&" ;;
+        *) url="$url?" ;;
+      esac
+      # a fresh profile every start: no restore bubble after a crash or a
+      # hard stop, no remembered state
+      profile=$HOME/glotz-chromium
+      rm -rf "$profile"
+      # VA-API decoding of glotz' H.264 on Wayland (intel-media-driver below)
+      exec ${lib.getExe pkgs.chromium} \
+        --user-data-dir="$profile" \
+        --kiosk \
+        --ozone-platform=wayland \
+        --autoplay-policy=no-user-gesture-required \
+        --no-first-run \
+        --no-default-browser-check \
+        --noerrdialogs \
+        --hide-crash-restore-bubble \
+        --password-store=basic \
+        --disable-features=Translate \
+        --enable-features=AcceleratedVideoDecodeLinuxGL,AcceleratedVideoDecodeLinuxZeroCopyGL \
+        "''${url}autostart&latency=${toString glotzLatency}"
+    '';
+  };
 in
 {
   lass.ports = {
@@ -247,9 +287,67 @@ in
     };
   };
 
+  # glotz on the TV, started and stopped by Home Assistant through tv-play.
+  # It takes Kodi's place on tty1 and the DRM output: starting it stops Kodi,
+  # and Kodi starts again once it is stopped, or gave up after crashing (not
+  # while it restarts). Its own logind session on tty1 gives cage the seat.
+  # Its sound goes to roc-tv like Kodi's, through pipewire-pulse.
+  systemd.services.glotz = {
+    description = "glotz in a browser on the TV";
+    conflicts = [ "kodi.service" ];
+    # with an ordering, Kodi's stop finishes before cage takes the output
+    after = [
+      "kodi.service"
+      "pipewire.service"
+      "systemd-user-sessions.service"
+      "systemd-logind.service"
+    ];
+    onSuccess = [ "kodi.service" ];
+    onFailure = [ "kodi.service" ];
+    environment = {
+      XDG_SESSION_TYPE = "wayland";
+      XDG_SESSION_CLASS = "user";
+      # no keyboard or mouse on styx (and so no cursor)
+      WLR_LIBINPUT_NO_DEVICES = "1";
+      PULSE_SERVER = "unix:/run/pulse/native";
+      PULSE_SINK = "roc-tv";
+    };
+    serviceConfig = {
+      User = "media";
+      PAMName = "glotz";
+      ExecStart = "${lib.getExe pkgs.cage} -- ${lib.getExe glotzKiosk}";
+      LoadCredential = [ "glotz-url:${glotzUrl}" ];
+      TTYPath = "/dev/tty1";
+      TTYReset = true;
+      TTYVHangup = true;
+      TTYVTDisallocate = true;
+      StandardInput = "tty";
+      StandardOutput = "journal";
+      StandardError = "journal";
+      UtmpIdentifier = "%n";
+      UtmpMode = "user";
+      Restart = "on-failure";
+      RestartSec = 2;
+    };
+  };
+  security.pam.services.glotz.startSession = true;
+  # tv-play may start and stop glotz, nothing else
+  security.polkit.extraConfig = ''
+    polkit.addRule(function (action, subject) {
+      if (
+        action.id == "org.freedesktop.systemd1.manage-units" &&
+        action.lookup("unit") == "glotz.service" &&
+        (action.lookup("verb") == "start" || action.lookup("verb") == "stop") &&
+        subject.user == "tv-play"
+      )
+        return polkit.Result.YES;
+    });
+  '';
+
   # video links from Home Assistant: yt-dlp resolves them, Kodi plays the
   # stream; yt-dlp runs here so the stream URLs fit styx's address; ffmpeg
-  # joins the video and audio tracks of livestreams
+  # joins the video and audio tracks of livestreams. Also switches between
+  # glotz and Kodi for Home Assistant.
   systemd.services.tv-play = {
     wantedBy = [ "multi-user.target" ];
     after = [ "network-online.target" ];
@@ -257,13 +355,16 @@ in
     path = [
       pkgs.yt-dlp
       pkgs.ffmpeg-headless
+      config.systemd.package
     ];
     serviceConfig = {
       ExecStart = "${
         pkgs.writers.writePython3 "tv-play" { flakeIgnore = [ "E501" ]; } ./tv-play.py
-      } ${toString config.lass.servicePorts.tv-play} http://127.0.0.1:${toString config.lass.servicePorts.kodi}/jsonrpc %d/kodi-password /run/tv-play/play.m3u";
+      } ${toString config.lass.servicePorts.tv-play} http://127.0.0.1:${toString config.lass.servicePorts.kodi}/jsonrpc %d/kodi-password /run/tv-play/play.m3u glotz.service";
       LoadCredential = [ "kodi-password:${password}" ];
-      DynamicUser = true;
+      # a fixed name for the polkit rule above
+      User = "tv-play";
+      Group = "tv-play";
       # play.m3u for Kodi (user media) to read
       RuntimeDirectory = "tv-play";
       RuntimeDirectoryMode = "0755";
@@ -271,6 +372,11 @@ in
       RestartSec = 2;
     };
   };
+  users.users.tv-play = {
+    isSystemUser = true;
+    group = "tv-play";
+  };
+  users.groups.tv-play = { };
 
   clan.core.vars.generators.kodi = {
     files.password.owner = "media";
@@ -290,6 +396,14 @@ in
       persist = true;
     };
     files.password.owner = "media";
+  };
+
+  clan.core.vars.generators.glotz-url = {
+    prompts.url = {
+      description = "URL of glotz' player page for the TV on styx: https://glotz.lassul.us/<tv-secret/secret of neoprism>/ (with the trailing slash)";
+      type = "hidden";
+      persist = true;
+    };
   };
 
   networking.firewall.interfaces = {
