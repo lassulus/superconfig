@@ -74,25 +74,6 @@ let
       icon = "mdi:television-play";
       sequence = [
         {
-          action = "switch.turn_on";
-          target.entity_id = "switch.tv";
-        }
-        # sound in the living room unless some room has the TV already
-        {
-          "if" = [
-            {
-              condition = "template";
-              value_template = "{{ states.switch | selectattr('object_id', 'match', 'audio_route_tv_') | selectattr('state', 'eq', 'on') | list | count == 0 }}";
-            }
-          ];
-          "then" = [
-            {
-              action = "switch.turn_on";
-              target.entity_id = "switch.audio_route_tv_styx";
-            }
-          ];
-        }
-        {
           action = "rest_command.tv_glotz";
           data.command = "start";
           response_variable = "result";
