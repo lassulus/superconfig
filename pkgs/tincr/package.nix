@@ -38,6 +38,11 @@ lib.throwIf (srcHas "crates/tincd/src/udp_path.rs" "fn release_unanswered_seen("
   lib.throwIf
   (srcHas "crates/tincd/src/daemon/gossip/send.rs" "fn advertise_udp_edge_addr(")
   "pkgs/tincr: the pinned tincr has advertise_udp_edge_addr, remove advertise-nat-udp-port.patch"
+  # Re-announces that port when a confirmed path follows a NAT rebind, so
+  # third nodes stop probing the old one (coaxmetal <-> styx).
+  lib.throwIf
+  (srcHas "crates/tincd/src/daemon/net/rx.rs" "moved from {old} to {src}")
+  "pkgs/tincr: the pinned tincr re-advertises roamed UDP paths, remove readvertise-roamed-udp.patch"
   rustPlatform.buildRustPackage
   {
     pname = "tincr";
@@ -48,6 +53,7 @@ lib.throwIf (srcHas "crates/tincd/src/udp_path.rs" "fn release_unanswered_seen("
     patches = [
       ./release-unanswered-seen.patch
       ./advertise-nat-udp-port.patch
+      ./readvertise-roamed-udp.patch
     ];
 
     cargoHash = "sha256-GZBCoFmtnhm3VqoMxIPl0+STJmz33pPsS+fgU7ic+D4=";

@@ -1,0 +1,85 @@
+From d831e6ea87485032070755b2e94e49184db2c70d Mon Sep 17 00:00:00 2001
+From: Hermes <hermes@lassul.us>
+Date: Wed, 18 Nov 2026 13:14:46 +0100
+Subject: [PATCH 1/2] tincd: re-advertise the UDP edge address when a confirmed
+ path roams
+
+advertise_udp_edge_addr only ran on the unconfirmed -> confirmed
+transition. When a NAT in front of a peer rebinds its UDP port while
+our path stays confirmed (we just follow the new source address), the
+edge kept the old port, and third nodes behind port-restricted NATs,
+which can only punch the advertised port, probed it forever.
+---
+ crates/tincd/src/daemon/net/rx.rs | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/crates/tincd/src/daemon/net/rx.rs b/crates/tincd/src/daemon/net/rx.rs
+index 42ae3819..c72c8897 100644
+--- a/crates/tincd/src/daemon/net/rx.rs
++++ b/crates/tincd/src/daemon/net/rx.rs
+@@ -453,6 +453,7 @@ impl Daemon {
+             }
+         };
+ 
++        let mut nw = false;
+         if let Via::Udp(src) = via {
+             // The subnet lookup only runs when the address moves.
+             let known = self
+@@ -466,15 +467,17 @@ impl Daemon {
+                     let now = self.timers.now();
+                     let path = &mut self.dp.tunnels.entry(from_nid).or_default().path;
+                     if path.on_authenticated_rx(src, sock, now) {
++                        let confirmed = path.confirmed();
+                         log::debug!(target: "tincd::net", "UDP address of {from_name} is {src}");
+                         self.publish_path(from_nid);
++                        // A NAT rebind: third nodes punch the advertised port.
++                        nw |= confirmed && self.advertise_udp_edge_addr(from_nid);
+                     }
+                 }
+                 None => log::debug!(target: "tincd::net",
+                                     "Ignoring UDP address {src} of {from_name}: inside the VPN"),
+             }
+         }
+-        let mut nw = false;
+         if via == Via::UdpRelayed {
+             nw |= self.send_mtu_info(from_nid, &from_name, i32::from(MTU), true);
+         }
+-- 
+2.56.0
+
+
+From e7cefc5e1fba621cc8cc0627fdc569c0852d2e36 Mon Sep 17 00:00:00 2001
+From: Hermes <hermes@lassul.us>
+Date: Wed, 18 Nov 2026 13:16:04 +0100
+Subject: [PATCH 2/2] tincd: log confirmed UDP address moves at info
+
+A NAT rebind of a peer we keep talking to over UDP was only visible at
+debug level. Moves of unconfirmed paths stay at debug.
+---
+ crates/tincd/src/daemon/net/rx.rs | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/crates/tincd/src/daemon/net/rx.rs b/crates/tincd/src/daemon/net/rx.rs
+index c72c8897..0b1bbe1f 100644
+--- a/crates/tincd/src/daemon/net/rx.rs
++++ b/crates/tincd/src/daemon/net/rx.rs
+@@ -466,9 +466,15 @@ impl Daemon {
+                 Some(src) => {
+                     let now = self.timers.now();
+                     let path = &mut self.dp.tunnels.entry(from_nid).or_default().path;
++                    let old = path.underlay();
+                     if path.on_authenticated_rx(src, sock, now) {
+                         let confirmed = path.confirmed();
+-                        log::debug!(target: "tincd::net", "UDP address of {from_name} is {src}");
++                        match old.filter(|old| confirmed && *old != src) {
++                            Some(old) => log::info!(target: "tincd::net",
++                                                    "UDP address of {from_name} moved from {old} to {src}"),
++                            None => log::debug!(target: "tincd::net",
++                                                "UDP address of {from_name} is {src}"),
++                        }
+                         self.publish_path(from_nid);
+                         // A NAT rebind: third nodes punch the advertised port.
+                         nw |= confirmed && self.advertise_udp_edge_addr(from_nid);
+-- 
+2.56.0
+
