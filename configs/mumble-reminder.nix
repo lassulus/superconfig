@@ -99,20 +99,20 @@ in
   };
   systemd.services.mumble-reminder-nixos = {
     description = "weekly reminder for nixos mumble";
-    startAt = "Thu *-*-* 19:00:00 Europe/Berlin";
+    startAt = "Thu *-*-* 18:00:00 Europe/Berlin";
     serviceConfig = {
       ExecStart = pkgs.writers.writeDash "mumble_reminder" ''
         animals='
           ${animals}
         '
         ${write_to_irc "#nixos"} "Es ist ${struck "Mittwoch"} Donnerstag meine $(echo "$animals" | grep -v '^$' | shuf -n1 )!"
-        ${write_to_irc "#nixos"} "kommt auf https://jitsi.lassul.us/nixos"
+        ${write_to_irc "#nixos"} "kommt auf https://jitsi.lassul.us/space"
       '';
     };
   };
   systemd.services.mumble-reminder-krebs = {
     description = "weekly reminder for nixos mumble";
-    startAt = "Thu *-*-* 19:00:00 Europe/Berlin";
+    startAt = "Thu *-*-* 18:00:00 Europe/Berlin";
     serviceConfig = {
       ExecStart = pkgs.writers.writeDash "mumble_reminder" ''
         animals='
@@ -120,7 +120,7 @@ in
         '
         ${write_to_irc "#krebs"} "Es ist ${struck "Mittwoch"} Donnerstag meine $(echo "$animals" | grep -v '^$' | shuf -n1 )!"
         ${write_to_irc "#krebs"} "$(cat /var/lib/reaktor2-mumble-reminder/users | ${pkgs.findutils}/bin/xargs echo) : jitsi?"
-        ${write_to_irc "#krebs"} "https://jitsi.lassul.us/nixos"
+        ${write_to_irc "#krebs"} "https://jitsi.lassul.us/space"
       '';
     };
   };
