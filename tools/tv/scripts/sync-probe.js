@@ -32,6 +32,9 @@
 //                 off, paused or waiting)
 //   background-once  the same, but the browser pauses the video only once
 //                 on hiding (as in other tests on the phone)
+//   clock         20 s of playback measured against the server clock instead
+//                 of the player's own target: median and spread; with
+//                 ?latency=MS in the page URL it should be MS ahead
 //
 // Run the browser through `taskset -c 0` to make its decoder slow like a
 // phone's.
@@ -275,6 +278,23 @@ const p = spawn(
         .join(
           ", ",
         )}, last out of sync ${((outAt - back) / 1000).toFixed(1)} s after it`,
+    );
+  } else if (scenario === "clock") {
+    // the playhead against the server clock, which ?latency on the page moves
+    // that far ahead; only while playing
+    const errs = [];
+    while (errs.length < 80) {
+      const s = JSON.parse(
+        await ev(
+          `JSON.stringify({err: tv.active().currentTime * 1000 - (tv.serverNow() - tv.active().entry.start), ready: tv.active().readyState, paused: tv.active().paused})`,
+        ),
+      );
+      if (s.ready >= 3 && !s.paused) errs.push(s.err);
+      await sleep(250);
+    }
+    errs.sort((a, b) => a - b);
+    await phase(
+      `20 s against the server clock: median ${errs[40].toFixed(1)} ms, 5-95 % ${errs[4].toFixed(1)} to ${errs[75].toFixed(1)} ms`,
     );
   } else {
     await sleep(20000);

@@ -8,6 +8,15 @@ const localNow = () => performance.timeOrigin + performance.now();
 const clock = { offset: 0, rtt: Infinity, samples: [] };
 const serverNow = () => localNow() + clock.offset;
 
+const params = new URLSearchParams(location.search);
+// ?latency=MS: the sound reaches the listener this long after the browser
+// plays it (e.g. sent on over the network to speakers), which the browser
+// cannot see; the player runs that far ahead of the server clock, so what is
+// heard is in sync with everybody else. 0 without it.
+const latency = Number(params.get("latency")) || 0;
+// where in the schedule the player is meant to be now
+const playNow = () => serverNow() + latency;
+
 async function sampleClock() {
   const t0 = localNow();
   const res = await fetch("api/time", { cache: "no-store" });
@@ -40,7 +49,7 @@ const entryAt = (t) =>
   entries.find((e) => e.start <= t && t < e.start + e.duration);
 const entryAfter = (t) => entries.find((e) => e.start > t);
 
-// err: smoothed sync error in ms (positive: ahead of the server),
+// err: smoothed sync error in ms (positive: ahead of playNow),
 // frame: error of the frame on screen, seekLead/startLead: how far ahead to
 // seek and to start the next item, learned from the error after each one
 // (learn is null if this one says nothing about the next)
@@ -75,7 +84,7 @@ let started = false;
 let swapTimer = null;
 
 // audio only (?audio, tv.setAudioOnly): the elements play the entries' audio copies, without subtitles
-let audioOnly = new URLSearchParams(location.search).has("audio");
+let audioOnly = params.has("audio");
 
 // chosen subtitles as {lang, label}, or null for off
 let subtitleChoice = JSON.parse(localStorage.getItem("subtitles") ?? "null");
@@ -178,7 +187,7 @@ function stepSwitch() {
     now - v.landedAt < 1000
   )
     return;
-  const err = v.currentTime * 1000 - (serverNow() - v.entry.start);
+  const err = v.currentTime * 1000 - (playNow() - v.entry.start);
   if (!v.paused && v.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) {
     if (Math.abs(err) < 100 && v.playbackRate === 1) {
       switching = null;
@@ -199,7 +208,7 @@ function stepSwitch() {
   if (v.seeked) v.lead = clamp(v.lead - err / 1000, 0, 4);
   v.seeked = true;
   v.playbackRate = 1;
-  v.currentTime = Math.max(0, (serverNow() - v.entry.start) / 1000 + v.lead);
+  v.currentTime = Math.max(0, (playNow() - v.entry.start) / 1000 + v.lead);
   v.play().catch(() => {});
 }
 
@@ -225,7 +234,7 @@ function missing(video, t) {
 
 // where seek goes: seekLead ahead of the schedule
 const seekTarget = (video) =>
-  Math.max(0, (serverNow() - video.entry.start) / 1000 + sync.seekLead);
+  Math.max(0, (playNow() - video.entry.start) / 1000 + sync.seekLead);
 
 function seek(video) {
   const t = seekTarget(video);
@@ -366,7 +375,11 @@ function measure() {
       return;
     }
     const target =
-      performance.timeOrigin + now + clock.offset - active.entry.start;
+      performance.timeOrigin +
+      now +
+      clock.offset +
+      latency -
+      active.entry.start;
     control(active.currentTime * 1000 - target, now);
   }
 }
@@ -376,7 +389,8 @@ function onFrame(video, meta) {
     const target =
       performance.timeOrigin +
       meta.expectedDisplayTime +
-      clock.offset -
+      clock.offset +
+      latency -
       video.entry.start;
     sync.frame = meta.mediaTime * 1000 - target;
     measure();
@@ -412,7 +426,7 @@ function swap() {
 function tick() {
   if (!started) return;
   // the next item starts startLead early, so it is on time once playing
-  const now = serverNow() + sync.startLead * 1000;
+  const now = playNow() + sync.startLead * 1000;
   const cur = entryAt(now);
   $("warmup").hidden = !!cur;
   if (!cur) {
@@ -472,7 +486,7 @@ function tick() {
 
 let infoTimer = null;
 function updateInfo() {
-  const now = serverNow() + sync.startLead * 1000;
+  const now = playNow() + sync.startLead * 1000;
   const cur = entryAt(now);
   const next = entryAfter(now);
   const at = (t) =>
@@ -554,7 +568,7 @@ function toggleFullscreen() {
 function showDebug() {
   const ms = (x) => (x === null || !isFinite(x) ? "-" : x.toFixed(1));
   $("debug").textContent = [
-    `offset   ${ms(clock.offset)} ms`,
+    `offset   ${ms(clock.offset)} ms${latency ? `, playing ${ms(latency)} ms ahead (latency)` : ""}`,
     `rtt      ${ms(clock.rtt)} ms`,
     `error    ${ms(sync.err)} ms (now ${ms(sync.raw)} ms, frame on screen ${ms(sync.frame)} ms)`,
     `rate     ${active.playbackRate.toFixed(3)}${sync.rateWorks ? "" : " (unusable here, seeking instead)"}`,
@@ -564,12 +578,15 @@ function showDebug() {
 
 window.tv = { clock, sync, serverNow, active: () => active, setAudioOnly };
 
-$("debug").hidden = !new URLSearchParams(location.search).has("debug");
-$("start").addEventListener("click", () => {
+$("debug").hidden = !params.has("debug");
+function start() {
   $("start").hidden = true;
   started = true;
   tick();
-});
+}
+$("start").addEventListener("click", start);
+// ?autostart: no "Tap to start", for kiosks whose browser plays sound without a gesture
+if (params.has("autostart")) start();
 $("fs").addEventListener("click", toggleFullscreen);
 $("cc").addEventListener("click", cycleSubtitles);
 $("add").addEventListener("click", () => {
