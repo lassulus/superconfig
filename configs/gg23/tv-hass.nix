@@ -25,6 +25,7 @@
 }:
 let
   kodi = "media_player.kodi_living_room";
+  glotzState = "binary_sensor.glotz_on_the_tv";
   json = name: value: pkgs.writeText name (builtins.toJSON value);
   seerrEntry = "01M6GQGWG1M3Q1R6AJ0SRBE2XC";
   # Player.GetItem properties of the history's own lookups, also how its
@@ -114,6 +115,10 @@ let
             }
           ];
         }
+        {
+          action = "homeassistant.update_entity";
+          target.entity_id = glotzState;
+        }
       ];
     };
     # Kodi back on the TV before something plays there: tv-play stops glotz
@@ -136,8 +141,27 @@ let
           timeout = 30;
           continue_on_timeout = true;
         }
+        {
+          action = "homeassistant.update_entity";
+          target.entity_id = glotzState;
+        }
       ];
     };
+    # whether glotz is on the TV (GET /glotz on tv-play: on or off), and the
+    # dashboard's Glotz toggle on top of it: on = glotz, off = Kodi
+    rest = [
+      {
+        resource = "http://10.42.0.3:8083/glotz";
+        scan_interval = 10;
+        binary_sensor = [
+          {
+            name = "Glotz on the TV";
+            unique_id = "tv_glotz";
+            value_template = "{{ value == 'on' }}";
+          }
+        ];
+      }
+    ];
     # play a pasted video link (YouTube and anything else yt-dlp knows)
     # through tv-play on styx (./tv-play.py); its error text ends up in a
     # notification when it can't
@@ -298,6 +322,18 @@ let
     # restored after restarts like every trigger-based template
     template = [
       {
+        switch = [
+          {
+            name = "Glotz";
+            unique_id = "tv_glotz_switch";
+            icon = "mdi:television-play";
+            state = "{{ is_state('${glotzState}', 'on') }}";
+            turn_on = [ { action = "script.tv_glotz"; } ];
+            turn_off = [ { action = "script.tv_kodi"; } ];
+          }
+        ];
+      }
+      {
         triggers = [
           {
             trigger = "event";
@@ -437,14 +473,13 @@ let
               }
               {
                 type = "button";
-                entity = "script.tv_glotz";
+                # on = glotz, off = Kodi
+                entity = "switch.glotz";
                 name = "Glotz";
                 icon = "mdi:television-play";
+                show_state = true;
                 grid_options.columns = 4;
-                tap_action = {
-                  action = "perform-action";
-                  perform_action = "script.tv_glotz";
-                };
+                tap_action.action = "toggle";
                 hold_action.action = "none";
               }
               {

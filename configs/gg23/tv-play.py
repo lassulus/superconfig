@@ -23,7 +23,8 @@
 # stream that Kodi reads from GET /live.ts here. Answers 200 with the
 # video's title, or 4xx/5xx with the reason as text. glotz (the browser
 # kiosk unit in ./tv.nix) and Kodi take turns on the TV: POST /glotz/start
-# and /glotz/stop start and stop it (Kodi comes back when it stops), POST
+# and /glotz/stop start and stop it (Kodi comes back when it stops), GET
+# /glotz answers on or off, POST
 # /kodi stops it and answers once Kodi does, which /play does on its own.
 # Usage:
 # tv-play PORT KODI_URL KODI_PASSWORD_FILE M3U_FILE GLOTZ_UNIT
@@ -213,6 +214,10 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_GET(self):
+        if self.path == "/glotz":
+            # "on" while glotz runs or starts, for Home Assistant's toggle
+            state = subprocess.run(["systemctl", "is-active", glotz_unit], capture_output=True, text=True).stdout.strip()
+            return self.answer(200, "off" if state in ("inactive", "failed", "deactivating") else "on")
         if self.path == "/master.m3u8" and master:
             return self.answer(200, master, "application/vnd.apple.mpegurl")
         audio = re.fullmatch(r"/audio/(\d+)\.m3u8", self.path)
