@@ -39,6 +39,7 @@ rustPlatform.buildRustPackage {
   buildFeatures = [
     "tor"
     "federation"
+    "dashboard"
   ];
 
   # utoipa-swagger-ui downloads the Swagger UI in its build script otherwise
