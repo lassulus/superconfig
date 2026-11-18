@@ -27,6 +27,7 @@
     ../../configs/services/agentd
     ../../configs/services/agentd/web.nix
     ../../configs/services/continuum
+    ../../configs/services/continuum/dashboard.nix
 
     ../../configs/hass/proxy.nix
     ../../configs/monitoring/grafana-proxy.nix

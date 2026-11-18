@@ -11,6 +11,13 @@ let
   stateDirectory = "continuum";
   stateDir = "/var/lib/${stateDirectory}";
 
+  # a host adds config files as credentials named *.json; continuum lets later ones win
+  extraConfigs = lib.filter (lib.hasSuffix ".json") (
+    map (credential: lib.head (lib.splitString ":" credential)) (
+      lib.toList config.systemd.services.continuum.serviceConfig.LoadCredential
+    )
+  );
+
   storeRoot = pkgs.runCommand "continuum-root" { } ''
     ${lib.getExe' continuum "continuum-party"} root ${./first.json} > $out
   '';
@@ -79,7 +86,13 @@ in
     after = [ "network-online.target" ];
     wants = [ "network-online.target" ];
     serviceConfig = {
-      ExecStart = "${lib.getExe continuum} --config ${settings}";
+      # a list: merging serviceConfig must not force the command, which reads LoadCredential
+      ExecStart = [
+        (
+          "${lib.getExe continuum} --config ${settings}"
+          + lib.concatMapStrings (name: " --config %d/${name}") extraConfigs
+        )
+      ];
       DynamicUser = true;
       StateDirectory = stateDirectory;
       StateDirectoryMode = "0700";
