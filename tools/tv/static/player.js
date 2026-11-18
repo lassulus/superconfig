@@ -17,9 +17,16 @@ const latency = Number(params.get("latency")) || 0;
 // where in the schedule the player is meant to be now
 const playNow = () => serverNow() + latency;
 
+// this page load's id, sent with each clock sample so the server counts it as a viewer (two tabs, two viewers)
+const viewerId = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) =>
+  b.toString(16).padStart(2, "0"),
+).join("");
+
 async function sampleClock() {
   const t0 = localNow();
-  const res = await fetch("api/time", { cache: "no-store" });
+  const res = await fetch(`api/time?v=${viewerId}${audioOnly ? "&a=1" : ""}`, {
+    cache: "no-store",
+  });
   const server = parseFloat(await res.text());
   const t1 = localNow();
   clock.samples = [
@@ -33,6 +40,7 @@ async function sampleClock() {
 
 let entries = [];
 let pending = [];
+let viewers = 0;
 async function loadSchedule() {
   try {
     const schedule = await (
@@ -40,6 +48,7 @@ async function loadSchedule() {
     ).json();
     entries = schedule.entries;
     pending = schedule.pending;
+    viewers = schedule.viewers;
     updateInfo();
   } catch (e) {
     console.warn("schedule", e);
@@ -510,6 +519,9 @@ function updateInfo() {
     }),
   );
   $("info").hidden = !cur && pending.length === 0;
+  $("guide").textContent = viewers
+    ? `Schedule · ${viewers} watching`
+    : "Schedule";
 }
 
 function showInfo() {

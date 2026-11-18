@@ -68,7 +68,7 @@ async function loadMe() {
   $("editor").hidden = !editor;
 }
 
-let schedule = { entries: [], pending: [], slots: [] };
+let schedule = { entries: [], pending: [], slots: [], viewers: 0, audio: 0 };
 async function loadSchedule() {
   try {
     schedule = await (
@@ -119,7 +119,9 @@ function editButtons(entries, i, playing) {
 
 function render() {
   const now = Date.now();
-  const { entries, pending, slots } = schedule;
+  const { entries, pending, slots, viewers, audio } = schedule;
+  $("viewers").textContent =
+    `${viewers} watching` + (audio ? ` (${audio} audio only)` : "");
   const playing = entries.length > 0 && entries[0].start <= now;
   const days = [];
   let last = "";
