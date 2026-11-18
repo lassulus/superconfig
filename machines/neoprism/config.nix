@@ -26,6 +26,7 @@
     ../../configs/services/paperless
     ../../configs/services/agentd
     ../../configs/services/agentd/web.nix
+    ../../configs/services/continuum
 
     ../../configs/hass/proxy.nix
     ../../configs/monitoring/grafana-proxy.nix
