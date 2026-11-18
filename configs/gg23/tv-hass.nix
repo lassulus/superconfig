@@ -1,5 +1,6 @@
-# Home Assistant side of ./tv.nix: a "TV" dashboard to switch the TV,
-# remote-control Kodi on styx (until the Bluetooth remote is there), search
+# Home Assistant side of ./tv.nix: a "TV" dashboard to switch the TV, put
+# glotz (the synced channel) on it instead of Kodi, remote-control Kodi on
+# styx (until the Bluetooth remote is there), search
 # Kodi's library to play something on the TV (Kodi Search Card with the Kodi
 # Media Sensors integration) and request new movies and shows from Seerr on
 # flix (Seerr Request Card on HA's Seerr integration). Mounted into the
@@ -37,11 +38,17 @@ let
 
   package = {
     # Kodi's sound goes to the speakers through the audio hub, not the TV, so
-    # switching only the TV off would keep a film playing
+    # switching only the TV off would keep a film playing; glotz stops too,
+    # so the TV is back on Kodi next time
     script.tv_off = {
       alias = "TV off";
       icon = "mdi:television-off";
       sequence = [
+        {
+          action = "rest_command.tv_glotz";
+          data.command = "stop";
+          continue_on_error = true;
+        }
         {
           action = "media_player.media_stop";
           target.entity_id = kodi;
@@ -53,6 +60,84 @@ let
         }
       ];
     };
+    # glotz (the synced channel, ../tv.nix) in the browser kiosk on styx
+    # instead of Kodi: tv-play starts and stops it (POST /glotz/start,
+    # /glotz/stop), Kodi stops while it runs
+    rest_command.tv_glotz = {
+      url = "http://10.42.0.3:8083/glotz/{{ command }}";
+      method = "post";
+      timeout = 60;
+    };
+    script.tv_glotz = {
+      alias = "Glotz on the TV";
+      icon = "mdi:television-play";
+      sequence = [
+        {
+          action = "switch.turn_on";
+          target.entity_id = "switch.tv";
+        }
+        # sound in the living room unless some room has the TV already
+        {
+          "if" = [
+            {
+              condition = "template";
+              value_template = "{{ states.switch | selectattr('object_id', 'match', 'audio_route_tv_') | selectattr('state', 'eq', 'on') | list | count == 0 }}";
+            }
+          ];
+          "then" = [
+            {
+              action = "switch.turn_on";
+              target.entity_id = "switch.audio_route_tv_styx";
+            }
+          ];
+        }
+        {
+          action = "rest_command.tv_glotz";
+          data.command = "start";
+          response_variable = "result";
+          continue_on_error = true;
+        }
+        {
+          "if" = [
+            {
+              condition = "template";
+              value_template = "{{ result is not defined or result.status != 200 }}";
+            }
+          ];
+          "then" = [
+            {
+              action = "persistent_notification.create";
+              data = {
+                title = "TV: can't start glotz";
+                message = "{{ result.content if result is defined else 'tv-play on styx is not reachable' }}";
+              };
+            }
+          ];
+        }
+      ];
+    };
+    # Kodi back on the TV before something plays there: tv-play stops glotz
+    # and answers once Kodi does; the Kodi integration reconnects within 10 s
+    rest_command.tv_kodi = {
+      url = "http://10.42.0.3:8083/kodi";
+      method = "post";
+      timeout = 90;
+    };
+    script.tv_kodi = {
+      alias = "Kodi back on the TV";
+      icon = "mdi:kodi";
+      sequence = [
+        {
+          action = "rest_command.tv_kodi";
+          continue_on_error = true;
+        }
+        {
+          wait_template = "{{ not is_state('${kodi}', 'off') }}";
+          timeout = 30;
+          continue_on_timeout = true;
+        }
+      ];
+    };
     # play a pasted video link (YouTube and anything else yt-dlp knows)
     # through tv-play on styx (./tv-play.py); its error text ends up in a
     # notification when it can't
@@ -61,8 +146,8 @@ let
       method = "post";
       content_type = "application/json";
       payload = "{{ {'url': url} | to_json }}";
-      # yt-dlp takes a few seconds
-      timeout = 90;
+      # yt-dlp takes a few seconds, Kodi up to 60 s to come back from glotz
+      timeout = 150;
     };
     script.tv_play_url = {
       alias = "Play a video link on the TV";
@@ -129,6 +214,7 @@ let
             }
           ];
           "else" = [
+            { action = "script.tv_kodi"; }
             {
               action = "kodi.call_method";
               target.entity_id = kodi;
@@ -329,7 +415,7 @@ let
                 name = "TV on";
                 icon = "mdi:television";
                 show_state = true;
-                grid_options.columns = 6;
+                grid_options.columns = 4;
                 tap_action = {
                   action = "perform-action";
                   perform_action = "switch.turn_on";
@@ -342,10 +428,22 @@ let
                 entity = "script.tv_off";
                 name = "TV off";
                 icon = "mdi:television-off";
-                grid_options.columns = 6;
+                grid_options.columns = 4;
                 tap_action = {
                   action = "perform-action";
                   perform_action = "script.tv_off";
+                };
+                hold_action.action = "none";
+              }
+              {
+                type = "button";
+                entity = "script.tv_glotz";
+                name = "Glotz";
+                icon = "mdi:television-play";
+                grid_options.columns = 4;
+                tap_action = {
+                  action = "perform-action";
+                  perform_action = "script.tv_glotz";
                 };
                 hold_action.action = "none";
               }
