@@ -17,15 +17,15 @@
 # tangled.org's until a self-hosted frontend is supported.
 rustPlatform.buildRustPackage {
   pname = "knot-server";
-  version = "0-unstable-2026-11-17";
+  version = "0-unstable-2026-11-18";
 
   src = fetchgit {
     url = "https://tangled.org/tangled.org/core";
-    rev = "b9273eb27d742396952e0cd15477bbcb99b1b45f";
-    hash = "sha256-N83dexCEl/qkjAVqzpc94PEOgBeGRdgceJcjf06pqWY=";
+    rev = "68b90c8e0415e3b3d0a874e941acfc38a7d8e425";
+    hash = "sha256-PhsX/O8TZfmtkQRihxvo6oFxuOw/ZMydvLSJPxKHPqM=";
   };
 
-  cargoHash = "sha256-ebfBa5/I/DmPm0SUvG68GwBYv26VDjLTi8VSfEMg7Zs=";
+  cargoHash = "sha256-2Tr1cML1uWMkrgDFa3mGylKr5UCDv1TsCkhAnLxxs4U=";
   nativeBuildInputs = [
     cmake
     perl
