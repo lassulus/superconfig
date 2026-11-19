@@ -142,6 +142,8 @@ in
           proxy_set_header Content-Length "";
         '';
       };
+      # the node serves nothing at /; the dashboard is the page people open
+      "= /".return = "302 /admin/dashboard";
       "@login".return = "307 /oauth2/start?rd=$request_uri";
     };
   };
