@@ -12,11 +12,16 @@ let
   # Only they may talk to the bot, in DMs and in groups. Placeholder until
   # the IDs are known; while empty the bot authorizes nobody (a DM gets a
   # pairing code that only `hermes pairing approve` on styx can accept).
-  allowedUsers = [ ];
+  allowedUsers = [
+    "162136400" # lassulus
+    "184810339" # Domi A.
+  ];
   # Chat ID of the Telegram group with lass and Domi (negative, -100…). The
   # bot ignores every other group. Placeholder until the group exists; while
   # empty there is no group restriction (allowedUsers still applies).
-  allowedChats = [ ];
+  allowedChats = [
+    "-5584216578" # group "dma.lassul.us"
+  ];
 in
 {
   imports = [ ../../configs/hermes-agent ];
