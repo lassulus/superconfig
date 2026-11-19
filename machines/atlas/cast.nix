@@ -32,9 +32,11 @@ let
     export XDG_RUNTIME_DIR=/run/user/$(id -u)
     # -D: a frame every 1/60 s, not only on screen damage (constant rate
     # for viewers); the render node of the iGPU sway runs on, a DMA-BUF
-    # from it can't be encoded on the dGPU
+    # from it can't be encoded on the dGPU. Resolved: wf-recorder compares
+    # the path with sway's device and falls back to a broken hwupload
+    # (no DMA-BUF) when they differ as strings
     exec ${pkgs.wf-recorder}/bin/wf-recorder -o HEADLESS-1 -D -r 60 \
-      -c h264_vaapi -d /dev/dri/by-path/pci-0000:19:00.0-render \
+      -c h264_vaapi -d "$(readlink -f /dev/dri/by-path/pci-0000:19:00.0-render)" \
       -p bitrate=6000k -p g=120 \
       --audio=@DEFAULT_MONITOR@ -C aac \
       -m flv -f "rtmp://${neoprism}:${toString rtmpPort}/live/$key"
