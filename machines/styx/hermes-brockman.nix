@@ -4,20 +4,16 @@
   ...
 }:
 let
-  cfg = config.services.hermes-agent;
+  cfg = config.lass.hermes.instances.brockman;
   vars = config.clan.core.vars.generators;
 in
 {
   imports = [ ../../configs/hermes-agent ];
 
   # Hermes for brockman development with kmein, reachable over Matrix as
-  # @hermes-brockman:lassul.us. The unit keeps the module's name, hermes-agent.
-  services.hermes-agent = {
-    enable = true;
-    user = "hermes-brockman";
-    group = "hermes-brockman";
-    stateDir = "/var/lib/hermes-brockman";
-
+  # @hermes-brockman:lassul.us. Unit hermes-brockman.service, user and group
+  # hermes-brockman, state in /var/lib/hermes-brockman (module defaults).
+  lass.hermes.instances.brockman = {
     extraDependencyGroups = [
       "matrix"
       "anthropic"
