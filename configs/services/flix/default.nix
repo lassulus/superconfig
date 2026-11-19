@@ -9,6 +9,7 @@
   imports = [
     ./sso.nix
     ./audiobookshelf-sso.nix
+    ./seerr-sso.nix
   ];
 
   lass.ports = {

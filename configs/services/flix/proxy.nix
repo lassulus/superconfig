@@ -69,6 +69,17 @@
       "https://audible.lassul.us/audiobookshelf/auth/openid/callback"
       "https://audible.lassul.us/audiobookshelf/auth/openid/mobile-redirect"
     ];
+    # Seerr (flox.lassul.us) on yellow; client id and secret go into the
+    # flox-oidc var of yellow (seerr-sso.nix). /login is the login page,
+    # linked-accounts the page where existing users link their account.
+    # openid-client sends the secret in the POST body.
+    apps.seerr = {
+      redirectUris = [
+        "https://flox.lassul.us/login"
+        "https://flox.lassul.us/profile/settings/linked-accounts"
+      ];
+      authMethod = "post";
+    };
   };
   services.nginx.virtualHosts."audible.lassul.us" = {
     forceSSL = true;
