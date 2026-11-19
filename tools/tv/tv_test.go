@@ -2120,3 +2120,22 @@ func TestViewersCap(t *testing.T) {
 		t.Errorf("%d viewers after the others expired, want 2", n)
 	}
 }
+
+func TestPlainVTT(t *testing.T) {
+	in := "WEBVTT\nKind: captions\nLanguage: en\n\n" +
+		"00:00:00.000 --> 00:00:01.299 align:start position:0%\n \nWelcome<00:00:00.200><c> back.</c>\n\n" +
+		"00:00:01.299 --> 00:00:01.309 align:start position:0%\nWelcome back.\n \n\n" +
+		"00:00:01.309 --> 00:00:07.990 align:start position:0%\nWelcome back.\n[music]<00:00:01.600><c> shells.</c>\n\n" +
+		"00:00:07.990 --> 00:00:08.000 align:start position:0%\n \n \n"
+	want := "WEBVTT\nKind: captions\nLanguage: en\n\n00:00:00.000 --> 00:00:01.299\nWelcome back.\n\n00:00:01.309 --> 00:00:07.990\n[music] shells.\n"
+	if got := string(plainVTT([]byte(in))); got != want {
+		t.Errorf("got\n%q\nwant\n%q", got, want)
+	}
+	manual := "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nHello\n"
+	if got := string(plainVTT([]byte(manual))); got != manual {
+		t.Errorf("manual captions changed: %q", got)
+	}
+	if got := string(plainVTT([]byte(want))); got != want {
+		t.Errorf("not idempotent: %q", got)
+	}
+}

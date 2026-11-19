@@ -103,6 +103,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go s.addMissingAudio(ctx)
+	go s.plainCachedVTT()
 	go s.run(ctx)
 	go s.serveRequests(ctx)
 	go s.periodic(ctx)

@@ -518,6 +518,8 @@ func cutGraph(cuts [][2]float64, duration float64, audio string) string {
 var (
 	vttTime       = regexp.MustCompile(`(?:(\d+):)?(\d{2}):(\d{2}\.\d{3})`)
 	vttInlineTime = regexp.MustCompile(`<(?:\d+:)?\d{2}:\d{2}\.\d{3}>`)
+	// inline times and tags like <c> in a cue's text
+	vttTag = regexp.MustCompile(`<[^>]*>`)
 )
 
 func vttSeconds(ts string) float64 {
@@ -581,6 +583,56 @@ func cutVTT(vtt []byte, cuts [][2]float64) []byte {
 
 // dedupeVTT drops cues that repeat an earlier cue's timing and text: ASS
 // signs drawn in several layers become identical stacked cues in WebVTT.
+// plainVTT turns YouTube's auto-generated captions into plain cues. YouTube
+// writes them as a roll-up: each cue repeats the previous line above the new
+// one, times every word inline, is pinned to the left edge
+// (align:start position:0%) and is followed by a 10 ms copy without the new
+// line. Players then draw two lines at the very left, partly greyed out as
+// "future" words. Each cue with inline times keeps only its new line,
+// without the times, tags and settings; the copies are dropped. Captions
+// without inline times are returned unchanged.
+func plainVTT(vtt []byte) []byte {
+	if !vttInlineTime.Match(vtt) {
+		return vtt
+	}
+	var blocks []string
+	for _, block := range strings.Split(strings.ReplaceAll(string(vtt), "\r\n", "\n"), "\n\n") {
+		lines := strings.Split(block, "\n")
+		i := slices.IndexFunc(lines, func(l string) bool { return strings.Contains(l, "-->") })
+		if i < 0 {
+			blocks = append(blocks, block)
+			continue
+		}
+		last := lines[len(lines)-1]
+		if i == len(lines)-1 || !vttInlineTime.MatchString(last) {
+			continue
+		}
+		text := strings.TrimSpace(vttTag.ReplaceAllString(last, ""))
+		ts := vttTime.FindAllString(lines[i], 2)
+		if text == "" || len(ts) < 2 {
+			continue
+		}
+		blocks = append(blocks, ts[0]+" --> "+ts[1]+"\n"+text)
+	}
+	return []byte(strings.Join(blocks, "\n\n") + "\n")
+}
+
+// plainCachedVTT applies plainVTT to the subtitles prepared before it existed.
+func (s *server) plainCachedVTT() {
+	files, _ := filepath.Glob(filepath.Join(s.cfg.CacheDir, "yt-*.vtt"))
+	for _, f := range files {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			continue
+		}
+		if p := plainVTT(b); len(p) != len(b) {
+			if err := os.WriteFile(f+".tmp", p, 0o644); err == nil {
+				os.Rename(f+".tmp", f)
+			}
+		}
+	}
+}
+
 func dedupeVTT(vtt []byte) []byte {
 	seen := map[string]bool{}
 	var blocks []string
@@ -649,7 +701,7 @@ func (s *server) youtubeSubtitles(ctx context.Context, dir, file string, info yo
 			b, err = os.ReadFile(filepath.Join(dir, "sub."+sub.src+".vtt"))
 		}
 		if err == nil {
-			err = os.WriteFile(filepath.Join(s.cfg.CacheDir, sub.File), cutVTT(b, cuts), 0o644)
+			err = os.WriteFile(filepath.Join(s.cfg.CacheDir, sub.File), plainVTT(cutVTT(b, cuts)), 0o644)
 		}
 		if err != nil {
 			log.Printf("subtitles %q of %s: %v", sub.Label, file, err)
