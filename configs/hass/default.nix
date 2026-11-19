@@ -8,6 +8,7 @@
   imports = [
     ./zigbee.nix
     ./monitoring.nix
+    ./atlas-cast.nix
     ./oidc.nix
   ];
 
