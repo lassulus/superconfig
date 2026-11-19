@@ -1,4 +1,4 @@
-{ config, ... }:
+{ config, pkgs, ... }:
 let
   domain = "mail.lassul.us";
   zitadelEnv = config.lass.zitadel.projects.mail.apps.roundcube.envFile.path;
@@ -14,8 +14,16 @@ in
     enable = true;
     hostName = domain;
     maxAttachmentSize = 25;
+    package = pkgs.roundcube.withPlugins (p: [
+      (p.roundcubePlugin {
+        pname = "browser_timezone";
+        version = "1";
+        src = ./browser_timezone;
+      })
+    ]);
     plugins = [
       "archive"
+      "browser_timezone"
       "managesieve"
       "zipdownload"
     ];
