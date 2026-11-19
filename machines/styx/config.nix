@@ -21,6 +21,8 @@
     ../../configs/tv-proxy.nix
     # Hermes agent for brockman development with kmein
     ./hermes-brockman.nix
+    # Hermes agent for administrating dma.lassul.us with Domi
+    ./hermes-dma.nix
     ./backup.nix
   ];
 
