@@ -11,6 +11,7 @@ import json
 import os
 import sys
 import time
+import unicodedata
 import urllib.parse
 import urllib.request
 
@@ -103,6 +104,23 @@ def replace(kind, id, series_id, s):
     log("%s: blacklisted %s %s, Bazarr searches another" % (path, params["provider"], params["subs_id"]))
 
 
+# languages written in Latin script; a subtitle tagged with one of them but
+# written mostly in another script (e.g. Arabic in an .en.srt) is the wrong
+# language, which no sync fixes
+LATIN = {"en", "de", "nl", "fr", "es", "it", "pt", "sv", "da", "no", "fi", "pl", "cs", "tr", "hu", "ro", "hr", "id", "ms", "vi"}
+
+
+def wrong_script(path, code2):
+    """whether the subtitle at path is tagged with a Latin-script language
+    but most of its letters are not Latin"""
+    if code2 not in LATIN:
+        return False
+    with open(path, encoding="utf-8", errors="replace") as f:
+        letters = [c for c in f.read() if c.isalpha()]
+    other = sum(1 for c in letters if not unicodedata.name(c, "").startswith("LATIN"))
+    return len(letters) > 200 and other > len(letters) / 2
+
+
 try:
     with open(state_file) as f:
         state = json.load(f)
@@ -118,6 +136,11 @@ for kind, id, series_id, title, s in subtitles():
     try:
         mtime = os.stat(path).st_mtime
     except FileNotFoundError:
+        continue
+    # checked on every run, also for files synced before this check existed
+    if wrong_script(path, s["code2"]):
+        log("%s: %s: not written in %s's script" % (title, path, s["code2"]))
+        replace(kind, id, series_id, s)
         continue
     if state.get(path) == mtime:
         continue
