@@ -66,10 +66,16 @@
   # is class greeter again until the next boot).
   # Virtual screen: without any output sway aborts when a window maps (sway
   # issue 8811, TV off), and sunray needs a screen to stream.
+  # GPU: wlroots renders on the first of WLR_DRM_DEVICES, so the RX 6800 XT
+  # goes first. Otherwise sway picks the iGPU (boot VGA), clients default to
+  # it too, and a game rendering there (Electron's GPU process) saturates
+  # it, so the desktop and the Sunshine stream lag. The by-path names
+  # contain colons, the list separator, hence resolved to cardN.
   services.greetd =
     let
+      card = pci: "$(readlink -f /dev/dri/by-path/pci-${pci}-card)";
       session = {
-        command = "${lib.getExe pkgs.bash} --login -c 'WLR_BACKENDS=drm,libinput,headless WLR_HEADLESS_OUTPUTS=1 sway'";
+        command = "${lib.getExe pkgs.bash} --login -c 'WLR_DRM_DEVICES=${card "0000:03:00.0"}:${card "0000:19:00.0"} WLR_BACKENDS=drm,libinput,headless WLR_HEADLESS_OUTPUTS=1 sway'";
         user = config.users.users.games.name;
       };
     in
