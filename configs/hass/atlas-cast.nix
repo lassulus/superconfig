@@ -69,7 +69,8 @@ let
           {
             name = "atlas cast running";
             unique_id = "atlas_cast_running";
-            value_template = "{{ value == 'on' }}";
+            # atlas-cast-control answers with a trailing newline
+            value_template = "{{ value | trim == 'on' }}";
           }
         ];
       }
