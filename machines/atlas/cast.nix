@@ -31,6 +31,8 @@ let
     key=$(< "$CREDENTIALS_DIRECTORY/stream-key")
     # the games session's Wayland socket and PipeWire
     export XDG_RUNTIME_DIR=/run/user/$(id -u)
+    # g=60: a keyframe every second, Owncast's lowest latency level cuts
+    # 1 s HLS segments and passthrough can only cut at keyframes.
     # -D: a frame every 1/60 s, not only on screen damage (constant rate
     # for viewers); the render node of the GPU sway runs on (the RX 6800
     # XT, machines/atlas/config.nix), a DMA-BUF from it can't be encoded
@@ -39,7 +41,7 @@ let
     # differ as strings
     exec ${pkgs.wf-recorder}/bin/wf-recorder -o HEADLESS-1 -D -r 60 \
       -c h264_vaapi -d "$(readlink -f /dev/dri/by-path/pci-0000:03:00.0-render)" \
-      -p bitrate=6000k -p g=120 \
+      -p bitrate=6000k -p g=60 \
       --audio=@DEFAULT_MONITOR@ -C aac \
       -m flv -f "rtmp://${neoprism}:${toString rtmpPort}/live/$key"
   '';
