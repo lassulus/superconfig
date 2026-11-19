@@ -28,6 +28,8 @@ let
     # the stream key ends up on the command line, readable by atlas' local
     # users
     key=$(< "$CREDENTIALS_DIRECTORY/stream-key")
+    # the games session's Wayland socket and PipeWire
+    export XDG_RUNTIME_DIR=/run/user/$(id -u)
     # -D: a frame every 1/60 s, not only on screen damage (constant rate
     # for viewers); the render node of the iGPU sway runs on, a DMA-BUF
     # from it can't be encoded on the dGPU
@@ -64,8 +66,6 @@ in
     after = [ "network-online.target" ];
     startLimitIntervalSec = 0;
     environment = {
-      # %U = the uid of User= (games)
-      XDG_RUNTIME_DIR = "/run/user/%U";
       WAYLAND_DISPLAY = "wayland-1";
     };
     serviceConfig = {
