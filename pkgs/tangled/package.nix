@@ -17,12 +17,12 @@
 # tangled.org's until a self-hosted frontend is supported.
 rustPlatform.buildRustPackage {
   pname = "knot-server";
-  version = "0-unstable-2026-11-18";
+  version = "0-unstable-2026-11-19";
 
   src = fetchgit {
     url = "https://tangled.org/tangled.org/core";
-    rev = "68b90c8e0415e3b3d0a874e941acfc38a7d8e425";
-    hash = "sha256-PhsX/O8TZfmtkQRihxvo6oFxuOw/ZMydvLSJPxKHPqM=";
+    rev = "f67fce52136294d0d7c34357481d1185b7d232e8";
+    hash = "sha256-vo577EJLAed/JOiG8GxrbfrezioigyywDTHYylf4s80=";
   };
 
   cargoHash = "sha256-2Tr1cML1uWMkrgDFa3mGylKr5UCDv1TsCkhAnLxxs4U=";
