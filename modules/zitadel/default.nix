@@ -21,6 +21,7 @@ let
       groupsClaimScript = builtins.readFile ./groups-claim.js;
       projects = lib.mapAttrs (_: project: {
         inherit (project) access users roles;
+        invite = if project.invite.enable then project.invite.applicationName else null;
         apps = lib.mapAttrs (_: app: {
           inherit (app) redirectUris envFile clientIdFile;
           authMethodType = "OIDC_AUTH_METHOD_TYPE_${lib.toUpper app.authMethod}";
@@ -165,12 +166,25 @@ in
                 type = lib.types.listOf lib.types.str;
                 default = [ ];
                 description = ''
-                  Verified email addresses of the users that get a user
-                  grant on the project (access = "declarative"). Not login
-                  names: anyone can register a free one that looks like
-                  someone's address. Users who have not registered or
-                  verified their address yet are skipped until the next run.
+                  Email addresses of the users that get a user grant on the
+                  project (access = "declarative"): of users who verified
+                  them, or who were created by an admin and have no login
+                  yet (invite pending). Not login names: anyone can register
+                  a free one that looks like someone's address. Other users
+                  are skipped until the next run.
                 '';
+              };
+              invite = {
+                enable = lib.mkEnableOption ''
+                  creating a user for each address in `users` that no user
+                  has yet, with an invite mail to set up a login (as
+                  zitadel-invite does)
+                '';
+                applicationName = lib.mkOption {
+                  type = lib.types.str;
+                  default = name;
+                  description = "Application name in the invite mail.";
+                };
               };
               roles = lib.mkOption {
                 type = lib.types.listOf lib.types.str;

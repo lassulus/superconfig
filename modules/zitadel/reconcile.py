@@ -214,20 +214,50 @@ for trigger in ["4", "5"]:
 
 # projects, OIDC apps and user grants (default organization)
 
-def find_user(email):
-    # Only verified addresses: anyone can register with any address and any
-    # free username, including one that looks like someone's address.
+def find_user(email, invite):
+    # Anyone can register with any address and any free username, including
+    # one that looks like someone's address. Trusted are users who verified
+    # theirs, or who were created by an admin and have no login yet (as
+    # zitadel-invite does).
     method = "TEXT_QUERY_METHOD_EQUALS_IGNORE_CASE"
-    users = [
-        u for u in search("/management/v1/users/_search", {"queries": [
-            {"emailQuery": {"emailAddress": email, "method": method}},
-        ]})
-        if u.get("human", {}).get("email", {}).get("isEmailVerified")
+    users = search("/management/v1/users/_search", {"queries": [
+        {"emailQuery": {"emailAddress": email, "method": method}},
+        {"typeQuery": {"type": "TYPE_HUMAN"}},
+    ]})
+    trusted = [
+        u for u in users
+        if u["human"].get("email", {}).get("isEmailVerified")
+        or u.get("state") == "USER_STATE_INITIAL"
     ]
-    if len(users) != 1:
-        print(f"user {email}: {len(users)} matches, skipped", file=sys.stderr)
-        return None
-    return users[0]["id"]
+    if len(trusted) == 1:
+        return trusted[0]["id"]
+    if not users and invite is not None:
+        return invite_user(email, invite)
+    print(f"user {email}: {len(trusted)} matches, skipped", file=sys.stderr)
+    return None
+
+
+def invite_user(email, application_name):
+    # verified by the invite code, without a separate mail
+    org_id = call("GET", "/management/v1/orgs/me")["org"]["id"]
+    given = email.split("@")[0]
+    user_id = call("POST", "/v2/users/new", {
+        "organizationId": org_id,
+        "human": {
+            "profile": {
+                "givenName": given,
+                # Zitadel requires one
+                "familyName": given,
+                "displayName": given,
+            },
+            "email": {"email": email, "returnCode": {}},
+        },
+    })["id"]
+    call("POST", f"/v2/users/{user_id}/invite_code", {
+        "sendCode": {"applicationName": application_name},
+    })
+    print(f"user {email}: created, invite mail sent")
+    return user_id
 
 
 def write_file(path, uid, content):
@@ -321,7 +351,9 @@ for project_name, project in config["projects"].items():
 
     if project["access"] != "declarative":
         continue
-    users = {find_user(name): name for name in project["users"]}
+    users = {
+        find_user(name, project["invite"]): name for name in project["users"]
+    }
     users.pop(None, None)
     grants = search("/management/v1/users/grants/_search", {"queries": [
         {"projectIdQuery": {"projectId": project_id}},
