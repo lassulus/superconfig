@@ -208,7 +208,13 @@ in
           "hermes-${name}" = lib.mkIf i.enable (
             lib.mkMerge [
               i.output.systemd.services.hermes-agent
-              { serviceConfig.ExecStop = plannedStop i.package; }
+              {
+                serviceConfig.ExecStop = plannedStop i.package;
+                # The activation script writes config.yaml and .env, so a
+                # settings-only change would not touch the unit and the
+                # running gateway would keep the old config.
+                restartTriggers = [ i.output.system.activationScripts.hermes-agent-setup.text ];
+              }
             ]
           );
           "hermes-${name}-backend" = lib.mkIf (
