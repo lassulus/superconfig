@@ -2,6 +2,21 @@
 {
   perSystem =
     { pkgs, ... }:
+    let
+      # Nix 2.35 no longer copies a dirty flake into the store on
+      # `nix flake metadata`, so nix-update's prefetch after it edited the
+      # version points at a store path that does not exist ("opening file
+      # /nix/store/...-source"). Upstream fix Mic92/nix-update#692; drop once
+      # a release has it.
+      nix-update = pkgs.nix-update.overrideAttrs (old: {
+        patches = (old.patches or [ ]) ++ [
+          (pkgs.fetchpatch {
+            url = "https://github.com/Mic92/nix-update/commit/d545c1fad667e573128cad0db55fdc77134a4d3c.patch";
+            hash = "sha256-CVSihQevWIwKSnjKo9ilw1hdi4a1t0xr6DunAUKSBFA=";
+          })
+        ];
+      });
+    in
     {
       # update-pkgs [attr...]   (no attrs: every package with an updateScript)
       #
@@ -16,7 +31,7 @@
           runtimeInputs = [
             pkgs.git
             pkgs.jq
-            pkgs.nix-update
+            nix-update
           ];
           text = ''
             root=$(git rev-parse --show-toplevel)
