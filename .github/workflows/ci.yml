@@ -90,6 +90,11 @@ jobs:
             extra-experimental-features = auto-allocate-uids cgroups
             auto-allocate-uids = true
             extra-system-features = uid-range
+            # what the checks use (e.g. tranquil-pds for pds-reconcile) is
+            # in the machines' closures there; without it every round
+            # compiled them from source
+            extra-substituters = https://cache.lassul.us
+            extra-trusted-public-keys = cache.lassul.us-1:aOMEO5TU6eLvhyPi0jmgjR2sVlGjMq3rK0MeACjTcQ0=
 
       - env:
           CHECK: ${{ matrix.check }}
