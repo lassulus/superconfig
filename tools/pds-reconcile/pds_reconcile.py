@@ -39,6 +39,7 @@ with open(config_path) as f:
     config = json.load(f)
 
 COLLECTION = "org.tangled.key.sshKey"
+PROFILE = "org.tangled.actor.profile"
 APP_PASSWORD = "pds-reconcile"
 PROVIDER = "oidc"
 
@@ -229,7 +230,7 @@ class Session:
             " scopes = EXCLUDED.scopes;",
             name=APP_PASSWORD,
             hash=password_hash.decode(),
-            scopes=f"atproto repo:{COLLECTION}",
+            scopes=f"atproto repo:{COLLECTION} repo:{PROFILE}",
             did=self.did,
         )
         try:
@@ -275,6 +276,30 @@ def save_state(state):
     with open(tmp, "w") as f:
         json.dump(state, f, indent=2, sort_keys=True)
     os.rename(tmp, config["stateFile"])
+
+
+def ensure_profile(email, did):
+    # tangled.org only finds accounts (e.g. to add them as collaborators)
+    # that have this record; it writes it on the first login otherwise
+    try:
+        xrpc("GET", "com.atproto.repo.getRecord", query={
+            "repo": did, "collection": PROFILE, "rkey": "self",
+        })
+        return
+    except Failed:
+        pass
+    with Session(did) as session:
+        session.write("com.atproto.repo.putRecord", {
+            "collection": PROFILE,
+            "rkey": "self",
+            "record": {
+                "$type": PROFILE,
+                "createdAt": time.strftime(
+                    "%Y-%m-%dT%H:%M:%SZ", time.gmtime()
+                ),
+            },
+        })
+    print(f"account {email}: added the Tangled profile")
 
 
 def reconcile_keys(email, did, ssh_keys, state):
@@ -335,6 +360,8 @@ for email, account in config["accounts"].items():
                 print(f"account {email}: none yet, signs up on the PDS")
                 continue
             did = create_account(email, user, account["handle"])
+        if account["handle"] is not None:
+            ensure_profile(email, did)
         reconcile_keys(email, did, account["sshKeys"], state)
     except Failed as e:
         print(f"account {email}: {e}", file=sys.stderr)

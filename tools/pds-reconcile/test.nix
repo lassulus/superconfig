@@ -230,10 +230,20 @@ pkgs.testers.runNixOSTest {
         assert keys("carol") == {KEY1}
         assert keys("alice") == set()
 
+    with subtest("tangled profile, so tangled.org finds the accounts"):
+        assert "account alice@example.org: added the Tangled profile" in out
+        for handle in ["alice", "carol"]:
+            machine.succeed(
+                "curl -sf 'http://127.0.0.1:3000/xrpc/com.atproto.repo.getRecord"
+                f"?repo={handle}.pds.test&collection=org.tangled.actor.profile"
+                "&rkey=self'"
+            )
+
     with subtest("second run changes nothing"):
         rev = sql("SELECT repo_rev FROM repos ORDER BY user_id")
         out = reconcile()
         assert "created" not in out and "key" not in out, out
+        assert "profile" not in out, out
         assert sql("SELECT repo_rev FROM repos ORDER BY user_id") == rev
 
     with subtest("key replaced"):
