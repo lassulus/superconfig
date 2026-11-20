@@ -10,8 +10,8 @@ let
   src = fetchFromGitHub {
     owner = "Mic92";
     repo = "tincr";
-    rev = "fd92f2164f8f4e2927d6c983a116bf41ac2337d5";
-    hash = "sha256-dT/Ny0jbVMeeW1TGp/YDPQGiDwspvhd8/k/OgULz57Y=";
+    rev = "2976721100356729301a337b4e4e71f62ba3f7ce";
+    hash = "sha256-rrCZF/M6fQ9coOMTvpwYVwfZhLs6tn0OXLf1dC8dblE=";
   };
 
   # Reads the pinned source at eval time (a locked fetch, no IFD). Skipped
@@ -46,7 +46,7 @@ lib.throwIf (srcHas "crates/tincd/src/udp_path.rs" "fn release_unanswered_seen("
   rustPlatform.buildRustPackage
   {
     pname = "tincr";
-    version = "0-unstable-2026-11-17";
+    version = "0-unstable-2026-11-19";
 
     inherit src;
 
