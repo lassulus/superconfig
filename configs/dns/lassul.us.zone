@@ -30,6 +30,7 @@ starkstrom IN A 194.110.87.67
 ; dma: lass and Domi's Hetzner Cloud server (github.com/lassulus/dma)
 dma IN A 2.31.204.4
 dma IN AAAA 2a01:4f8:c17:a883::1
+*.dma IN CNAME dma
 
 ;; GLUE
 ns1 IN A 95.217.192.59
