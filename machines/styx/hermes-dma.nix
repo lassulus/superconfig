@@ -47,6 +47,10 @@ in
       self.packages.${pkgs.stdenv.hostPlatform.system}.tg
     ];
 
+    # The group is one shared admin conversation: lass and Domi talk to the
+    # same session instead of one per sender (Hermes' default).
+    settings.group_sessions_per_user = false;
+
     settings.model = {
       provider = "anthropic";
       default = "claude-opus-5-5";
