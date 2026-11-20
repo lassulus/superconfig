@@ -1,6 +1,7 @@
 {
   self,
   config,
+  lib,
   pkgs,
   ...
 }:
@@ -9,13 +10,62 @@ let
   cfg = config.services.tranquil-pds;
   package = self.packages.${pkgs.stdenv.hostPlatform.system}.tranquil-pds;
   zitadelEnv = config.lass.zitadel.projects.pds.apps.web.envFile.path;
+
+  # Who may log in (the grant on the Zitadel project pds), by the address of
+  # their id.lassul.us user. With a handle, pds-reconcile creates the
+  # account <handle>.pds.lassul.us, linked to that user: they just sign in
+  # with id.lassul.us. A new address gets a Zitadel user with an invite
+  # mail. Without one, the account is the owner's own signup on
+  # pds.lassul.us. sshKeys: org.tangled.key.sshKey records (pushing to
+  # knot.lassul.us), removed again when dropped from here; keys added on
+  # tangled.org stay.
+  accounts = {
+    "lass@lassul.us" = { };
+    # agentd's account (configs/services/agentd), forks and PRs on
+    # knot.lassul.us
+    "slop@lassul.us" = { };
+    # slopulus' account: its PRs from its fork (instead of crit reviews),
+    # also those of the update-pkgs and cve-watch bots
+    "slopulus@lassul.us" = { };
+    # hermes-dma (machines/styx/hermes-dma.nix): pushes to the dma repo
+    # on knot.lassul.us
+    "hermes-dma@lassul.us" = {
+      handle = "hermes-dma";
+      sshKeys = [
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKoO181Z9NikLcZcNma4swobqS4xq2QEwAlSZXOWe5Jl hermes-dma@dma.lassul.us"
+      ];
+    };
+    # Domi A., administrates dma.lassul.us with lass
+    "dominik_a@gmx.de".handle = "domi";
+  };
+
+  reconcileConfig = pkgs.writeText "pds-reconcile.json" (
+    builtins.toJSON {
+      zitadel = {
+        url = "http://127.0.0.1:${toString config.services.zitadel.settings.Port}";
+        domain = config.services.zitadel.settings.ExternalDomain;
+        tokenFile = "/run/credentials/pds-reconcile.service/zitadel-token";
+      };
+      pds = {
+        url = "http://${cfg.settings.server.host}:${toString cfg.settings.server.port}";
+        hostname = domain;
+        database = cfg.settings.database.url;
+      };
+      stateFile = "/var/lib/pds-reconcile/keys.json";
+      accounts = lib.mapAttrs (_: account: {
+        handle = account.handle or null;
+        sshKeys = account.sshKeys or [ ];
+      }) accounts;
+    }
+  );
 in
 {
   lass.ports.${toString cfg.settings.server.port} = "tranquil-pds";
 
   # ATProto PDS (Tranquil). Accounts get handles <name>.pds.lassul.us and
-  # log in via id.lassul.us. Accounts are created only by the SSO signup
-  # (no invite code), nginx rejects all other account-creation routes.
+  # log in via id.lassul.us. Accounts are created by pds-reconcile (see
+  # accounts above) or by the SSO signup (no invite code), nginx rejects all
+  # other account-creation routes.
   clan.core.vars.generators.tranquil-pds = {
     files."secrets.env" = { };
     runtimeInputs = [ pkgs.openssl ];
@@ -101,23 +151,41 @@ in
     };
   };
 
-  # only the users listed here get a project grant and can log in
+  systemd.services.pds-reconcile = {
+    description = "Create the accounts of ${domain}";
+    wantedBy = [ "multi-user.target" ];
+    requires = [ "tranquil-pds.service" ];
+    wants = [ "zitadel-reconcile.service" ];
+    after = [
+      "tranquil-pds.service"
+      # creates the Zitadel users of new addresses
+      "zitadel-reconcile.service"
+    ];
+    path = [ config.services.postgresql.package ];
+    environment.PYTHONUNBUFFERED = "1";
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      # peer authentication to tranquil-pds' database
+      User = cfg.user;
+      Group = cfg.group;
+      LoadCredential = "zitadel-token:${config.services.zitadel.steps.FirstInstance.PatPath}";
+      ExecStart = "${
+        lib.getExe self.packages.${pkgs.stdenv.hostPlatform.system}.pds-reconcile
+      } ${reconcileConfig}";
+      StateDirectory = "pds-reconcile";
+      StateDirectoryMode = "0700";
+      UMask = "0077";
+    };
+  };
+
   lass.zitadel.projects.pds = {
     access = "declarative";
-    users = [
-      "lass@lassul.us"
-      # agentd's account (configs/services/agentd), forks and PRs on
-      # knot.lassul.us
-      "slop@lassul.us"
-      # slopulus' account: its PRs from its fork (instead of crit reviews),
-      # also those of the update-pkgs and cve-watch bots
-      "slopulus@lassul.us"
-      # hermes-dma (machines/styx/hermes-dma.nix): pushes to the dma repo
-      # on knot.lassul.us
-      "hermes-dma@lassul.us"
-      # Domi A., administrates dma.lassul.us with lass
-      "dominik_a@gmx.de"
-    ];
+    users = lib.attrNames accounts;
+    invite = {
+      enable = true;
+      applicationName = "lassul.us PDS";
+    };
     apps.web = {
       redirectUris = [ "https://${domain}/oauth/sso/callback" ];
       authMethod = "post";
