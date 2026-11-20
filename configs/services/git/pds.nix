@@ -112,6 +112,11 @@ in
       # slopulus' account: its PRs from its fork (instead of crit reviews),
       # also those of the update-pkgs and cve-watch bots
       "slopulus@lassul.us"
+      # hermes-dma (machines/styx/hermes-dma.nix): pushes to the dma repo
+      # on knot.lassul.us
+      "hermes-dma@lassul.us"
+      # Domi A., administrates dma.lassul.us with lass
+      "dominik_a@gmx.de"
     ];
     apps.web = {
       redirectUris = [ "https://${domain}/oauth/sso/callback" ];
