@@ -82,6 +82,14 @@ jobs:
           SHA: ${{ inputs.sha }}
         run: .github/fetch-pr.sh
       - uses: cachix/install-nix-action@v31
+        with:
+          # NixOS tests with containers (systemd-nspawn, no KVM) need the
+          # uid-range feature: 65536 auto-allocated UIDs per build, in their
+          # own cgroup. extra-: Nix's default features stay.
+          extra_nix_config: |
+            extra-experimental-features = auto-allocate-uids cgroups
+            auto-allocate-uids = true
+            extra-system-features = uid-range
 
       - env:
           CHECK: ${{ matrix.check }}
