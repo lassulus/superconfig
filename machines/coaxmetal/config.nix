@@ -17,6 +17,8 @@
     ../../configs/review.nix
     ../../configs/rad.nix
     ../../configs/crit.nix
+    # NixOS tests with containers (checks), built here by the agents
+    ../../configs/container-tests.nix
     ../../configs/services/agentd
     ../../configs/services/continuum
     ../../configs/monitoring/server.nix
