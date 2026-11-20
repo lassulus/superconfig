@@ -1,4 +1,5 @@
 {
+  self,
   config,
   lib,
   pkgs,
@@ -41,6 +42,9 @@ in
       config.nix.package
       pkgs.nixos-anywhere
       pkgs.nixos-rebuild
+      # Tangled CLI (PRs/issues on the dma.lassul.us repo); logged in with an
+      # app password, credentials in ~/.local/share/tg (state dir, backed up)
+      self.packages.${pkgs.stdenv.hostPlatform.system}.tg
     ];
 
     settings.model = {
