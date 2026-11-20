@@ -1,0 +1,140 @@
+From b57de67141272f956316c8c79a83180bb13c601c Mon Sep 17 00:00:00 2001
+From: Hermes <hermes@lassul.us>
+Date: Fri, 20 Nov 2026 13:48:36 +0100
+Subject: [PATCH] tincd: keep a provisional PMTU at or above the measured
+ minmtu
+
+Cold revalidation keeps the old `mtu` while discovery restarts from
+minmtu 0. A relayed MTU_INFO then sets a provisional `mtu` (only while
+min != max), and nothing reconciles it with our own probe results, so
+`mtu` can sit below a `minmtu` we already proved. Seen live as
+`pmtu 989 (min 1003 max 1439)`, and with the opposite order
+`pmtu 1009 (min 1012 max 1439)`.
+
+`mtu` drives route's frag-needed/too-big reply and the MSS clamp, so
+frames in (mtu, minmtu] got bounced although UDP carries them. Floor
+the hint at minmtu and lift a non-zero mtu whenever minmtu rises; 0
+still means "not discovered yet". debug_check_bounds now asserts it.
+---
+ crates/tincd/src/pmtu.rs     | 25 +++++++++++++++++++++--
+ crates/tincd/src/udp_path.rs | 39 +++++++++++++++++++++++++++++++++++-
+ 2 files changed, 61 insertions(+), 3 deletions(-)
+
+diff --git a/crates/tincd/src/pmtu.rs b/crates/tincd/src/pmtu.rs
+index 3115911d..0224964c 100644
+--- a/crates/tincd/src/pmtu.rs
++++ b/crates/tincd/src/pmtu.rs
+@@ -368,6 +368,7 @@ impl PmtuState {
+         }
+         if len >= MINMTU && len > self.minmtu {
+             self.minmtu = len;
++            self.lift_mtu_to_minmtu();
+         }
+         if !self.discovery {
+             self.pin();
+@@ -406,6 +407,7 @@ impl PmtuState {
+         if len > self.maxmtu {
+             out.push(PmtuAction::LogIncrease);
+             self.minmtu = if len >= MINMTU { len } else { 0 };
++            self.lift_mtu_to_minmtu();
+             self.maxmtu = self.cap;
+             self.phase = PmtuPhase::Discovery { sent: 1 };
+             return out;
+@@ -420,6 +422,7 @@ impl PmtuState {
+ 
+         if len >= MINMTU && self.minmtu < len {
+             self.minmtu = len;
++            self.lift_mtu_to_minmtu();
+             self.try_fix_mtu(&mut out);
+         }
+ 
+@@ -469,9 +472,27 @@ impl PmtuState {
+         self.debug_check_bounds();
+     }
+ 
+-    /// `mtu` is not checked against `minmtu`: it survives rediscovery
+-    /// (`minmtu = 0`) by design.
++    /// Relayed `MTU_INFO` hint, used until discovery fixes `mtu`.
++    /// Floored at `minmtu`: hearsay never beats our own measurement.
++    pub(crate) fn set_provisional_mtu(&mut self, mtu: u16) {
++        self.mtu = mtu.max(self.minmtu);
++        self.debug_check_bounds();
++    }
++
++    /// A non-zero `mtu` (kept across rediscovery, or a provisional
++    /// hint) must not stay below a freshly proven `minmtu`: `route`
++    /// would answer frames in `(mtu, minmtu]` with frag-needed and
++    /// clamp MSS to `mtu`. `0` stays: it means "not discovered yet".
++    const fn lift_mtu_to_minmtu(&mut self) {
++        if self.mtu != 0 && self.mtu < self.minmtu {
++            self.mtu = self.minmtu;
++        }
++    }
++
++    /// `mtu` survives rediscovery (`minmtu = 0`) by design, but is
++    /// never below a non-zero `minmtu` unless still undiscovered (`0`).
+     const fn debug_check_bounds(&self) {
++        debug_assert!(self.mtu == 0 || self.mtu >= self.minmtu, "mtu below minmtu");
+         debug_assert!(
+             self.minmtu == 0 || (self.minmtu >= MINMTU && self.minmtu <= MTU),
+             "minmtu outside 0 / MINMTU..=MTU"
+diff --git a/crates/tincd/src/udp_path.rs b/crates/tincd/src/udp_path.rs
+index bd05b0ec..8b5059a5 100644
+--- a/crates/tincd/src/udp_path.rs
++++ b/crates/tincd/src/udp_path.rs
+@@ -236,7 +236,7 @@ impl UdpPath {
+ 
+     pub(crate) fn set_provisional_mtu(&mut self, mtu: u16) {
+         if let Some(p) = self.pmtu.as_mut() {
+-            p.mtu = mtu;
++            p.set_provisional_mtu(mtu);
+         }
+     }
+ 
+@@ -299,6 +299,43 @@ mod tests {
+         }
+     }
+ 
++    /// Live on starkstrom→shodan: cold revalidation of a path converged
++    /// at 1399 kept `mtu`, a relayed `MTU_INFO` hint then set `mtu` to
++    /// 989/1009 while our own probes had already proven 1003/1012
++    /// (`pmtu 989 (min 1003 max 1439)`). `mtu` gates the frag-needed
++    /// ICMP and MSS clamp in `route`, so hearsay below our measurement
++    /// must not stick, neither set after nor before the minmtu raise.
++    #[test]
++    fn provisional_mtu_never_below_measured_minmtu() {
++        let now = Instant::now();
++        let mut p = UdpPath::default();
++        p.on_authenticated_rx(ua("192.0.2.1:655"), 0, now);
++        let pm = p.pmtu_mut(now);
++        pm.ping_sent = true;
++        let _ = pm.on_probe_reply(1399, now);
++        pm.mtu = 1399;
++        pm.minmtu = 1399;
++        pm.maxmtu = 1399;
++        p.on_timeout();
++        assert_eq!(p.mtu(), 1399, "mtu survives rediscovery");
++
++        // Probe reply first, hint second.
++        let _ = p.pmtu_mut(now).on_probe_reply(1003, now);
++        p.set_provisional_mtu(989);
++        assert_eq!((p.mtu(), p.minmtu()), (1003, 1003));
++
++        // Hint first, probe reply second.
++        p.set_provisional_mtu(1009);
++        assert_eq!(p.mtu(), 1009);
++        let _ = p.pmtu_mut(now).on_probe_reply(1012, now);
++        assert_eq!((p.mtu(), p.minmtu()), (1012, 1012));
++
++        // Same for the meta-channel ack (tincr extension).
++        p.pmtu_mut(now).ping_sent = true;
++        assert_eq!(p.on_meta_ack(1020, now), Some(true));
++        assert_eq!((p.mtu(), p.minmtu()), (1020, 1020));
++    }
++
+     #[test]
+     fn hint_does_not_displace_confirmed_addr() {
+         let now = Instant::now();
+-- 
+2.56.0
+

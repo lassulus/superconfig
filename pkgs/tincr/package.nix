@@ -43,6 +43,11 @@ lib.throwIf (srcHas "crates/tincd/src/udp_path.rs" "fn release_unanswered_seen("
   lib.throwIf
   (srcHas "crates/tincd/src/daemon/net/rx.rs" "moved from {old} to {src}")
   "pkgs/tincr: the pinned tincr re-advertises roamed UDP paths, remove readvertise-roamed-udp.patch"
+  # Keeps a relayed MTU hint from pushing mtu below the minmtu our own
+  # probes proved (starkstrom saw `pmtu 989 (min 1003)` for shodan).
+  lib.throwIf
+  (srcHas "crates/tincd/src/pmtu.rs" "fn lift_mtu_to_minmtu(")
+  "pkgs/tincr: the pinned tincr floors provisional MTUs, remove provisional-mtu-floor.patch"
   rustPlatform.buildRustPackage
   {
     pname = "tincr";
@@ -54,6 +59,7 @@ lib.throwIf (srcHas "crates/tincd/src/udp_path.rs" "fn release_unanswered_seen("
       ./release-unanswered-seen.patch
       ./advertise-nat-udp-port.patch
       ./readvertise-roamed-udp.patch
+      ./provisional-mtu-floor.patch
     ];
 
     cargoHash = "sha256-GZBCoFmtnhm3VqoMxIPl0+STJmz33pPsS+fgU7ic+D4=";
