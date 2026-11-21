@@ -137,6 +137,10 @@ for kind, id, series_id, title, s in subtitles():
         mtime = os.stat(path).st_mtime
     except FileNotFoundError:
         continue
+    # one unreadable file must not stop the run for the rest of the library
+    if not os.access(path, os.R_OK):
+        log("%s: %s: not readable, skipped" % (title, path))
+        continue
     # checked on every run, also for files synced before this check existed
     if wrong_script(path, s["code2"]):
         log("%s: %s: not written in %s's script" % (title, path, s["code2"]))
