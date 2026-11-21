@@ -22,8 +22,8 @@ let
   moonlightCommon = fetchFromGitHub {
     owner = "MrCreativ3001";
     repo = "moonlight-common-rust";
-    rev = "a972937b2e84b21a6a390873930e3afe4cfa767d";
-    hash = "sha256-itOCsQ061cfnmX4heOMOIVFSQi2uJbCL9ph0rW4cfPg=";
+    rev = "62bf8579166fd2e934b23924b2765114ab5c18e6";
+    hash = "sha256-6RnJmVRHQWnZ60xpdP/97eUw2xdUBuaMpGpGIJaSfow=";
   };
 
   # Crates for ubrn's two cargo builds: the bindings crate (native, in the
@@ -46,27 +46,16 @@ let
 in
 rustPlatform.buildRustPackage (finalAttrs: {
   pname = "moonlight-web-stream";
-  version = "3.0.1";
+  version = "3.0.2";
 
   src = fetchFromGitHub {
     owner = "MrCreativ3001";
     repo = "moonlight-web-stream";
     tag = "v${finalAttrs.version}";
-    hash = "sha256-0TLTSUm5bOrauaKwvW7lvnT1QY2poRsLGZVXdUJjIaQ=";
+    hash = "sha256-w3JihrdWsTW7IaElFR5cU695UZZYpdy7ywjLJwvtgi4=";
   };
 
-  cargoHash = "sha256-deoJfH/8CbmPCh1Jf4XETKxhncgF1UZdKuXi7tk7kn4=";
-
-  # moonlight-common-rust can't decrypt video yet (a TODO upstream), so a
-  # Sunshine with mandatory encryption (configs/sunray.nix) sends packets
-  # 32 bytes longer than expected and every stream ends right away with
-  # "a received video rtp packet doesn't have the configured packet size".
-  # The server's video stream only; the frontend's wasm build never
-  # receives video from Sunshine.
-  postPatch = ''
-    patch -p1 -d "$cargoDepsCopy"/source-git-0/moonlight-common-0.1.0 \
-      < ${./video-encryption.patch}
-  '';
+  cargoHash = "sha256-zIY/rG/ZJHXloH9e9ebCYFQpFNMsB0ho/qWaMS0ITk0=";
 
   npmDeps = fetchNpmDeps {
     inherit (finalAttrs) src;
