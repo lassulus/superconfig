@@ -81,6 +81,15 @@ in
     script = "${config.systemd.package}/bin/systemctl restart agentd.service";
   };
 
+  # Agents, their tools and their cargo/compilers all run in this unit's
+  # cgroup. Cap it so a busy agent is throttled (High) and at worst killed
+  # inside its own unit (Max) instead of the kernel OOM killer taking down
+  # phonetpm, dbus or Hermes. Percent of the host's RAM.
+  systemd.services.agentd.serviceConfig = {
+    MemoryHigh = "45%";
+    MemoryMax = "55%";
+  };
+
   # Inherited by every agent.
   systemd.services.agentd.environment = {
     GIT_AUTHOR_NAME = "slopulus";
