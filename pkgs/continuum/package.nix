@@ -7,19 +7,17 @@
   openssl,
   zstd,
   sqlite,
+  openssh,
 }:
 rustPlatform.buildRustPackage {
   pname = "continuum";
-  version = "1.0.0-unstable-2026-11-17";
+  version = "1.0.0-unstable-2026-11-19";
 
   src = fetchgit {
     url = "https://cgit.krebsco.de/continuum";
-    rev = "393fb4d70fc6bf88debc4ca13d644ea7de9602f5";
-    hash = "sha256-QZg8TyFdIxzqZJUHsrnyoukQpw9RmMej8etNWqbzpTk=";
+    rev = "10786d2e598865cd6e763df08f692cfc0f756908";
+    hash = "sha256-jq8kkb6wSO6Kd2EBq9WhCCkByOX27tb23fY57skIZGo=";
   };
-
-  # ECDSA party keys and ssh-agent signing, not upstream yet
-  patches = [ ./ecdsa-keys.patch ];
 
   # upstream has no Cargo.lock
   cargoLock.lockFile = ./Cargo.lock;
@@ -34,6 +32,9 @@ rustPlatform.buildRustPackage {
     sqlite
     zstd
   ];
+
+  # the key tests sign through ssh-agent and check with ssh-keygen, and fail without them
+  nativeCheckInputs = [ openssh ];
 
   buildNoDefaultFeatures = true;
   buildFeatures = [

@@ -23,8 +23,10 @@ trap 'rm -rf "$src"' EXIT
 git -C "$src" init -q
 git -C "$src" fetch -q --depth 1 "$url" "$new_rev"
 git -C "$src" checkout -q FETCH_HEAD
-# the lock covers what our patches add to Cargo.toml
+# the lock covers what our patches (if any) add to Cargo.toml
+shopt -s nullglob
 for p in "$dir"/*.patch; do git -C "$src" apply "$PWD/$p"; done
+shopt -u nullglob
 new_date=$(git -C "$src" log -1 --format=%cs)
 nix shell nixpkgs#cargo -c cargo generate-lockfile --manifest-path "$src/Cargo.toml"
 cp "$src/Cargo.lock" "$dir/Cargo.lock"
