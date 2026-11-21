@@ -36,6 +36,23 @@
   ];
   # 32 GB RAM: parallel rustc/ld builds (~10 GB each) OOM'd with max-jobs=16
   nix.settings.max-jobs = 4;
+  # cores = 0 lets each of those jobs run 16 compilers (a C++ build alone
+  # held 7 GB in 16 cc1plus); 4 jobs x 4 cores keeps the CPUs busy.
+  nix.settings.cores = 4;
+  # Builds run in nix-daemon's cgroup, not in the caller's (agentd, Hermes,
+  # deploys): cap them like agentd so they can't take the host down.
+  systemd.services.nix-daemon.serviceConfig = {
+    MemoryHigh = "35%";
+    MemoryMax = "45%";
+  };
+  # No swap partition and the root is ZFS (no swapfiles, zvol swap can
+  # deadlock under memory pressure): compressed swap in RAM gives the
+  # kernel room to push out idle pages before it has to kill.
+  zramSwap = {
+    enable = true;
+    algorithm = "zstd";
+    memoryPercent = 50;
+  };
 
   services.tor = {
     enable = true;
