@@ -15,11 +15,16 @@
           "${pkgs.pinentry_mac}/${pkgs.pinentry_mac.binaryPath}"
         else
           "${self'.packages.pinentry-rofi}/bin/pinentry-rofi";
+      x11Path = lib.makeBinPath [
+        pkgs.xdotool
+        pkgs.xwd
+      ];
     in
     {
-      # stdio MCP server (bin/browser-mcp) plus the native messaging host
-      # Firefox spawns for the extension (bin/browser-mcp-host, manifest in
-      # lib/mozilla/native-messaging-hosts).
+      # MCP server (bin/browser-mcp, stdio or --http) plus the native
+      # messaging host Firefox spawns for the extension (bin/browser-mcp-host,
+      # manifest in lib/mozilla/native-messaging-hosts). On Linux the server
+      # gets xdotool and xwd for its --x11 tools.
       packages.browser-mcp = pkgs.stdenv.mkDerivation {
         pname = "browser-mcp";
         version = (lib.importJSON ./extension/manifest.json).version;
@@ -41,7 +46,8 @@
           runHook preInstall
           install -Dm755 browser_mcp.py $out/libexec/browser_mcp.py
           makeWrapper ${python}/bin/python $out/bin/browser-mcp \
-            --add-flags $out/libexec/browser_mcp.py
+            --add-flags $out/libexec/browser_mcp.py \
+            ${lib.optionalString pkgs.stdenv.hostPlatform.isLinux "--prefix PATH : ${x11Path}"}
           makeWrapper ${python}/bin/python $out/bin/browser-mcp-host \
             --add-flags "$out/libexec/browser_mcp.py host"
 
