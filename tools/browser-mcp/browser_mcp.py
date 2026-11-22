@@ -245,24 +245,25 @@ async def run_x(*args: str) -> bytes:
 
 
 def xwd_to_png(xwd: bytes) -> bytes:
-    """Convert a 32 bits per pixel TrueColor xwd dump to an RGB PNG."""
+    """Convert a 24 or 32 bits per pixel TrueColor xwd dump to an RGB PNG."""
     h = struct.unpack(">25I", xwd[:100])
     header_size, width, height, byte_order = h[0], h[4], h[5], h[7]
     bits_per_pixel, bytes_per_line, ncolors = h[11], h[12], h[19]
-    if bits_per_pixel != 32:
+    if bits_per_pixel not in (24, 32):
         raise BrowserError(f"unsupported xwd bits per pixel: {bits_per_pixel}")
+    size = bits_per_pixel // 8
     # Byte offset of each colour channel within a pixel.
     offsets = []
     for mask in h[14:17]:
         byte = (mask.bit_length() - 8) // 8
-        offsets.append(byte if byte_order == 0 else 3 - byte)
+        offsets.append(byte if byte_order == 0 else size - 1 - byte)
     pixels = xwd[header_size + 12 * ncolors :]
     raw = bytearray()
     for y in range(height):
-        row = pixels[y * bytes_per_line : y * bytes_per_line + width * 4]
+        row = pixels[y * bytes_per_line : y * bytes_per_line + width * size]
         line = bytearray(width * 3)
         for channel, offset in enumerate(offsets):
-            line[channel::3] = row[offset::4]
+            line[channel::3] = row[offset::size]
         raw += b"\0" + line
 
     def chunk(kind: bytes, data: bytes) -> bytes:
