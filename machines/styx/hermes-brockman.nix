@@ -71,7 +71,7 @@ in
     preBackup = ''
       rm -rf /var/backup/hermes-brockman
       cd ${cfg.stateDir}
-      ${pkgs.findutils}/bin/find . -name '*.db' -not -path './.hermes/cache/*' -type f | while read -r f; do
+      ${pkgs.findutils}/bin/find . -name '*.db' -not -path './.cache/*' -not -path './.hermes/cache/*' -type f | while read -r f; do
         mkdir -p "/var/backup/hermes-brockman/$(dirname "$f")"
         ${pkgs.sqlite}/bin/sqlite3 -cmd ".timeout 60000" "$f" ".backup '/var/backup/hermes-brockman/$f'"
       done
