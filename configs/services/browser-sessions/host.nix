@@ -43,6 +43,8 @@ in
       clientIdFile = config.clan.core.vars.generators.browser-sessions-oidc.files.client-id.path;
     };
     publicAddress = self.inputs.kartei.hosts.${common.proxy}.nets.internet.ip4.addr;
+    # proxy.nix forwards the UDP ports to this address
+    privateAddress = self.inputs.kartei.hosts.${config.networking.hostName}.nets.retiolum.ip4.addr;
     inherit slots;
   };
 

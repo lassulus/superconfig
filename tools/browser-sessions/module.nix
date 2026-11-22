@@ -135,6 +135,14 @@ in
       type = lib.types.str;
       description = "IPv4 address WebRTC clients reach the slots' UDP ports at (neko's NAT 1:1 address).";
     };
+    privateAddress = lib.mkOption {
+      type = lib.types.str;
+      description = ''
+        IPv4 address of this host that publicAddress forwards the UDP ports
+        to. neko's UDP mux listens only there, so it answers the forwarded
+        checks from the socket they arrived on.
+      '';
+    };
     screen = lib.mkOption {
       type = lib.types.str;
       default = "1280x720@30";
@@ -263,6 +271,7 @@ in
         );
         NEKO_SESSION_IMPLICIT_HOSTING = "true";
         NEKO_WEBRTC_NAT1TO1 = cfg.publicAddress;
+        NEKO_WEBRTC_UDPMUX_IPS = cfg.privateAddress;
         NEKO_LEGACY = "false";
         NEKO_SERVER_METRICS = "false";
       };
