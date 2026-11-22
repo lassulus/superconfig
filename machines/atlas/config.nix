@@ -14,6 +14,8 @@
     ../../configs/network-manager.nix
     ../../configs/retiolum.nix
     ../../configs/services/continuum
+    # shared browser sessions (browser.lassul.us through neoprism)
+    ../../configs/services/browser-sessions/host.nix
     ../../configs/steam.nix
     ./cast.nix
     ./llm.nix
