@@ -878,15 +878,16 @@
         ]
       },
       "locked": {
-        "lastModified": 1795123340,
-        "narHash": "sha256-rrCZF/M6fQ9coOMTvpwYVwfZhLs6tn0OXLf1dC8dblE=",
-        "owner": "Mic92",
+        "lastModified": 1795162934,
+        "narHash": "sha256-9ttkpWOfD2wmKLdRSLcrICT/s4braNwynwqj/XUOa3U=",
+        "owner": "lassulus",
         "repo": "tincr",
-        "rev": "2976721100356729301a337b4e4e71f62ba3f7ce",
+        "rev": "2814212c308677155f60a2eb1621d7479879f61e",
         "type": "github"
       },
       "original": {
-        "owner": "Mic92",
+        "owner": "lassulus",
+        "ref": "darwin-mask-no-pow",
         "repo": "tincr",
         "type": "github"
       }

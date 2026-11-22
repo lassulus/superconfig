@@ -39,7 +39,8 @@
 
     # Only for darwinModules.tincr (launchd plumbing); the package comes
     # from pkgs/tincr, which pins the same upstream branch.
-    tincr.url = "github:Mic92/tincr";
+    # Fork branch until Mic92/tincr PR 191 (darwin module without lib.pow) is merged.
+    tincr.url = "github:lassulus/tincr/darwin-mask-no-pow";
     tincr.inputs.nixpkgs.follows = "nixpkgs";
     tincr.inputs.treefmt-nix.follows = "treefmt-nix";
 
