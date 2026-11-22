@@ -1,8 +1,10 @@
 # The browser-sessions gateway and the session units it starts. Session i
 # runs in browser-session@i.service: Xorg (neko's dummy setup), pulseaudio,
 # openbox, Firefox with the browser-mcp extension, neko and browser-mcp's
-# HTTP server, as a dynamic user whose home is the unit's private /tmp, so
-# systemd deletes the profile when the session stops.
+# HTTP server, as a dynamic user. Its home with the Firefox profile is the
+# unit's StateDirectory, which outlives restarts and reboots until the
+# gateway cleans it when the session is killed; sockets, the X display and
+# caches stay in the unit's private /tmp.
 {
   config,
   lib,
@@ -32,6 +34,11 @@ let
       lockPref("browser.aboutwelcome.enabled", false);
       lockPref("browser.tabs.closeWindowWithLastTab", false);
       lockPref("datareporting.policy.dataSubmissionPolicyBypassNotification", true);
+      // reopen the previous tabs on every start, also after a crash or a
+      // reboot, without the about:sessionrestore page (-1: never)
+      lockPref("browser.startup.page", 3);
+      lockPref("browser.sessionstore.resume_from_crash", true);
+      lockPref("browser.sessionstore.max_resumed_crashes", -1);
     '';
   };
 
@@ -84,6 +91,9 @@ let
       browser-mcp --http "$BROWSER_MCP_HTTP" --x11 &
       # Firefox comes back when someone closes its last window
       while true; do
+        # a lock left by a crash or reboot names a dead pid that may now be
+        # someone else's; only this loop runs Firefox on the profile
+        rm -f "$HOME/profile/lock" "$HOME/profile/.parentlock"
         ${lib.getExe firefox} --no-remote --profile "$HOME/profile"
         sleep 1
       done &
@@ -164,18 +174,33 @@ in
     };
     users.groups.browser-sessions = { };
 
-    # the gateway may start and stop the session units, nothing else
+    # the gateway may start, stop and clean (delete the state of) the
+    # session units, nothing else; systemctl clean refs the unit to wait for
+    # the cleaning
     security.polkit.enable = true;
     security.polkit.extraConfig = ''
       polkit.addRule(function(action, subject) {
         if (action.id == "org.freedesktop.systemd1.manage-units" &&
             subject.user == "browser-sessions" &&
             /^browser-session@[0-9]+\.service$/.test(action.lookup("unit")) &&
-            ["start", "stop"].indexOf(action.lookup("verb")) >= 0) {
+            ["start", "stop", "clean", "ref"].indexOf(action.lookup("verb")) >= 0) {
           return polkit.Result.YES;
         }
       });
     '';
+    # systemd's D-Bus policy lets only root call CleanUnit; polkit above
+    # still limits it to the session units
+    services.dbus.packages = [
+      (pkgs.writeTextDir "share/dbus-1/system.d/browser-sessions.conf" ''
+        <busconfig>
+          <policy user="browser-sessions">
+            <allow send_destination="org.freedesktop.systemd1"
+                   send_interface="org.freedesktop.systemd1.Manager"
+                   send_member="CleanUnit"/>
+          </policy>
+        </busconfig>
+      '')
+    ];
 
     systemd.services.browser-sessions = {
       description = "Gateway of the shared browser sessions";
@@ -239,7 +264,8 @@ in
     systemd.services."browser-session@" = {
       description = "Shared browser session %i";
       environment = {
-        HOME = "/tmp/home";
+        HOME = "/var/lib/browser-session/%i";
+        XDG_CACHE_HOME = "/tmp/cache";
         XDG_RUNTIME_DIR = "/tmp/run";
         DISPLAY = ":1";
         PULSE_SERVER = "unix:/tmp/pulseaudio.socket";
@@ -276,6 +302,9 @@ in
           "/var/lib/browser-sessions/slots/%i.env"
         ];
         DynamicUser = true;
+        # /var/lib/private/browser-session/<i>, owned by the instance's user
+        StateDirectory = "browser-session/%i";
+        StateDirectoryMode = "0700";
         # one user per instance; without User= all instances share one
         User = "browser-session-%i";
         Restart = "on-failure";

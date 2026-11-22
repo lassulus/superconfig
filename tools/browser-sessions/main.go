@@ -89,24 +89,31 @@ func (se *session) newRoleContext(r role) {
 	se.ctx[r], se.revoke[r] = context.WithCancel(context.Background())
 }
 
-// units starts and stops the systemd unit of a slot.
+// units starts the systemd unit of a slot, and stops it and deletes its
+// state.
 type units interface {
 	Start(slot int) error
-	Stop(slot int) error
+	Remove(slot int) error
 }
 
 type systemctl struct{ bin, unit string }
 
-func (s systemctl) run(verb string, slot int) error {
-	out, err := exec.Command(s.bin, verb, fmt.Sprintf(s.unit, slot)).CombinedOutput()
+func (s systemctl) run(slot int, args ...string) error {
+	out, err := exec.Command(s.bin, append(args, fmt.Sprintf(s.unit, slot))...).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("systemctl %s: %v: %s", verb, err, strings.TrimSpace(string(out)))
+		return fmt.Errorf("systemctl %s: %v: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }
 
-func (s systemctl) Start(slot int) error { return s.run("start", slot) }
-func (s systemctl) Stop(slot int) error  { return s.run("stop", slot) }
+func (s systemctl) Start(slot int) error { return s.run(slot, "start") }
+
+func (s systemctl) Remove(slot int) error {
+	if err := s.run(slot, "stop"); err != nil {
+		return err
+	}
+	return s.run(slot, "clean", "--what=state")
+}
 
 type server struct {
 	cfg          config
@@ -280,6 +287,8 @@ func (s *server) regenerate(id, owner string, r role) (string, error) {
 	return token, s.save()
 }
 
+// kill stops a session and deletes its state for good. If that fails the
+// session stays, so its slot never starts with an old profile.
 func (s *server) kill(id, owner string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -287,13 +296,15 @@ func (s *server) kill(id, owner string) error {
 	if !ok {
 		return os.ErrNotExist
 	}
-	log.Printf("session %s: killed", id)
+	if err := s.units.Remove(se.Slot); err != nil {
+		return err
+	}
 	se.revoke[controller]()
 	se.revoke[viewer]()
-	err := s.units.Stop(se.Slot)
 	os.Remove(s.envPath(se.Slot))
 	delete(s.sessions, se.ID)
-	return errors.Join(err, s.save())
+	log.Printf("session %s: killed", id)
+	return s.save()
 }
 
 // touch counts a proxied request as connected until the returned func runs.

@@ -19,19 +19,27 @@ import (
 type fakeUnits struct {
 	mu      sync.Mutex
 	running map[int]bool
+	// slots whose state was deleted
+	cleaned map[int]bool
+	fail    error
 }
 
 func (f *fakeUnits) Start(slot int) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.running[slot] = true
+	delete(f.cleaned, slot)
 	return nil
 }
 
-func (f *fakeUnits) Stop(slot int) error {
+func (f *fakeUnits) Remove(slot int) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.fail != nil {
+		return f.fail
+	}
 	delete(f.running, slot)
+	f.cleaned[slot] = true
 	return nil
 }
 
@@ -82,7 +90,7 @@ type fixture struct {
 }
 
 func setup(t *testing.T) *fixture {
-	f := &fixture{units: &fakeUnits{running: map[int]bool{}}, neko: newBackend(t), mcp: newBackend(t), now: time.Unix(1_800_000_000, 0)}
+	f := &fixture{units: &fakeUnits{running: map[int]bool{}, cleaned: map[int]bool{}}, neko: newBackend(t), mcp: newBackend(t), now: time.Unix(1_800_000_000, 0)}
 	cfg := config{
 		URL:      "https://browser.example",
 		StateDir: t.TempDir(),
@@ -241,11 +249,21 @@ func TestKill(t *testing.T) {
 		t.Fatal("session lost on restart")
 	}
 
+	// a failed stop/clean keeps the session, so the slot never reuses old state
+	f.units.fail = errors.New("clean failed")
+	if status, _ := f.do(t, "POST", "/sessions/"+l.ID+"/kill", "alice", ""); status != http.StatusInternalServerError {
+		t.Fatalf("kill with failing clean: %d", status)
+	}
+	if status, _ := f.do(t, "GET", "/s/"+control+"/x", "", ""); status != 200 {
+		t.Fatalf("token after failed kill: %d", status)
+	}
+
+	f.units.fail = nil
 	if status, _ := f.do(t, "POST", "/sessions/"+l.ID+"/kill", "alice", ""); status != http.StatusNoContent {
 		t.Fatalf("kill: %d", status)
 	}
-	if f.units.running[0] {
-		t.Fatal("unit of the killed session still running")
+	if f.units.running[0] || !f.units.cleaned[0] {
+		t.Fatal("unit of the killed session not stopped and cleaned")
 	}
 	if _, err := os.Stat(f.s.envPath(0)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("env file of the killed session: %v", err)
