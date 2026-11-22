@@ -2,8 +2,8 @@
 // creates sessions on the management page; each session runs in a systemd
 // unit (neko + Firefox + browser-mcp) on a fixed slot of ports, and two
 // random tokens give access to it: /s/<control>/ (watch and control, MCP at
-// /s/<control>/mcp) and /s/<view>/ (watch only). A session lasts until its
-// owner kills it.
+// /s/<control>/mcp) and /s/<view>/ (watch only). The page shows the owner
+// both links of every session. A session lasts until its owner kills it.
 package main
 
 import (
@@ -25,6 +25,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"unicode/utf8"
 )
 
 type config struct {
@@ -61,18 +62,24 @@ func (r role) String() string {
 	return "view"
 }
 
-// session is one running browser. Tokens are only kept as SHA-256 hashes;
-// the passwords and the MCP token are internal and never leave the host.
+// session is one running browser. sessions.json is 0600 and holds the
+// tokens, so the owner's page can always show the links, next to the neko
+// passwords and the MCP token, which are internal and never leave the host.
 type session struct {
 	ID              string    `json:"id"`
+	Name            string    `json:"name,omitempty"`
 	Owner           string    `json:"owner"`
 	Slot            int       `json:"slot"`
-	ControlHash     []byte    `json:"control_hash"`
-	ViewHash        []byte    `json:"view_hash"`
+	ControlToken    string    `json:"control_token,omitempty"`
+	ViewToken       string    `json:"view_token,omitempty"`
 	ControlPassword string    `json:"control_password"`
 	ViewPassword    string    `json:"view_password"`
 	MCPToken        string    `json:"mcp_token"`
 	Created         time.Time `json:"created"`
+	// SHA-256 of the tokens of sessions from before the tokens were kept;
+	// regenerating the role's token replaces it with the token
+	ControlHash []byte `json:"control_hash,omitempty"`
+	ViewHash    []byte `json:"view_hash,omitempty"`
 
 	// proxied requests in flight (websockets and MCP streams included)
 	active int
@@ -87,6 +94,19 @@ func (se *session) newRoleContext(r role) {
 		se.revoke[r]()
 	}
 	se.ctx[r], se.revoke[r] = context.WithCancel(context.Background())
+}
+
+// hash is the SHA-256 of the role's token: of the stored token, or the
+// stored hash of a session from before the tokens were kept.
+func (se *session) hash(r role) []byte {
+	token, h := se.ViewToken, se.ViewHash
+	if r == controller {
+		token, h = se.ControlToken, se.ControlHash
+	}
+	if token != "" {
+		return hashToken(token)
+	}
+	return h
 }
 
 // units starts the systemd unit of a slot, and stops it and deletes its
@@ -191,8 +211,8 @@ func hashToken(token string) []byte {
 	return h[:]
 }
 
-// lookup finds the session and role of a token, comparing against every
-// session's hashes in constant time.
+// lookup finds the session and role of a token, comparing its hash against
+// every session's in constant time.
 func (s *server) lookup(token string) (*session, role, bool) {
 	h := hashToken(token)
 	var found *session
@@ -200,20 +220,38 @@ func (s *server) lookup(token string) (*session, role, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, se := range s.sessions {
-		if subtle.ConstantTimeCompare(h, se.ControlHash) == 1 {
+		if subtle.ConstantTimeCompare(h, se.hash(controller)) == 1 {
 			found, r = se, controller
 		}
-		if subtle.ConstantTimeCompare(h, se.ViewHash) == 1 {
+		if subtle.ConstantTimeCompare(h, se.hash(viewer)) == 1 {
 			found, r = se, viewer
 		}
 	}
 	return found, r, found != nil
 }
 
-var errFull = errors.New("all session slots are in use")
+var (
+	errFull = errors.New("all session slots are in use")
+	errName = fmt.Errorf("names have at most %d characters", maxName)
+)
+
+const maxName = 100
+
+// cleanName trims a session name and checks its length; "" means no name.
+func cleanName(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if utf8.RuneCountInString(name) > maxName {
+		return "", errName
+	}
+	return name, nil
+}
 
 // create starts a session for owner and returns it with its two tokens.
-func (s *server) create(owner string) (*session, string, string, error) {
+func (s *server) create(owner, name string) (*session, string, string, error) {
+	name, err := cleanName(name)
+	if err != nil {
+		return nil, "", "", err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	used := map[int]bool{}
@@ -234,10 +272,11 @@ func (s *server) create(owner string) (*session, string, string, error) {
 	control, view := rand.Text(), rand.Text()
 	se := &session{
 		ID:              rand.Text()[:10],
+		Name:            name,
 		Owner:           owner,
 		Slot:            free,
-		ControlHash:     hashToken(control),
-		ViewHash:        hashToken(view),
+		ControlToken:    control,
+		ViewToken:       view,
 		ControlPassword: rand.Text(),
 		ViewPassword:    rand.Text(),
 		MCPToken:        rand.Text(),
@@ -278,13 +317,29 @@ func (s *server) regenerate(id, owner string, r role) (string, error) {
 	}
 	token := rand.Text()
 	if r == controller {
-		se.ControlHash = hashToken(token)
+		se.ControlToken, se.ControlHash = token, nil
 	} else {
-		se.ViewHash = hashToken(token)
+		se.ViewToken, se.ViewHash = token, nil
 	}
 	se.newRoleContext(r)
 	log.Printf("session %s: new %s token", id, r)
 	return token, s.save()
+}
+
+// rename sets the name of a session; "" removes it.
+func (s *server) rename(id, owner, name string) error {
+	name, err := cleanName(name)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	se, ok := s.owned(id, owner)
+	if !ok {
+		return os.ErrNotExist
+	}
+	se.Name = name
+	return s.save()
 }
 
 // kill stops a session and deletes its state for good. If that fails the

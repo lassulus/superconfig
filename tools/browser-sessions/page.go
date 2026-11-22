@@ -20,14 +20,15 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("POST /logout", s.handleLogout)
 	mux.HandleFunc("POST /sessions", s.handleCreate)
 	mux.HandleFunc("POST /sessions/{id}/regenerate/{role}", s.handleRegenerate)
+	mux.HandleFunc("POST /sessions/{id}/rename", s.handleRename)
 	mux.HandleFunc("POST /sessions/{id}/kill", s.handleKill)
 	mux.HandleFunc("/s/{token}", s.handleSession)
 	mux.HandleFunc("/s/{token}/{rest...}", s.handleSession)
 	return mux
 }
 
-// links are the new links of a session after creating it or regenerating a
-// token; only these responses show tokens.
+// links are the links of a session; an empty one is a token from before
+// the tokens were kept, until it is regenerated.
 type links struct {
 	ID      string `json:"id"`
 	Control string `json:"control,omitempty"`
@@ -36,7 +37,8 @@ type links struct {
 }
 
 type sessionInfo struct {
-	ID        string    `json:"id"`
+	links
+	Name      string    `json:"name,omitempty"`
 	Created   time.Time `json:"created"`
 	Connected bool      `json:"connected"`
 }
@@ -44,25 +46,26 @@ type sessionInfo struct {
 var page = template.Must(template.New("page").Parse(`<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
 <title>Browser sessions</title>
-<style>body{font-family:sans-serif;max-width:50em;margin:2em auto;padding:0 1em}form{display:inline}td,th{padding:.2em .6em;text-align:left}code{word-break:break-all}</style>
+<style>body{font-family:sans-serif;max-width:50em;margin:2em auto;padding:0 1em}form{display:inline}section{border-top:1px solid #ccc;margin-top:1em}code{word-break:break-all}small{color:#666}</style>
 </head><body>
 <h1>Browser sessions</h1>
 {{if not .Owner}}<p><a href="/login">Log in</a> to create sessions.</p>{{else}}
-{{with .Links}}<p>Links of session {{.ID}}; they are shown only now:</p><ul>
-{{if .Control}}<li>Control: <a href="{{.Control}}"><code>{{.Control}}</code></a></li>
-<li>MCP (streamable HTTP): <code>{{.MCP}}</code></li>{{end}}
-{{if .View}}<li>View only: <a href="{{.View}}"><code>{{.View}}</code></a></li>{{end}}
-</ul>{{end}}
 {{if .Error}}<p><strong>{{.Error}}</strong></p>{{end}}
-<form method="post" action="/sessions"><button>New session</button></form>
+<form method="post" action="/sessions"><input name="name" maxlength="{{.MaxName}}" placeholder="Name (optional)"> <button>New session</button></form>
 <form method="post" action="/logout"><button>Log out</button></form>
-{{if .Sessions}}<table><tr><th>Session</th><th>Created</th><th></th><th></th></tr>
-{{range .Sessions}}<tr><td>{{.ID}}</td><td>{{.Created.Format "2006-01-02 15:04"}}</td>
-<td>{{if .Connected}}connected{{end}}</td><td>
-<form method="post" action="/sessions/{{.ID}}/regenerate/control"><button>New control link</button></form>
-<form method="post" action="/sessions/{{.ID}}/regenerate/view"><button>New view link</button></form>
+{{range .Sessions}}<section>
+<h2>{{if .Name}}{{.Name}} <small>{{.ID}}</small>{{else}}{{.ID}}{{end}}</h2>
+<p>Created {{.Created.Format "2006-01-02 15:04"}}{{if .Connected}}, connected{{end}}</p>
+<ul>
+<li>View only: {{if .View}}<a href="{{.View}}"><code>{{.View}}</code></a>{{else}}link not stored, regenerate to show{{end}}
+<form method="post" action="/sessions/{{.ID}}/regenerate/view"><button>New view link</button></form></li>
+<li>Control: {{if .Control}}<a href="{{.Control}}"><code>{{.Control}}</code></a>{{else}}link not stored, regenerate to show{{end}}
+<form method="post" action="/sessions/{{.ID}}/regenerate/control"><button>New control link</button></form></li>
+{{if .MCP}}<li>MCP (streamable HTTP): <code>{{.MCP}}</code></li>{{end}}
+</ul>
+<form method="post" action="/sessions/{{.ID}}/rename"><input name="name" value="{{.Name}}" maxlength="{{$.MaxName}}" placeholder="Name"> <button>Rename</button></form>
 <form method="post" action="/sessions/{{.ID}}/kill"><button>Kill</button></form>
-</td></tr>{{end}}</table>{{end}}
+</section>{{end}}
 {{end}}
 </body></html>
 `))
@@ -77,7 +80,12 @@ func (s *server) list(sub string) []sessionInfo {
 	var out []sessionInfo
 	for _, se := range s.sessions {
 		if se.Owner == sub {
-			out = append(out, sessionInfo{ID: se.ID, Created: se.Created, Connected: se.active > 0})
+			out = append(out, sessionInfo{
+				links:     *s.links(se.ID, se.ControlToken, se.ViewToken),
+				Name:      se.Name,
+				Created:   se.Created,
+				Connected: se.active > 0,
+			})
 		}
 	}
 	slices.SortFunc(out, func(a, b sessionInfo) int { return a.Created.Compare(b.Created) })
@@ -85,7 +93,7 @@ func (s *server) list(sub string) []sessionInfo {
 }
 
 // render answers with JSON v, or the page with the owner's sessions.
-func (s *server) render(w http.ResponseWriter, r *http.Request, status int, sub string, l *links, errMsg string, v any) {
+func (s *server) render(w http.ResponseWriter, r *http.Request, status int, sub string, errMsg string, v any) {
 	if wantsJSON(r) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(status)
@@ -98,7 +106,7 @@ func (s *server) render(w http.ResponseWriter, r *http.Request, status int, sub 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
-	err := page.Execute(w, map[string]any{"Owner": sub, "Links": l, "Error": errMsg, "Sessions": s.list(sub)})
+	err := page.Execute(w, map[string]any{"Owner": sub, "Error": errMsg, "Sessions": s.list(sub), "MaxName": maxName})
 	if err != nil {
 		log.Printf("page: %v", err)
 	}
@@ -110,7 +118,23 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "log in first", http.StatusUnauthorized)
 		return
 	}
-	s.render(w, r, http.StatusOK, sub, nil, "", s.list(sub))
+	s.render(w, r, http.StatusOK, sub, "", s.list(sub))
+}
+
+// done answers a successful change with JSON v (no content if nil), or
+// sends the browser back to the page.
+func done(w http.ResponseWriter, r *http.Request, status int, v any) {
+	if !wantsJSON(r) {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	if v == nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(v)
 }
 
 func (s *server) links(id, control, view string) *links {
@@ -131,19 +155,21 @@ func (s *server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "log in first", http.StatusUnauthorized)
 		return
 	}
-	se, control, view, err := s.create(sub)
+	se, control, view, err := s.create(sub, r.FormValue("name"))
 	if err != nil {
 		status := http.StatusInternalServerError
-		if errors.Is(err, errFull) {
+		switch {
+		case errors.Is(err, errFull):
 			status = http.StatusServiceUnavailable
-		} else {
+		case errors.Is(err, errName):
+			status = http.StatusBadRequest
+		default:
 			log.Printf("create: %v", err)
 		}
-		s.render(w, r, status, sub, nil, err.Error(), nil)
+		s.render(w, r, status, sub, err.Error(), nil)
 		return
 	}
-	l := s.links(se.ID, control, view)
-	s.render(w, r, http.StatusCreated, sub, l, "", l)
+	done(w, r, http.StatusCreated, s.links(se.ID, control, view))
 }
 
 func (s *server) handleRegenerate(w http.ResponseWriter, r *http.Request) {
@@ -170,14 +196,37 @@ func (s *server) handleRegenerate(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		log.Printf("regenerate: %v", err)
-		s.render(w, r, http.StatusInternalServerError, sub, nil, err.Error(), nil)
+		s.render(w, r, http.StatusInternalServerError, sub, err.Error(), nil)
 		return
 	}
 	l := s.links(id, "", token)
 	if ro == controller {
 		l = s.links(id, token, "")
 	}
-	s.render(w, r, http.StatusOK, sub, l, "", l)
+	done(w, r, http.StatusOK, l)
+}
+
+func (s *server) handleRename(w http.ResponseWriter, r *http.Request) {
+	sub := s.owner(r)
+	if sub == "" {
+		http.Error(w, "log in first", http.StatusUnauthorized)
+		return
+	}
+	err := s.rename(r.PathValue("id"), sub, r.FormValue("name"))
+	if errors.Is(err, os.ErrNotExist) {
+		http.NotFound(w, r)
+		return
+	}
+	if errors.Is(err, errName) {
+		s.render(w, r, http.StatusBadRequest, sub, err.Error(), nil)
+		return
+	}
+	if err != nil {
+		log.Printf("rename: %v", err)
+		s.render(w, r, http.StatusInternalServerError, sub, err.Error(), nil)
+		return
+	}
+	done(w, r, http.StatusOK, nil)
 }
 
 func (s *server) handleKill(w http.ResponseWriter, r *http.Request) {
@@ -193,12 +242,8 @@ func (s *server) handleKill(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		log.Printf("kill: %v", err)
-		s.render(w, r, http.StatusInternalServerError, sub, nil, err.Error(), nil)
+		s.render(w, r, http.StatusInternalServerError, sub, err.Error(), nil)
 		return
 	}
-	if wantsJSON(r) {
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	done(w, r, http.StatusOK, nil)
 }
