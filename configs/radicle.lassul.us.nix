@@ -72,7 +72,9 @@ in
       publicExplorer = "https://app.radicle.xyz/nodes/$host/$rid$path";
       preferredSeeds = [
         "z6MkrLMMsiPWUcNPHcRajuMi9mDfYckSoJyPwwnknocNYPm7@seed.radicle.xyz:8776"
-        "z6Mkmqogy2qEM2ummccUthFEaaHvyYmYBYh3dbe9W4ebScxo@iris.radicle.network:8776"
+        # no iris.radicle.network: since 2026-11-20 it resets our sessions
+        # every ~70 s and radicle-node 1.10.3 then spins its network thread
+        # at 100 % CPU (confirmed on ignavia by blocking it)
       ];
       web.pinned.repositories = [ ];
       cli.hints = true;
