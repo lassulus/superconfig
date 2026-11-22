@@ -1,0 +1,52 @@
+--- a/server/internal/config/webrtc.go
++++ b/server/internal/config/webrtc.go
+@@ -48,6 +48,7 @@
+ 	EphemeralMax       uint16
+ 	TCPMux             int
+ 	UDPMux             int
++	UDPMuxIPs          []string
+ 
+ 	NAT1To1IPs     []string
+ 	IpRetrievalUrl string
+@@ -97,6 +98,11 @@
+ 		return err
+ 	}
+ 
++	cmd.PersistentFlags().StringSlice("webrtc.udpmux_ips", []string{}, "local IP addresses the UDP mux listens on, all if empty")
++	if err := viper.BindPFlag("webrtc.udpmux_ips", cmd.PersistentFlags().Lookup("webrtc.udpmux_ips")); err != nil {
++		return err
++	}
++
+ 	cmd.PersistentFlags().StringSlice("webrtc.nat1to1", []string{}, "sets a list of external IP addresses of 1:1 (D)NAT and a candidate type for which the external IP address is used")
+ 	if err := viper.BindPFlag("webrtc.nat1to1", cmd.PersistentFlags().Lookup("webrtc.nat1to1")); err != nil {
+ 		return err
+@@ -256,6 +262,7 @@
+ 
+ 	s.TCPMux = viper.GetInt("webrtc.tcpmux")
+ 	s.UDPMux = viper.GetInt("webrtc.udpmux")
++	s.UDPMuxIPs = viper.GetStringSlice("webrtc.udpmux_ips")
+ 
+ 	epr := viper.GetString("webrtc.epr")
+ 	if epr != "" {
+--- a/server/internal/webrtc/manager.go
++++ b/server/internal/webrtc/manager.go
+@@ -5,6 +5,7 @@
+ 	"fmt"
+ 	"io"
+ 	"net"
++	"slices"
+ 	"strings"
+ 	"sync"
+ 	"sync/atomic"
+@@ -139,6 +140,11 @@
+ 		var err error
+ 		manager.udpMux, err = ice.NewMultiUDPMuxFromPort(manager.config.UDPMux,
+ 			ice.UDPMuxFromPortWithLogger(logger.NewLogger("ice-udp")),
++			ice.UDPMuxFromPortWithIPFilter(func(ip net.IP) bool {
++				return len(manager.config.UDPMuxIPs) == 0 || slices.ContainsFunc(manager.config.UDPMuxIPs, func(s string) bool {
++					return ip.Equal(net.ParseIP(s))
++				})
++			}),
+ 		)
+ 
+ 		if err != nil {
