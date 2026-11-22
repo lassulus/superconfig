@@ -104,6 +104,9 @@
     ../../configs/sunshine-web.nix
     ../../configs/atlas-sunshine-forward.nix
 
+    # shared browser sessions on atlas (browser.lassul.us)
+    ../../configs/services/browser-sessions/proxy.nix
+
     # synced 24/7 channel (glotz.lassul.us)
     ../../configs/tv.nix
 
