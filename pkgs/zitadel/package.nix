@@ -76,7 +76,7 @@ let
     '';
 
     outputHashMode = "flat";
-    outputHash = "sha256-vsVaGO6ewwCMkK1Qh/8/JZblwICnszmfZxXAPFIAdOk=";
+    outputHash = "sha256-VBnaCJVk0pXbdb+0P8OFEHznFN8AgSKrP/1Lt0LJk7w=";
   };
 
   generateProtobufCode =
