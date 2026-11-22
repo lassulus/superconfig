@@ -56,9 +56,19 @@ in
       default = "claude-opus-5-5";
     };
 
+    # The bot gets every group message (BotFather privacy mode is off), so
+    # the shared session has the whole conversation. Messages addressed to
+    # someone else are answered with the silence marker, which Hermes drops.
+    settings.telegram.channel_prompts = lib.genAttrs allowedChats (_: ''
+      Every message in this group reaches you, also those not meant for you.
+      If a message is addressed to another person (starts with their name or
+      @handle, e.g. "Domi: ..." or "@lassulus ...", or is a reply to another
+      person's message), take it in as context and answer with exactly
+      [SILENT]. Answer everything else.
+    '');
+
     environment = {
-      # In groups only an @mention of the bot or a reply to it triggers it.
-      TELEGRAM_REQUIRE_MENTION = "true";
+      TELEGRAM_REQUIRE_MENTION = "false";
     }
     # Platform-wide sender allowlist (DMs and groups). Deliberately no
     # TELEGRAM_GROUP_ALLOWED_CHATS: that would authorize every member of the
