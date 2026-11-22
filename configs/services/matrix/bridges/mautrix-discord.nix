@@ -1,9 +1,24 @@
-{ config, pkgs, ... }:
+{
+  self,
+  config,
+  pkgs,
+  ...
+}:
 let
   appservices = config.lass.matrix-appservices;
   appservice = appservices.bridges.discord;
 in
 {
+  # mautrix-discord links libolm 3.2.16, which nixpkgs marks insecure, and
+  # unlike the bridgev2 bridges its package has no goolm option, so secureify
+  # olm via overlay. Avoids nixpkgs.config.permittedInsecurePackages which
+  # doesn't list-merge across modules.
+  nixpkgs.overlays = [
+    (_final: prev: {
+      olm = self.lib.secureify prev.olm;
+    })
+  ];
+
   services.mautrix-discord = {
     enable = true;
     # AS_TOKEN / HS_TOKEN of the registration Synapse uses (./appservices.nix);

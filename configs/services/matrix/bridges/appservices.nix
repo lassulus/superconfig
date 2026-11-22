@@ -71,29 +71,23 @@ let
 
   generator = name: "mautrix-${name}-appservice";
 
-  bridge =
-    name:
-    { port, ... }@registration:
-    let
-      address = "http://${bridgeHost.ip4}:${toString port}";
-      template = yaml.generate "${name}-registration.yaml" (
-        removeAttrs registration [ "port" ]
-        // {
-          id = name;
-          url = address;
-          as_token = "$AS_TOKEN";
-          hs_token = "$HS_TOKEN";
-          rate_limited = false;
-          "de.sorunome.msc2409.push_ephemeral" = true;
-        }
-      );
-    in
-    {
-      inherit port address;
-      # env file with AS_TOKEN and HS_TOKEN
-      tokens = config.clan.core.vars.generators.${generator name}.files.env.path;
-      # writeRegistration <tokens env file> <destination>
-      writeRegistration = pkgs.writeShellScript "write-${name}-registration" ''
+  appservice = name: registration: {
+    # env file with AS_TOKEN and HS_TOKEN
+    tokens = config.clan.core.vars.generators.${generator name}.files.env.path;
+    # writeRegistration <tokens env file> <destination>
+    writeRegistration =
+      let
+        template = yaml.generate "${name}-registration.yaml" (
+          registration
+          // {
+            id = name;
+            as_token = "$AS_TOKEN";
+            hs_token = "$HS_TOKEN";
+            rate_limited = false;
+          }
+        );
+      in
+      pkgs.writeShellScript "write-${name}-registration" ''
         set -eu
         set -a
         . "$1"
@@ -102,7 +96,40 @@ let
         # only the tokens (GNU envsubst's SHELL-FORMAT): the regexes contain `$`
         ${pkgs.gettext}/bin/envsubst '$AS_TOKEN $HS_TOKEN' < ${template} > "$2"
       '';
+  };
+
+  bridge =
+    name:
+    { port, ... }@registration:
+    let
+      address = "http://${bridgeHost.ip4}:${toString port}";
+    in
+    appservice name (
+      removeAttrs registration [ "port" ]
+      // {
+        url = address;
+        "de.sorunome.msc2409.push_ephemeral" = true;
+      }
+    )
+    // {
+      inherit port address;
     };
+
+  # Double puppeting: a bridge with this registration's AS_TOKEN in its
+  # bridgev2 config (`double_puppet.secrets."lassul.us" = "as_token:…"`) sends
+  # the messages its users write on the remote network as their own Matrix
+  # users instead of as ghosts. No url, Synapse pushes nothing to it; the
+  # namespace is not exclusive so the users stay normal users.
+  doublepuppet = appservice "doublepuppet" {
+    url = null;
+    sender_localpart = "QyhF2kWGXAsY976bpUm7Y0NlurSDTwU1";
+    namespaces.users = [
+      {
+        regex = "@.*:lassul\\.us";
+        exclusive = false;
+      }
+    ];
+  };
 in
 {
   options.lass.matrix-appservices = lib.mkOption {
@@ -117,10 +144,11 @@ in
       homeserver = "http://[${synapseHost.ip6}]:8008";
       synapseIp4 = synapseHost.ip4;
       bridges = lib.mapAttrs bridge registrations;
+      inherit doublepuppet;
     };
 
-    clan.core.vars.generators = lib.mapAttrs' (
-      name: _:
+    clan.core.vars.generators = lib.genAttrs' (lib.attrNames registrations ++ [ "doublepuppet" ]) (
+      name:
       lib.nameValuePair (generator name) {
         share = true;
         files.env = { };
@@ -129,6 +157,6 @@ in
           printf 'AS_TOKEN=%s\nHS_TOKEN=%s\n' "$(pwgen -s 64 1)" "$(pwgen -s 64 1)" > "$out"/env
         '';
       }
-    ) registrations;
+    );
   };
 }

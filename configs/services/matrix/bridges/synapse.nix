@@ -6,21 +6,24 @@
   ...
 }:
 let
-  inherit (config.lass.matrix-appservices) bridges;
+  appservices = config.lass.matrix-appservices;
+  registrations = appservices.bridges // {
+    inherit (appservices) doublepuppet;
+  };
   registration = name: "/var/lib/matrix-synapse/${name}-registration.yaml";
 in
 {
   imports = [ ./appservices.nix ];
 
   services.matrix-synapse.settings.app_service_config_files = map registration (
-    lib.attrNames bridges
+    lib.attrNames registrations
   );
 
   systemd.services.matrix-synapse.serviceConfig.ExecStartPre = lib.mapAttrsToList (
-    name: bridge:
+    name: appservice:
     "+${pkgs.writeShellScript "write-${name}-registration-for-synapse" ''
-      ${bridge.writeRegistration} ${bridge.tokens} ${registration name}
+      ${appservice.writeRegistration} ${appservice.tokens} ${registration name}
       chown matrix-synapse:matrix-synapse ${registration name}
     ''}"
-  ) bridges;
+  ) registrations;
 }

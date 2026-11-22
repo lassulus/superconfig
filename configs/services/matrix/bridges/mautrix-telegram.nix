@@ -8,66 +8,153 @@
 let
   appservices = config.lass.matrix-appservices;
   appservice = appservices.bridges.telegram;
-in
-{
-  # mautrix-telegram is the Python (Telethon) bridge and pulls in python-olm
-  # → libolm 3.2.16, which nixpkgs marks insecure. The Go-based v2 bridges
-  # (signal/whatsapp) avoid this via withGoolm; Python has no equivalent, so
-  # secureify olm via overlay. Avoids nixpkgs.config.permittedInsecurePackages
-  # which doesn't list-merge across modules.
-  nixpkgs.overlays = [
-    (_final: prev: {
-      olm = self.lib.secureify prev.olm;
-    })
-  ];
+  dataDir = "/var/lib/mautrix-telegram";
+  package = self.packages.${pkgs.stdenv.hostPlatform.system}.mautrix-telegram-go;
 
-  services.mautrix-telegram = {
-    enable = true;
-    # api_id / api_hash supplied via env (MAUTRIX_TELEGRAM_TELEGRAM_API_ID,
-    # MAUTRIX_TELEGRAM_TELEGRAM_API_HASH) so they never enter the nix store
-    environmentFile = config.clan.core.vars.generators.mautrix-telegram.files.env.path;
-    settings = {
-      homeserver = {
-        address = appservices.homeserver;
-        domain = "lassul.us";
-      };
-      appservice = {
-        inherit (appservice) address port;
-        hostname = "0.0.0.0";
-        database = "postgres:///mautrix-telegram?host=/run/postgresql";
-        id = "telegram";
-        bot_username = "telegrambot";
-        ephemeral_events = true;
-      };
-      # mautrix-telegram is the legacy Python (Telethon) bridge — config schema
-      # is the pre-bridgev2 one, so everything bridge-related lives under
-      # `bridge:`, not split into network/matrix/encryption like the v2 bridges.
-      bridge = {
-        username_template = "telegram_{userid}";
-        alias_template = "telegram_{groupname}";
-        displayname_template = "{displayname} (TG)";
-        delivery_receipts = false;
-        message_status_events = false;
-        encryption = {
-          allow = true;
-          default = true;
-          require = false;
-        };
-        permissions = {
-          "lassul.us" = "full";
-          "@lassulus:lassul.us" = "admin";
-        };
+  # bridgev2 config; the bridge fills in every key left out from its example
+  # config. Not the nixpkgs services.mautrix-telegram module: that one is for
+  # the Python bridge and merges Python defaults (appservice.database, the
+  # logging dict) into the config, which makes the Go bridge treat it as a
+  # legacy config to migrate.
+  settings = {
+    homeserver = {
+      address = appservices.homeserver;
+      domain = "lassul.us";
+    };
+    appservice = {
+      inherit (appservice) address port;
+      hostname = "0.0.0.0";
+      id = "telegram";
+      bot.username = "telegrambot";
+      ephemeral_events = true;
+      # the ghosts the Python bridge created (`telegram_{userid}`)
+      username_template = "telegram_{{.}}";
+    };
+    database = {
+      type = "postgres";
+      uri = "postgres:///mautrix-telegram?host=/run/postgresql";
+    };
+    network = {
+      displayname_template = "{{ if .Deleted }}Deleted account {{ .UserID }}{{ else }}{{ .FullName }}{{ end }} (TG)";
+      # portals for every chat, DMs included, not only the 15 most recent
+      sync = {
+        update_limit = -1;
+        create_limit = -1;
+        direct_chats = true;
       };
     };
+    matrix = {
+      delivery_receipts = false;
+      message_status_events = false;
+    };
+    bridge = {
+      personal_filtering_spaces = true;
+      permissions = {
+        "lassul.us" = "user";
+        "@lassulus:lassul.us" = "admin";
+      };
+    };
+    # Synapse has no batch sending, so only forward backfill: recent history
+    # of new portals and what was missed while the bridge was down
+    backfill = {
+      enabled = true;
+      max_initial_messages = 50;
+      max_catchup_messages = 500;
+    };
+    encryption = {
+      allow = true;
+      default = true;
+      require = false;
+      # the fixed key the Python bridge pickled its olm account with; the
+      # migration keeps that crypto store
+      pickle_key = "mautrix.bridge.e2ee";
+    };
+    provisioning.shared_secret = "disable";
+    logging = {
+      min_level = "info";
+      writers = [
+        {
+          type = "stdout";
+          format = "pretty-colored";
+        }
+      ];
+    };
   };
+  configTemplate = (pkgs.formats.json { }).generate "mautrix-telegram-config.json" settings;
+in
+{
+  users.users.mautrix-telegram = {
+    isSystemUser = true;
+    group = "mautrix-telegram";
+    home = dataDir;
+  };
+  users.groups.mautrix-telegram = { };
 
-  # the registration Synapse uses (./appservices.nix); written before the
-  # module's preStart so it neither generates its own nor other tokens
   systemd.services.mautrix-telegram = {
-    serviceConfig.LoadCredential = [ "appservice:${appservice.tokens}" ];
-    preStart = lib.mkBefore ''
-      ${appservice.writeRegistration} "$CREDENTIALS_DIRECTORY/appservice" /var/lib/mautrix-telegram/telegram-registration.yaml
+    description = "mautrix-telegram, a Matrix-Telegram puppeting bridge";
+    wantedBy = [ "multi-user.target" ];
+    wants = [ "network-online.target" ];
+    after = [ "network-online.target" ];
+    # sticker conversion
+    path = [
+      pkgs.lottieconverter
+      pkgs.ffmpeg-headless
+    ];
+
+    # the secrets go into the config only at runtime: the appservice tokens
+    # Synapse has in its registration (./appservices.nix), the double puppet
+    # token and api_id/api_hash from https://my.telegram.org/apps
+    preStart = ''
+      set -a
+      . "$CREDENTIALS_DIRECTORY/appservice"
+      . "$CREDENTIALS_DIRECTORY/telegram"
+      DOUBLEPUPPET_AS_TOKEN=$(. "$CREDENTIALS_DIRECTORY/doublepuppet" && echo "$AS_TOKEN")
+      set +a
+      umask 077
+      ${lib.getExe pkgs.jq} '
+        .appservice.as_token = env.AS_TOKEN
+        | .appservice.hs_token = env.HS_TOKEN
+        | .double_puppet.secrets."lassul.us" = "as_token:" + env.DOUBLEPUPPET_AS_TOKEN
+        | .network.api_id = (env.MAUTRIX_TELEGRAM_TELEGRAM_API_ID | tonumber)
+        | .network.api_hash = env.MAUTRIX_TELEGRAM_TELEGRAM_API_HASH
+      ' ${configTemplate} > ${dataDir}/config.json
     '';
+
+    serviceConfig = {
+      User = "mautrix-telegram";
+      Group = "mautrix-telegram";
+      StateDirectory = "mautrix-telegram";
+      WorkingDirectory = dataDir;
+      LoadCredential = [
+        "appservice:${appservice.tokens}"
+        "doublepuppet:${appservices.doublepuppet.tokens}"
+        "telegram:${config.clan.core.vars.generators.mautrix-telegram.files.env.path}"
+      ];
+      # --no-update: the config is regenerated on every start anyway
+      ExecStart = "${lib.getExe package} --no-update --config ${dataDir}/config.json";
+      Restart = "on-failure";
+      RestartSec = "30s";
+      UMask = "0027";
+      LockPersonality = true;
+      MemoryDenyWriteExecute = true;
+      NoNewPrivileges = true;
+      PrivateDevices = true;
+      PrivateTmp = true;
+      PrivateUsers = true;
+      ProtectClock = true;
+      ProtectControlGroups = true;
+      ProtectHome = true;
+      ProtectHostname = true;
+      ProtectKernelLogs = true;
+      ProtectKernelModules = true;
+      ProtectKernelTunables = true;
+      ProtectSystem = "strict";
+      RestrictRealtime = true;
+      RestrictSUIDSGID = true;
+      SystemCallArchitectures = "native";
+      SystemCallErrorNumber = "EPERM";
+      SystemCallFilter = [ "@system-service" ];
+    };
   };
 
   services.postgresql = {
@@ -88,6 +175,7 @@ in
       mautrix-telegram | ${pkgs.gzip}/bin/gzip > /var/backup/postgresql/mautrix-telegram.sql.gz
   '';
 
+  # the variable names are the Python bridge's, the preStart above maps them
   clan.core.vars.generators.mautrix-telegram = {
     files.env = { };
     prompts.api_id.description = "Telegram api_id from https://my.telegram.org/apps";
