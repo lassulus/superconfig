@@ -248,6 +248,13 @@ in
       };
     };
 
+    # sessions are user data: the gateway's sessions and tokens, and the
+    # session homes (DynamicUser keeps them under /var/lib/private)
+    lass.backup.state.browser-sessions.folders = [
+      "/var/lib/browser-sessions"
+      "/var/lib/private/browser-session"
+    ];
+
     environment.etc = lib.listToAttrs (
       lib.imap0 (
         i: s:
