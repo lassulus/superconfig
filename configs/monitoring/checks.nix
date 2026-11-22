@@ -58,6 +58,7 @@ in
       (https "cache" "https://cache.lassul.us/nix-cache-info")
       (https "niks3" "https://niks3.lassul.us/health")
       (https "grafana" "https://grafana.lassul.us/api/health")
+      (https "browser-sessions" "https://browser.lassul.us/")
       {
         name = "health-dav";
         group = "https";
