@@ -14,17 +14,17 @@ buildGoModule (finalAttrs: {
   pname = "mautrix-telegram";
   # only v26.04-v26.09 migrate a Python bridge (0.15.x) database in place,
   # later releases refuse it, so styx has to run v26.09 once before them
-  version = "26.09";
-  tag = "v0.2609.0";
+  version = "26.11";
+  tag = "v0.2611.0";
 
   src = fetchFromGitHub {
     owner = "mautrix";
     repo = "telegram";
     inherit (finalAttrs) tag;
-    hash = "sha256-M8kQap14MRh3tlqOe7JxLkJlsNsJY/COztv0AqvdgF0=";
+    hash = "sha256-z3jfjQyh47scBjHNThLn5DluSSS4fT21NAibWyD5Iqc=";
   };
 
-  vendorHash = "sha256-qW/v/QmhQRF2SAMUNXE2mfVGVEp+DU3gESWVRKHqfGM=";
+  vendorHash = "sha256-byvTXR7gy6b/TIVfJ8bwMC/D9vqn6iwjoxBE1gkBNBc=";
 
   tags = [ "goolm" ];
 
