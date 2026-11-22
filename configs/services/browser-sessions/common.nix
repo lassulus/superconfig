@@ -7,8 +7,6 @@
 {
   domain = "browser.lassul.us";
   proxy = "neoprism";
-  # a session nobody is connected to ends after this long
-  idleTimeout = "24h";
   # Session hosts by hostname: up to `slots` parallel sessions. The gateway
   # listens on firstPort; then follow blocks of `slots` ports each: neko,
   # MCP and WebRTC (UDP, forwarded by the proxy).

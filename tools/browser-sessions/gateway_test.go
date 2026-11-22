@@ -3,10 +3,12 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -82,11 +84,10 @@ type fixture struct {
 func setup(t *testing.T) *fixture {
 	f := &fixture{units: &fakeUnits{running: map[int]bool{}}, neko: newBackend(t), mcp: newBackend(t), now: time.Unix(1_800_000_000, 0)}
 	cfg := config{
-		URL:         "https://browser.example",
-		StateDir:    t.TempDir(),
-		IdleTimeout: "1h",
-		Unit:        "browser-session@%d.service",
-		Slots:       []slot{{Neko: f.neko.port(t), MCP: f.mcp.port(t)}},
+		URL:      "https://browser.example",
+		StateDir: t.TempDir(),
+		Unit:     "browser-session@%d.service",
+		Slots:    []slot{{Neko: f.neko.port(t), MCP: f.mcp.port(t)}},
 	}
 	s, err := newServer(cfg, f.units)
 	if err != nil {
@@ -226,34 +227,31 @@ func TestRegenerate(t *testing.T) {
 	}
 }
 
-func TestIdleExpiry(t *testing.T) {
+func TestKill(t *testing.T) {
 	f := setup(t)
 	l, control, _ := f.create(t, "alice")
 
-	// a connection that is still open keeps the session
-	se := f.s.sessions[l.ID]
-	done := f.s.touch(se)
-	f.now = f.now.Add(2 * time.Hour)
-	f.s.expire()
-	if _, ok := f.s.sessions[l.ID]; !ok {
-		t.Fatal("expired while connected")
+	// sessions have no expiry: a gateway restart much later still has it
+	f.now = f.now.Add(365 * 24 * time.Hour)
+	s2, err := newServer(f.s.cfg, f.units)
+	if err != nil {
+		t.Fatal(err)
 	}
-	done()
-	f.now = f.now.Add(59 * time.Minute)
-	f.s.expire()
-	if _, ok := f.s.sessions[l.ID]; !ok {
-		t.Fatal("expired before the idle timeout")
+	if se, r, ok := s2.lookup(control); !ok || r != controller || se.ID != l.ID {
+		t.Fatal("session lost on restart")
 	}
-	f.now = f.now.Add(2 * time.Minute)
-	f.s.expire()
-	if _, ok := f.s.sessions[l.ID]; ok {
-		t.Fatal("not expired after the idle timeout")
+
+	if status, _ := f.do(t, "POST", "/sessions/"+l.ID+"/kill", "alice", ""); status != http.StatusNoContent {
+		t.Fatalf("kill: %d", status)
 	}
 	if f.units.running[0] {
-		t.Fatal("unit still running")
+		t.Fatal("unit of the killed session still running")
+	}
+	if _, err := os.Stat(f.s.envPath(0)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("env file of the killed session: %v", err)
 	}
 	if status, _ := f.do(t, "GET", "/s/"+control+"/", "", ""); status != 404 {
-		t.Fatalf("token of an expired session: %d", status)
+		t.Fatalf("token of a killed session: %d", status)
 	}
 	// the slot is free again
 	f.create(t, "bob")

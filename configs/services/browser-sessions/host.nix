@@ -37,7 +37,6 @@ in
     enable = true;
     url = "https://${common.domain}";
     listen = "0.0.0.0:${toString config.lass.servicePorts.browser-sessions}";
-    inherit (common) idleTimeout;
     oidc = {
       issuer = "https://id.lassul.us";
       clientIdFile = config.clan.core.vars.generators.browser-sessions-oidc.files.client-id.path;

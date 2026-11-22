@@ -116,11 +116,6 @@ in
       example = "0.0.0.0:8950";
       description = "Address the gateway listens on.";
     };
-    idleTimeout = lib.mkOption {
-      type = lib.types.str;
-      example = "24h";
-      description = "A session nobody is connected to ends after this long (Go duration).";
-    };
     oidc = {
       issuer = lib.mkOption {
         type = lib.types.str;
@@ -195,7 +190,6 @@ in
               state_dir = "/var/lib/browser-sessions";
               oidc_issuer = cfg.oidc.issuer;
               oidc_client_id_file = "/run/credentials/browser-sessions.service/oidc-client-id";
-              idle_timeout = cfg.idleTimeout;
               unit = "browser-session@%d.service";
               systemctl = "${config.systemd.package}/bin/systemctl";
               slots = map (s: { inherit (s) neko mcp; }) cfg.slots;

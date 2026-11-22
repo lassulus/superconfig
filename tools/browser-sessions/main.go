@@ -2,7 +2,8 @@
 // creates sessions on the management page; each session runs in a systemd
 // unit (neko + Firefox + browser-mcp) on a fixed slot of ports, and two
 // random tokens give access to it: /s/<control>/ (watch and control, MCP at
-// /s/<control>/mcp) and /s/<view>/ (watch only).
+// /s/<control>/mcp) and /s/<view>/ (watch only). A session lasts until its
+// owner kills it.
 package main
 
 import (
@@ -33,8 +34,6 @@ type config struct {
 	StateDir         string `json:"state_dir"`
 	OIDCIssuer       string `json:"oidc_issuer"`
 	OIDCClientIDFile string `json:"oidc_client_id_file"`
-	// a session nobody is connected to ends after this long
-	IdleTimeout string `json:"idle_timeout"`
 	// unit of slot i: fmt.Sprintf(Unit, i)
 	Unit      string `json:"unit"`
 	Systemctl string `json:"systemctl"`
@@ -74,7 +73,6 @@ type session struct {
 	ViewPassword    string    `json:"view_password"`
 	MCPToken        string    `json:"mcp_token"`
 	Created         time.Time `json:"created"`
-	LastActive      time.Time `json:"last_active"`
 
 	// proxied requests in flight (websockets and MCP streams included)
 	active int
@@ -112,7 +110,6 @@ func (s systemctl) Stop(slot int) error  { return s.run("stop", slot) }
 
 type server struct {
 	cfg          config
-	idle         time.Duration
 	units        units
 	now          func() time.Time
 	oidcClientID string
@@ -121,20 +118,14 @@ type server struct {
 
 	mu       sync.Mutex
 	sessions map[string]*session
-	dirty    bool
 }
 
 func newServer(cfg config, u units) (*server, error) {
-	idle, err := time.ParseDuration(cfg.IdleTimeout)
-	if err != nil {
-		return nil, fmt.Errorf("idle_timeout: %w", err)
-	}
 	if cfg.Unit == "" || len(cfg.Slots) == 0 {
 		return nil, errors.New("config needs unit and slots")
 	}
 	s := &server{
 		cfg:      cfg,
-		idle:     idle,
 		units:    u,
 		now:      time.Now,
 		secure:   strings.HasPrefix(cfg.URL, "https://"),
@@ -143,6 +134,7 @@ func newServer(cfg config, u units) (*server, error) {
 	if err := os.MkdirAll(filepath.Join(cfg.StateDir, "slots"), 0o700); err != nil {
 		return nil, err
 	}
+	var err error
 	if s.cookieKey, err = cookieKey(filepath.Join(cfg.StateDir, "cookie-key")); err != nil {
 		return nil, err
 	}
@@ -184,7 +176,6 @@ func (s *server) save() error {
 	if err := os.WriteFile(tmp, b, 0o600); err != nil {
 		return err
 	}
-	s.dirty = false
 	return os.Rename(tmp, s.statePath())
 }
 
@@ -244,7 +235,6 @@ func (s *server) create(owner string) (*session, string, string, error) {
 		ViewPassword:    rand.Text(),
 		MCPToken:        rand.Text(),
 		Created:         now,
-		LastActive:      now,
 	}
 	se.newRoleContext(controller)
 	se.newRoleContext(viewer)
@@ -298,11 +288,6 @@ func (s *server) kill(id, owner string) error {
 		return os.ErrNotExist
 	}
 	log.Printf("session %s: killed", id)
-	return s.end(se)
-}
-
-// end stops a session and forgets it; s.mu must be held.
-func (s *server) end(se *session) error {
 	se.revoke[controller]()
 	se.revoke[viewer]()
 	err := s.units.Stop(se.Slot)
@@ -311,28 +296,7 @@ func (s *server) end(se *session) error {
 	return errors.Join(err, s.save())
 }
 
-// expire ends the sessions nobody has been connected to for the idle
-// timeout, and saves the activity times.
-func (s *server) expire() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	now := s.now()
-	for _, se := range s.sessions {
-		if se.active == 0 && now.Sub(se.LastActive) > s.idle {
-			log.Printf("session %s: idle since %s, ending it", se.ID, se.LastActive.Format(time.RFC3339))
-			if err := s.end(se); err != nil {
-				log.Printf("session %s: %v", se.ID, err)
-			}
-		}
-	}
-	if s.dirty {
-		if err := s.save(); err != nil {
-			log.Printf("save: %v", err)
-		}
-	}
-}
-
-// touch counts a proxied request as active until the returned func runs.
+// touch counts a proxied request as connected until the returned func runs.
 func (s *server) touch(se *session) func() {
 	s.mu.Lock()
 	se.active++
@@ -340,8 +304,6 @@ func (s *server) touch(se *session) func() {
 	return func() {
 		s.mu.Lock()
 		se.active--
-		se.LastActive = s.now()
-		s.dirty = true
 		s.mu.Unlock()
 	}
 }
@@ -367,7 +329,8 @@ func main() {
 	}
 	s.oidcClientID = strings.TrimSpace(string(id))
 
-	// after a reboot the units of the saved sessions are not running
+	// after a reboot the units of the saved sessions are not running; they
+	// come back with their state
 	s.mu.Lock()
 	for _, se := range s.sessions {
 		if err := s.units.Start(se.Slot); err != nil {
@@ -378,18 +341,6 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	go func() {
-		t := time.NewTicker(time.Minute)
-		defer t.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-				s.expire()
-			}
-		}
-	}()
 	srv := &http.Server{Addr: cfg.Listen, Handler: s.routes(), ErrorLog: log.New(maskWriter{os.Stderr}, "", log.LstdFlags)}
 	go func() {
 		<-ctx.Done()
@@ -400,10 +351,5 @@ func main() {
 	log.Printf("listening on %s", cfg.Listen)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal(err)
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.save(); err != nil {
-		log.Print(err)
 	}
 }

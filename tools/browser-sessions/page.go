@@ -36,10 +36,9 @@ type links struct {
 }
 
 type sessionInfo struct {
-	ID         string    `json:"id"`
-	Created    time.Time `json:"created"`
-	LastActive time.Time `json:"last_active"`
-	Connected  bool      `json:"connected"`
+	ID        string    `json:"id"`
+	Created   time.Time `json:"created"`
+	Connected bool      `json:"connected"`
 }
 
 var page = template.Must(template.New("page").Parse(`<!doctype html>
@@ -57,9 +56,9 @@ var page = template.Must(template.New("page").Parse(`<!doctype html>
 {{if .Error}}<p><strong>{{.Error}}</strong></p>{{end}}
 <form method="post" action="/sessions"><button>New session</button></form>
 <form method="post" action="/logout"><button>Log out</button></form>
-{{if .Sessions}}<table><tr><th>Session</th><th>Created</th><th>Last active</th><th></th></tr>
+{{if .Sessions}}<table><tr><th>Session</th><th>Created</th><th></th><th></th></tr>
 {{range .Sessions}}<tr><td>{{.ID}}</td><td>{{.Created.Format "2006-01-02 15:04"}}</td>
-<td>{{if .Connected}}connected{{else}}{{.LastActive.Format "2006-01-02 15:04"}}{{end}}</td><td>
+<td>{{if .Connected}}connected{{end}}</td><td>
 <form method="post" action="/sessions/{{.ID}}/regenerate/control"><button>New control link</button></form>
 <form method="post" action="/sessions/{{.ID}}/regenerate/view"><button>New view link</button></form>
 <form method="post" action="/sessions/{{.ID}}/kill"><button>Kill</button></form>
@@ -78,7 +77,7 @@ func (s *server) list(sub string) []sessionInfo {
 	var out []sessionInfo
 	for _, se := range s.sessions {
 		if se.Owner == sub {
-			out = append(out, sessionInfo{ID: se.ID, Created: se.Created, LastActive: se.LastActive, Connected: se.active > 0})
+			out = append(out, sessionInfo{ID: se.ID, Created: se.Created, Connected: se.active > 0})
 		}
 	}
 	slices.SortFunc(out, func(a, b sessionInfo) int { return a.Created.Compare(b.Created) })
