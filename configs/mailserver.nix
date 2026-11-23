@@ -30,6 +30,9 @@ in
     "4190" = "dovecot-managesieve";
   };
 
+  # DNSSEC-validating resolver for rspamd's DNS lookups
+  services.kresd.enable = true;
+
   mailserver = {
     enable = true;
     fqdn = "mail.lassul.us";
