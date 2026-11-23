@@ -12,11 +12,12 @@ import android.widget.ArrayAdapter;
 import android.widget.FrameLayout;
 import android.widget.ListView;
 import android.widget.TextView;
-import java.util.List;
 
 /** All conversations, newest first; one opens its transcript. */
 public class SessionsActivity extends Activity {
     private ListView list;
+    private ArrayAdapter<Conversation> adapter;
+    private String currentSession;
     private final Runnable redraw = new Runnable() {
         @Override
         public void run() {
@@ -29,6 +30,27 @@ public class SessionsActivity extends Activity {
         super.onCreate(state);
         getActionBar().setDisplayHomeAsUpEnabled(true);
         list = new ListView(this);
+        // One adapter, refilled by refresh(): a new one would put the list back at the top.
+        adapter = new ArrayAdapter<Conversation>(
+                this, android.R.layout.simple_list_item_2, android.R.id.text1) {
+            @Override
+            public View getView(int position, View convertView, ViewGroup parent) {
+                View row = super.getView(position, convertView, parent);
+                Conversation conversation = getItem(position);
+                String when = DateUtils.formatDateTime(getContext(), conversation.started,
+                        DateUtils.FORMAT_SHOW_DATE | DateUtils.FORMAT_SHOW_TIME
+                                | DateUtils.FORMAT_ABBREV_MONTH);
+                ((TextView) row.findViewById(android.R.id.text1)).setText(
+                        conversation.hermesSession.equals(currentSession)
+                                ? when + " · current"
+                                : when);
+                TextView title = row.findViewById(android.R.id.text2);
+                title.setText(conversation.title());
+                title.setMaxLines(2);
+                return row;
+            }
+        };
+        list.setAdapter(adapter);
         list.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             @Override
             public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
@@ -69,27 +91,9 @@ public class SessionsActivity extends Activity {
     }
 
     private void refresh() {
-        List<Conversation> conversations = Conversation.all(this);
         Conversation current = Conversation.current(this);
-        final String currentSession = current == null ? null : current.hermesSession;
-        list.setAdapter(new ArrayAdapter<Conversation>(
-                this, android.R.layout.simple_list_item_2, android.R.id.text1, conversations) {
-            @Override
-            public View getView(int position, View convertView, ViewGroup parent) {
-                View row = super.getView(position, convertView, parent);
-                Conversation conversation = getItem(position);
-                String when = DateUtils.formatDateTime(getContext(), conversation.started,
-                        DateUtils.FORMAT_SHOW_DATE | DateUtils.FORMAT_SHOW_TIME
-                                | DateUtils.FORMAT_ABBREV_MONTH);
-                ((TextView) row.findViewById(android.R.id.text1)).setText(
-                        conversation.hermesSession.equals(currentSession)
-                                ? when + " · current"
-                                : when);
-                TextView title = row.findViewById(android.R.id.text2);
-                title.setText(conversation.title());
-                title.setMaxLines(2);
-                return row;
-            }
-        });
+        currentSession = current == null ? null : current.hermesSession;
+        adapter.clear();
+        adapter.addAll(Conversation.all(this));
     }
 }

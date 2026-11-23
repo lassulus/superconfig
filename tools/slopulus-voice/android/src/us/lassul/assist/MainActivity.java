@@ -5,6 +5,7 @@ import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.res.ColorStateList;
+import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
@@ -54,7 +55,14 @@ public class MainActivity extends Activity {
         transcript.setLineSpacing(0, 1.15f);
         transcript.setTextIsSelectable(true);
         textColor = transcript.getTextColors();
-        scroll = new ScrollView(this);
+        scroll = new ScrollView(this) {
+            // setText puts the selectable transcript's cursor at 0, and a focused TextView
+            // scrolls to its cursor; the scroll position is refresh()'s alone.
+            @Override
+            public boolean requestChildRectangleOnScreen(View child, Rect rect, boolean now) {
+                return false;
+            }
+        };
         scroll.addView(transcript);
         layout.addView(scroll,
                 new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
@@ -186,6 +194,8 @@ public class MainActivity extends Activity {
                 ? state
                 : ready ? "Hold the headset's voice button, or tap Call" : "Not set up yet");
 
+        // Follows new lines only when already at the bottom, so reading back stays put.
+        boolean atBottom = !scroll.canScrollVertically(1);
         Conversation current = Conversation.current(this);
         if (current == null || current.lines.isEmpty()) {
             transcript.setText("New conversation. What you and slopulus say shows up here.");
@@ -194,11 +204,15 @@ public class MainActivity extends Activity {
             transcript.setText(current.render());
             transcript.setTextColor(textColor);
         }
-        scroll.post(new Runnable() {
-            @Override
-            public void run() {
-                scroll.fullScroll(View.FOCUS_DOWN);
-            }
-        });
+        if (atBottom) {
+            scroll.post(new Runnable() {
+                @Override
+                public void run() {
+                    // Not fullScroll: it animates, and a line arriving meanwhile would find the
+                    // view short of the bottom and stop following.
+                    scroll.scrollTo(0, transcript.getBottom());
+                }
+            });
+        }
     }
 }
