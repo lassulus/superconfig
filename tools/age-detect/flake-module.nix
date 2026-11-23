@@ -26,7 +26,15 @@
               age-plugin-tpm
               lazy-ykman
               libfido2
+              # the script's own tools: callers with a bare PATH (user services,
+              # a browser's native messaging host) lack hostname, so TPM detection failed
+              coreutils
+              gnugrep
+              gawk
             ]
+            ++ (pkgs.lib.optionals pkgs.stdenv.isLinux [
+              pkgs.hostname
+            ])
             ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [
               pkgs.age-plugin-se
             ]);
