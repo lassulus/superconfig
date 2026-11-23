@@ -93,6 +93,8 @@ final class VoiceCall {
     private DataChannel events;
     private boolean offerSent;
     private long idleMs = 90_000;
+    /** The voice for /session; null leaves the server's default. */
+    private String voice;
 
     // Written by WebRTC's audio thread, read by tick().
     private volatile long lastLoud;
@@ -170,11 +172,18 @@ final class VoiceCall {
             @Override
             public void run() {
                 try {
-                    final long idle = api.get("/config").optLong("idle_seconds", 90) * 1000;
+                    JSONObject config = api.get("/config");
+                    final long idle = config.optLong("idle_seconds", 90) * 1000;
+                    String saved = Api.voice(context);
+                    JSONObject voices = config.optJSONObject("voices");
+                    // A voice the server no longer offers falls back to its default.
+                    final String picked = saved != null && voices != null && voices.has(saved)
+                            ? saved : null;
                     main.post(new Runnable() {
                         @Override
                         public void run() {
                             idleMs = idle;
+                            voice = picked;
                             connect();
                         }
                     });
@@ -247,7 +256,8 @@ final class VoiceCall {
         try {
             body = new JSONObject()
                     .put("sdp", pc.getLocalDescription().description)
-                    .put("history", Conversation.toJson(conversation.lines));
+                    .put("history", Conversation.toJson(conversation.lines))
+                    .putOpt("voice", voice);
         } catch (JSONException error) {
             fail(error.toString());
             return;

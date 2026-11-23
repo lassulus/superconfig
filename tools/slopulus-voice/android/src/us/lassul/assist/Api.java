@@ -47,6 +47,15 @@ final class Api {
         return load(context) != null;
     }
 
+    /** The voice picked in Settings, a key of /config's voices; null for the server's default. */
+    static String voice(Context context) {
+        return prefs(context).getString("voice", null);
+    }
+
+    static void saveVoice(Context context, String voice) {
+        prefs(context).edit().putString("voice", voice).apply();
+    }
+
     private static SharedPreferences prefs(Context context) {
         return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
     }

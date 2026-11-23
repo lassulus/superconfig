@@ -6,22 +6,34 @@ import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.text.InputType;
 import android.view.View;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+import org.json.JSONObject;
 
 /**
  * Setup: the app token (`clan vars get coaxmetal hermes-voice-app/token`), the microphone and
- * notification permissions and the TV URL.
+ * notification permissions, the TV URL and the call's voice.
  */
 public class SettingsActivity extends Activity {
     private TextView status;
     private EditText token;
     private EditText tvUrl;
     private Button permissions;
+    private TextView voiceLabel;
+    private Spinner voice;
+    /** The server's voice names, in the spinner's order. */
+    private final List<String> voiceNames = new ArrayList<>();
+    private int voiceShown;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -50,6 +62,7 @@ public class SettingsActivity extends Activity {
                 Api.saveToken(SettingsActivity.this, token.getText().toString());
                 token.setText("");
                 refresh();
+                loadVoices();
             }
         }));
 
@@ -83,6 +96,29 @@ public class SettingsActivity extends Activity {
             }
         }));
 
+        voiceLabel = new TextView(this);
+        voiceLabel.setPadding(0, pad, 0, 0);
+        voiceLabel.setTextColor(Conversation.DIM);
+        voiceLabel.setText("Voice");
+        voiceLabel.setVisibility(View.GONE);
+        layout.addView(voiceLabel);
+        voice = new Spinner(this);
+        voice.setVisibility(View.GONE);
+        voice.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                // Spinner also reports the initial selection; only a change is saved.
+                if (position != voiceShown) {
+                    voiceShown = position;
+                    Api.saveVoice(SettingsActivity.this, voiceNames.get(position));
+                }
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {}
+        });
+        layout.addView(voice);
+
         TextView help = new TextView(this);
         help.setPadding(0, pad, 0, 0);
         help.setTextColor(Conversation.DIM);
@@ -104,6 +140,7 @@ public class SettingsActivity extends Activity {
     protected void onResume() {
         super.onResume();
         refresh();
+        loadVoices();
     }
 
     @Override
@@ -131,5 +168,66 @@ public class SettingsActivity extends Activity {
         button.setText(label);
         button.setOnClickListener(action);
         return button;
+    }
+
+    /** Fills the voice spinner from /config's voices; needs the token. */
+    private void loadVoices() {
+        final Api api = Api.load(this);
+        if (api == null) {
+            return;
+        }
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    final JSONObject config = api.get("/config");
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (!isDestroyed()) {
+                                showVoices(config);
+                            }
+                        }
+                    });
+                } catch (final Exception error) {
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            Toast.makeText(SettingsActivity.this,
+                                    "Voices not loaded: " + error.getMessage(),
+                                    Toast.LENGTH_SHORT).show();
+                        }
+                    });
+                }
+            }
+        }).start();
+    }
+
+    /** Shows the saved voice, or the server's default if none is saved or it is gone. */
+    private void showVoices(JSONObject config) {
+        JSONObject voices = config.optJSONObject("voices");
+        if (voices == null) {
+            return;
+        }
+        String saved = Api.voice(this);
+        String shown = saved != null && voices.has(saved) ? saved : config.optString("voice");
+        voiceNames.clear();
+        voiceShown = 0;
+        List<String> labels = new ArrayList<>();
+        for (Iterator<String> names = voices.keys(); names.hasNext(); ) {
+            String name = names.next();
+            if (name.equals(shown)) {
+                voiceShown = voiceNames.size();
+            }
+            voiceNames.add(name);
+            labels.add(name + " — " + voices.optString(name));
+        }
+        ArrayAdapter<String> adapter =
+                new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, labels);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        voice.setAdapter(adapter);
+        voice.setSelection(voiceShown);
+        voiceLabel.setVisibility(View.VISIBLE);
+        voice.setVisibility(View.VISIBLE);
     }
 }
