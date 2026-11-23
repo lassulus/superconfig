@@ -3,7 +3,7 @@
 # (configs/hass/atlas-cast.nix) through atlas-cast-control.
 #
 # atlas has no monitor in the data center: sway shows everything on
-# HEADLESS-1 (1920x1080), which has no KMS connector, so KMS capture
+# HEADLESS-1 (3840x2160), which has no KMS connector, so KMS capture
 # (gpu-screen-recorder) sees nothing. wf-recorder grabs that output through
 # wlr-screencopy, like Sunshine, as DMA-BUFs on the GPU sway renders on
 # (the RX 6800 XT), and encodes H.264 there with VA-API (its VCN encoder,
@@ -41,6 +41,7 @@ let
     # differ as strings
     exec ${pkgs.wf-recorder}/bin/wf-recorder -o HEADLESS-1 -D -r 60 \
       -c h264_vaapi -d "$(readlink -f /dev/dri/by-path/pci-0000:03:00.0-render)" \
+      -F scale_vaapi=w=1920:h=1080:format=nv12 \
       -p bitrate=6000k -p g=60 \
       --audio=@DEFAULT_MONITOR@ -C aac \
       -m flv -f "rtmp://${neoprism}:${toString rtmpPort}/live/$key"

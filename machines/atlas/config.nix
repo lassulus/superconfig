@@ -86,8 +86,10 @@
       settings.initial_session = session;
       settings.default_session = session;
     };
+  # 4K like lass's external monitor on ignavia (AORUS FO32U2), so the
+  # Moonlight desktop is not upscaled from 1080p there
   environment.etc."sway/config.d/virtual-screen.conf".text = ''
-    output HEADLESS-1 mode 1920x1080
+    output HEADLESS-1 mode 3840x2160@60Hz
   '';
 
   # Always on (home gaming/build box, LAN via the fiber card): no idle lock,
