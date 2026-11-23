@@ -166,8 +166,9 @@ def glossary_text(glossary):
 
 
 class Config:
-    def __init__(self, raw, openai_key, hermes_url, hermes_key, matrix_webhook=None):
+    def __init__(self, raw, openai_key, hermes_url, hermes_key, matrix_webhook=None, transcript_webhook=None):
         self.matrix_webhook = matrix_webhook
+        self.transcript_webhook = transcript_webhook or matrix_webhook
         self.model = raw.get("model", DEFAULT_MODEL)
         self.voice = raw.get("voice", DEFAULT_VOICE)
         self.idle_seconds = int(raw.get("idle_seconds", DEFAULT_IDLE_SECONDS))
@@ -399,17 +400,17 @@ def hermes_approve(config, run_id, approval, choice):
     return hermes_call(config, "POST", f"/v1/runs/{run_id}/approval", answer)
 
 
-def notify_matrix(config, text):
-    """Post text to the owner's Matrix DM (the gateway's Matrix home room)
-    through the gateway's webhook platform (a deliver_only route, signed with
-    the API server key)."""
+def notify_matrix(config, text, url=None):
+    """Post text to Matrix through the gateway's webhook platform (a
+    deliver_only route, signed with the API server key): by default the
+    owner's DM (the gateway's Matrix home room), or the room behind `url`."""
     body = json.dumps({"text": text}).encode()
     stamp = str(int(time.time()))
     signature = hmac.new(
         config.hermes_key.encode(), stamp.encode() + b"." + body, hashlib.sha256
     ).hexdigest()
     request = urllib.request.Request(
-        config.matrix_webhook,
+        url or config.matrix_webhook,
         data=body,
         method="POST",
         headers={
@@ -792,15 +793,15 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(HTTPStatus.OK, {"run_id": run_id})
 
     def post_call_transcript(self, hermes_session, lines):
-        """The whole call, both sides, as one message in the owner's Matrix DM."""
-        if not self.config.matrix_webhook or not isinstance(lines, list):
+        """The whole call, both sides, as one Matrix message (transcript route)."""
+        if not self.config.transcript_webhook or not isinstance(lines, list):
             return
         spoken = render_lines(line for line in lines if isinstance(line, dict))
         if not spoken:
             return
         title = "📞 Voice call, ended " + time.strftime("%a %d %b %Y %H:%M")
         try:
-            notify_matrix(self.config, f"{title}\n\n{spoken}")
+            notify_matrix(self.config, f"{title}\n\n{spoken}", self.config.transcript_webhook)
         except (urllib.error.URLError, OSError) as error:
             log.warning("call transcript of %s not posted: %s", hermes_session, error)
 
@@ -860,7 +861,11 @@ def main():
     parser.add_argument(
         "--matrix-webhook",
         help="Hermes webhook route (deliver_only to Matrix, signed with API_SERVER_KEY) that "
-        "receives approvals no call can answer and the transcript of every call",
+        "receives approvals no call can answer (and the call transcripts without --transcript-webhook)",
+    )
+    parser.add_argument(
+        "--transcript-webhook",
+        help="webhook route like --matrix-webhook that receives the transcript of every call",
     )
     parser.add_argument("--config", help="JSON file: voice, model, idle_seconds, glossary, instructions")
     parser.add_argument(
@@ -883,6 +888,7 @@ def main():
         hermes_url=args.hermes_url,
         hermes_key=Path(args.hermes_key_file).read_text().strip(),
         matrix_webhook=args.matrix_webhook,
+        transcript_webhook=args.transcript_webhook,
     )
     Handler.config = config
     Handler.static = Path(args.static)

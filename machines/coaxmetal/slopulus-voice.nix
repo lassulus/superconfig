@@ -53,6 +53,8 @@ in
         "%d/app-token"
         "--matrix-webhook"
         "http://127.0.0.1:${toString webhookPort}/webhooks/voice-approval"
+        "--transcript-webhook"
+        "http://127.0.0.1:${toString webhookPort}/webhooks/voice-transcript"
       ];
       LoadCredential = [
         "hermes-key:${config.clan.core.vars.generators.hermes-api.files."api_key".path}"
@@ -105,6 +107,14 @@ in
     deliver = "matrix";
     deliver_only = true;
     prompt = "{text}";
+  };
+  # every call's transcript goes to its own room "Voice calls" in the
+  # Hermes space instead of the DM
+  services.hermes-agent.settings.platforms.webhook.extra.routes.voice-transcript = {
+    deliver = "matrix";
+    deliver_only = true;
+    prompt = "{text}";
+    deliver_extra.chat_id = "!Thd1S8q0NG33XpPn1ZMgw_ahLowb3adgt7_sIy7Hw2E";
   };
 
   # OpenAI project key with GPT-Live access; billed per second of open voice
