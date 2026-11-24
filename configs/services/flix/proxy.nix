@@ -1,6 +1,7 @@
 {
   self,
   config,
+  pkgs,
   ...
 }:
 {
@@ -81,6 +82,23 @@
     };
   };
 
+  # yellow's download index; basic auth instead of the id.lassul.us login
+  # (backend-proxy.nix) so download tools (flaxget, mpv, wget) keep working
+  services.nginx.virtualHosts."flax.lassul.us" = {
+    forceSSL = true;
+    enableACME = true;
+    locations."/" = {
+      proxyPass = "http://yellow.r";
+      proxyWebsockets = true;
+      recommendedProxySettings = true;
+      extraConfig = ''
+        auth_basic "Restricted Content";
+        auth_basic_user_file ${pkgs.writeText "flix-user-pass" ''
+          krebs:$apr1$1Fwt/4T0$YwcUn3OBmtmsGiEPlYWyq0
+        ''};
+      '';
+    };
+  };
   services.nginx.virtualHosts."flox.lassul.us" = {
     forceSSL = true;
     enableACME = true;

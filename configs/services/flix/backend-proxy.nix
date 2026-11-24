@@ -42,8 +42,6 @@ let
       proxyPass = "http://sonar.r:8989";
       api = true;
     };
-    # yellow's download index
-    "flax.lassul.us".proxyPass = "http://yellow.r";
     "bazarr.lassul.us" = {
       proxyPass = "http://${yellow}:6767";
       api = true;
