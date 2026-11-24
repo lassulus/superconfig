@@ -51,14 +51,16 @@ type slot struct {
 	MCP  int `json:"mcp"`
 }
 
-// secrets are what a slot's unit gets from the gateway: the neko passwords
-// of both roles, browser-mcp's token and the ICE servers (TURN with its
-// credentials) neko gives the browsers.
+// secrets are what a slot's unit gets from the gateway when it starts: the
+// neko passwords of both roles, browser-mcp's token, the ICE servers (TURN
+// with its credentials) neko gives the browsers and the URL of the proxy
+// its Firefox goes out through ("" for none).
 type secrets struct {
 	ControlPassword string      `json:"control_password"`
 	ViewPassword    string      `json:"view_password"`
 	MCPToken        string      `json:"mcp_token"`
 	ICEServers      []iceServer `json:"ice_servers,omitempty"`
+	Proxy           string      `json:"proxy,omitempty"`
 }
 
 // they go into an env file, so nothing but letters and digits
@@ -71,6 +73,46 @@ func (s secrets) valid() bool {
 		}
 	}
 	return secretChars.MatchString(s.ControlPassword) && secretChars.MatchString(s.ViewPassword) && secretChars.MatchString(s.MCPToken)
+}
+
+// proxy is where a session's Firefox goes out: the kind of proxy (http,
+// socks4 or socks5), its host and port.
+type proxy struct {
+	kind, host string
+	port       int
+}
+
+// the host goes into an env file: a name or an IPv4 or IPv6 address
+var proxyHostChars = regexp.MustCompile(`^[A-Za-z0-9.:-]+$`)
+
+// parseProxy takes a proxy URL: http://, socks4://, socks5:// or socks5h://
+// with a host and a port and nothing else. Firefox resolves names through
+// SOCKS proxies either way. Proxy logins (user:password@) are refused:
+// Firefox's prefs hold no credentials.
+func parseProxy(raw string) (proxy, error) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return proxy{}, errors.New("not a URL")
+	}
+	if u.User != nil {
+		return proxy{}, errors.New("proxy logins are not supported")
+	}
+	kind := map[string]string{"http": "http", "socks4": "socks4", "socks5": "socks5", "socks5h": "socks5"}[u.Scheme]
+	port, perr := strconv.Atoi(u.Port())
+	if kind == "" || !proxyHostChars.MatchString(u.Hostname()) || perr != nil || port < 1 || port > 65535 ||
+		u.Opaque != "" || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
+		return proxy{}, errors.New("want http://, socks4://, socks5:// or socks5h://<host>:<port>, nothing more")
+	}
+	return proxy{kind, u.Hostname(), port}, nil
+}
+
+// env are the lines of the slot's env file that hand the proxy to the
+// session's Firefox (module.nix); none for no proxy.
+func (p proxy) env() string {
+	if p.kind == "" {
+		return ""
+	}
+	return fmt.Sprintf("BROWSER_SESSION_PROXY_TYPE=%s\nBROWSER_SESSION_PROXY_HOST=%s\nBROWSER_SESSION_PROXY_PORT=%d\n", p.kind, p.host, p.port)
 }
 
 // units runs the systemd units of the slots.
@@ -307,6 +349,14 @@ func (b *backendServer) handleStart(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad secrets", http.StatusBadRequest)
 		return
 	}
+	var px proxy
+	if sec.Proxy != "" {
+		var err error
+		if px, err = parseProxy(sec.Proxy); err != nil {
+			http.Error(w, "bad proxy: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
 	if r.URL.Query().Has("fresh") {
 		if !b.stopped(w, i) {
 			return
@@ -316,8 +366,8 @@ func (b *backendServer) handleStart(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	env := fmt.Sprintf("NEKO_MEMBER_MULTIUSER_ADMIN_PASSWORD=%s\nNEKO_MEMBER_MULTIUSER_USER_PASSWORD=%s\nBROWSER_MCP_TOKEN=%s\n",
-		sec.ControlPassword, sec.ViewPassword, sec.MCPToken)
+	env := fmt.Sprintf("NEKO_MEMBER_MULTIUSER_ADMIN_PASSWORD=%s\nNEKO_MEMBER_MULTIUSER_USER_PASSWORD=%s\nBROWSER_MCP_TOKEN=%s\n%s",
+		sec.ControlPassword, sec.ViewPassword, sec.MCPToken, px.env())
 	if len(sec.ICEServers) > 0 {
 		ice, _ := json.Marshal(sec.ICEServers)
 		env += "NEKO_WEBRTC_ICESERVERS_FRONTEND='" + string(ice) + "'\n"

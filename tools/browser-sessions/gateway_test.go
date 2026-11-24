@@ -34,6 +34,8 @@ type fakeUnits struct {
 	// a started slot answers only after this many readiness checks
 	slowStart int
 	checks    int
+	// how often a running slot was stopped
+	stops int
 }
 
 func newFakeUnits() *fakeUnits {
@@ -55,6 +57,9 @@ func (f *fakeUnits) Start(slot int) error {
 func (f *fakeUnits) Stop(slot int) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.running[slot] {
+		f.stops++
+	}
 	delete(f.running, slot)
 	return nil
 }
@@ -598,7 +603,7 @@ func TestMigratedSessions(t *testing.T) {
 	if req, _ := atlas.mcp.last(); req.Header.Get("Authorization") != "Bearer MTMTMTMTMTMTMTMTMT" {
 		t.Fatalf("old MCP token %q", req.Header.Get("Authorization"))
 	}
-	if list := f.sessions(t, "alice"); len(list) != 1 || list[0].Host != "atlas" || list[0].Name != "shop" || list[0].View != "https://browser.example/s/OLDVIEWTOKEN/" {
+	if list := f.sessions(t, "alice"); len(list) != 1 || list[0].Host != "atlas" || list[0].Name != "shop" || list[0].View != "https://browser.example/s/OLDVIEWTOKEN/" || list[0].Proxy != "" {
 		t.Fatalf("list %+v", list)
 	}
 }
@@ -1082,5 +1087,189 @@ func TestMask(t *testing.T) {
 	maskWriter{&buf}.Write([]byte("GET /s/ABCDEF234/api/ws?x=1 and /s/QWERTY/mcp\n"))
 	if got := buf.String(); got != "GET /s/***/api/ws?x=1 and /s/***/mcp\n" {
 		t.Fatalf("mask: %q", got)
+	}
+}
+
+func TestParseProxy(t *testing.T) {
+	for raw, want := range map[string]proxy{
+		"socks5://127.0.0.1:1080":        {"socks5", "127.0.0.1", 1080},
+		"socks5h://tor.example:9050/":    {"socks5", "tor.example", 9050},
+		"socks4://10.0.0.1:1080":         {"socks4", "10.0.0.1", 1080},
+		"http://proxy.example:3128":      {"http", "proxy.example", 3128},
+		"socks5://[2001:db8::1]:1080":    {"socks5", "2001:db8::1", 1080},
+		"https://proxy.example:3128":     {},
+		"socks5://proxy.example":         {},
+		"socks5://proxy.example:0":       {},
+		"socks5://proxy.example:70000":   {},
+		"socks5://user:pw@proxy.ex:1080": {},
+		"http://proxy.example:3128/path": {},
+		"http://proxy.example:3128?x=1":  {},
+		"proxy.example:3128":             {},
+		"":                               {},
+	} {
+		got, err := parseProxy(raw)
+		if (err != nil) != (want == proxy{}) || got != want {
+			t.Errorf("parseProxy(%q) = %+v, %v; want %+v", raw, got, err, want)
+		}
+	}
+}
+
+// The owner gives the URL of the proxy a session goes out through; the
+// backend hands it to the session's Firefox in the slot's env file.
+// Changing it restarts a running session.
+func TestProxy(t *testing.T) {
+	fastWake(t)
+	f := setupHosts(t, "atlas", "styx")
+	atlas, styx := f.hosts["atlas"], f.hosts["styx"]
+	env := func(h *host) string {
+		b, _ := os.ReadFile(h.b.envPath(0))
+		return string(b)
+	}
+	waitFor := func(what string, ok func() bool) {
+		t.Helper()
+		for deadline := time.Now().Add(5 * time.Second); !ok(); time.Sleep(5 * time.Millisecond) {
+			if time.Now().After(deadline) {
+				t.Fatalf("timed out waiting for %s", what)
+			}
+		}
+	}
+	stops := func(h *host) int {
+		h.units.mu.Lock()
+		defer h.units.mu.Unlock()
+		return h.units.stops
+	}
+	const (
+		tor       = "socks5h://tor.example:9050"
+		torEnv    = "BROWSER_SESSION_PROXY_TYPE=socks5\nBROWSER_SESSION_PROXY_HOST=tor.example\nBROWSER_SESSION_PROXY_PORT=9050\n"
+		office    = "http://10.0.0.1:3128"
+		officeEnv = "BROWSER_SESSION_PROXY_TYPE=http\nBROWSER_SESSION_PROXY_HOST=10.0.0.1\nBROWSER_SESSION_PROXY_PORT=3128\n"
+	)
+
+	for proxy, want := range map[string]string{
+		"ftp://proxy.example:21":                 "want http://",
+		"proxy.example:3128":                     "want http://",
+		"socks5://proxy.example":                 "want http://",
+		"socks5h://me:secret@proxy.example:1080": "proxy logins are not supported",
+		"http://me@proxy.example:3128":           "proxy logins are not supported",
+	} {
+		status, body := f.post(t, "/sessions", "alice", url.Values{"host": {"atlas"}, "proxy": {proxy}})
+		if status != http.StatusBadRequest || !strings.Contains(body, "bad proxy URL") || !strings.Contains(body, want) {
+			t.Errorf("create with proxy %q: %d %s", proxy, status, body)
+		}
+	}
+	if atlas.units.isRunning(0) || len(f.sessions(t, "alice")) != 0 {
+		t.Fatal("create with a bad proxy started a session")
+	}
+
+	status, body := f.post(t, "/sessions", "alice", url.Values{"host": {"atlas"}, "proxy": {" " + tor + " "}})
+	if status != http.StatusCreated {
+		t.Fatalf("create with a proxy: %d %s", status, body)
+	}
+	var la links
+	json.Unmarshal([]byte(body), &la)
+	f.now = f.now.Add(time.Minute)
+	ls, controlStyx, _ := f.create(t, "alice", "styx")
+	if e := env(atlas); !strings.HasSuffix(e, torEnv) {
+		t.Fatalf("env file with the proxy:\n%s", e)
+	}
+	if e := env(styx); strings.Contains(e, "PROXY") {
+		t.Fatalf("env file without a proxy:\n%s", e)
+	}
+	if list := f.sessions(t, "alice"); len(list) != 2 || list[0].Proxy != tor || list[1].Proxy != "" {
+		t.Fatalf("list %+v", list)
+	}
+	page := f.page(t, "alice")
+	for _, want := range []string{
+		`<input name="proxy" size="30" placeholder="Proxy URL (optional)"> <button>New session</button>`,
+		"<p>Proxy: <code>" + tor + "</code></p>", "<p>Proxy: none, direct</p>",
+		`<input name="proxy" value="` + tor + `"`,
+		"restarts the session if it runs",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("page lacks %s", want)
+		}
+	}
+
+	setProxy := func(sub, id, proxy string) (int, string) {
+		t.Helper()
+		return f.post(t, "/sessions/"+id+"/proxy", sub, url.Values{"proxy": {proxy}})
+	}
+	if status, _ := setProxy("bob", ls.ID, tor); status != 404 {
+		t.Fatalf("bob set the proxy of alice's session: %d", status)
+	}
+	if status, body := setProxy("alice", ls.ID, "socks5://x=y:1"); status != http.StatusBadRequest || !strings.Contains(body, "bad proxy URL") {
+		t.Fatalf("bad proxy: %d %s", status, body)
+	}
+	if stops(styx) != 0 {
+		t.Fatal("a refused change restarted the session")
+	}
+
+	// a running session restarts with the new proxy and keeps its profile
+	styx.units.setState(0, "styx profile")
+	if status, body := setProxy("alice", ls.ID, office); status != http.StatusNoContent {
+		t.Fatalf("set proxy: %d %s", status, body)
+	}
+	waitFor("styx to restart with the proxy", func() bool {
+		return styx.units.isRunning(0) && strings.HasSuffix(env(styx), officeEnv)
+	})
+	if p, _ := styx.units.getState(0); stops(styx) != 1 || p != "styx profile" {
+		t.Fatalf("after the restart: %d stops, profile %q", stops(styx), p)
+	}
+	if list := f.sessions(t, "alice"); list[1].Proxy != office || list[1].State != "running" {
+		t.Fatalf("list after the restart %+v", list)
+	}
+	if status, body := f.do(t, "GET", "/s/"+controlStyx+"/x", "", ""); status != 200 || body != "backend /x" {
+		t.Fatalf("link after the restart: %d %s", status, body)
+	}
+
+	// and without one goes out directly again
+	if status, _ := setProxy("alice", la.ID, ""); status != http.StatusNoContent {
+		t.Fatalf("remove proxy: %d", status)
+	}
+	waitFor("atlas to restart without the proxy", func() bool {
+		return atlas.units.isRunning(0) && env(atlas) != "" && !strings.Contains(env(atlas), "PROXY")
+	})
+	if stops(atlas) != 1 {
+		t.Fatalf("atlas stopped %d times", stops(atlas))
+	}
+
+	// a stopped session gets it at its next start
+	f.s.stopIdle()
+	f.clock.Lock()
+	f.now = f.now.Add(time.Hour)
+	f.clock.Unlock()
+	f.s.stopIdle()
+	if styx.units.isRunning(0) {
+		t.Fatal("not stopped")
+	}
+	if status, _ := setProxy("alice", ls.ID, tor); status != http.StatusNoContent || styx.units.isRunning(0) {
+		t.Fatalf("set proxy of a stopped session: %d, running %v", status, styx.units.isRunning(0))
+	}
+	if status, _ := f.do(t, "GET", "/s/"+controlStyx+"/x", "", ""); status != 200 || !strings.HasSuffix(env(styx), torEnv) {
+		t.Fatalf("start with the new proxy: %d\n%s", status, env(styx))
+	}
+
+	// kept in sessions.json across a gateway restart
+	f.start(t, f.s.cfg)
+	if list := f.sessions(t, "alice"); list[0].Proxy != "" || list[1].Proxy != tor {
+		t.Fatalf("list after restart %+v", list)
+	}
+	if b, _ := os.ReadFile(f.s.statePath()); strings.Count(string(b), `"proxy"`) != 1 || !strings.Contains(string(b), `"proxy": "`+tor+`"`) {
+		t.Fatalf("sessions.json:\n%s", b)
+	}
+
+	// the backend takes nothing but a proxy URL
+	for _, bad := range []string{"socks5://x:1\nLD_PRELOAD=/tmp/x", "socks5://x=y:1", "ftp://x:1", "http://u:p@x:1"} {
+		b, _ := json.Marshal(secrets{ControlPassword: "AAAAAAAAAAAAAAAA", ViewPassword: "AAAAAAAAAAAAAAAA", MCPToken: "AAAAAAAAAAAAAAAA", Proxy: bad})
+		req, _ := http.NewRequest("PUT", styx.web.URL+"/slots/0?fresh", bytes.NewReader(b))
+		req.Header.Set(tokenHeader, testToken)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusBadRequest || !strings.HasSuffix(env(styx), torEnv) {
+			t.Fatalf("proxy %q: %d", bad, resp.StatusCode)
+		}
 	}
 }

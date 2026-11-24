@@ -6,7 +6,9 @@
 // (watch only). The page shows the owner both links of every session. A
 // session lasts until its owner kills it; one without requests for a while
 // is stopped, keeping its profile, and started again by the next request.
-// The owner can move a session to another host; its links stay.
+// The owner can move a session to another host; its links stay. A session
+// goes out directly or through a proxy whose URL the owner gives; changing
+// it restarts a running session.
 //
 // The gateway (this file, page.go, auth.go, proxy.go) holds the page, the
 // login and the sessions with their tokens, and knows which host and slot
@@ -103,6 +105,9 @@ type session struct {
 	ViewHash    []byte `json:"view_hash,omitempty"`
 	// stopped while idle, started by the next request
 	Stopped bool `json:"stopped,omitempty"`
+	// the URL of the proxy its Firefox goes out through (parseProxy);
+	// "" goes out directly
+	Proxy string `json:"proxy,omitempty"`
 
 	// its unit is being started: it holds the slot, but is not saved yet
 	starting bool
@@ -268,9 +273,10 @@ func (s *server) lookup(token string) (*session, role, bool) {
 }
 
 var (
-	errFull = errors.New("all session slots of the host are in use")
-	errName = fmt.Errorf("names have at most %d characters", maxName)
-	errHost = errors.New("no such host")
+	errFull  = errors.New("all session slots of the host are in use")
+	errName  = fmt.Errorf("names have at most %d characters", maxName)
+	errHost  = errors.New("no such host")
+	errProxy = errors.New("bad proxy URL")
 )
 
 const maxName = 100
@@ -282,6 +288,19 @@ func cleanName(name string) (string, error) {
 		return "", errName
 	}
 	return name, nil
+}
+
+// cleanProxy trims a proxy URL and checks it the way the backend does;
+// "" means none.
+func cleanProxy(proxy string) (string, error) {
+	proxy = strings.TrimSpace(proxy)
+	if proxy == "" {
+		return "", nil
+	}
+	if _, err := parseProxy(proxy); err != nil {
+		return "", fmt.Errorf("%w: %v", errProxy, err)
+	}
+	return proxy, nil
 }
 
 const (
@@ -318,10 +337,10 @@ func (s *server) url(p place, rest string) string {
 // at is where a session runs; s.mu must be held.
 func (se *session) at() place { return place{se.Host, se.Slot} }
 
-// secrets are what the session's unit gets, with TURN credentials from
-// now; s.mu must be held.
+// secrets are what the session's unit gets when it starts, with TURN
+// credentials from now and its proxy; s.mu must be held.
 func (s *server) secrets(se *session) []byte {
-	sec := secrets{ControlPassword: se.ControlPassword, ViewPassword: se.ViewPassword, MCPToken: se.MCPToken}
+	sec := secrets{ControlPassword: se.ControlPassword, ViewPassword: se.ViewPassword, MCPToken: se.MCPToken, Proxy: se.Proxy}
 	if s.turnSecret != nil {
 		ice := iceServer{URLs: s.cfg.TURN.URLs}
 		ice.Username, ice.Credential = turnCredentials(s.turnSecret, se.ID, s.now().Add(time.Duration(s.cfg.TURN.TTLHours)*time.Hour))
@@ -386,12 +405,16 @@ func backendStatus(p place, resp *http.Response, want int) error {
 	return fmt.Errorf("%s: %s: %s", p.host, resp.Status, strings.TrimSpace(string(msg)))
 }
 
-// create starts a session for owner on host and returns it with its two
-// tokens. The backend call runs without the lock, so a slow host holds up
-// no other session.
-func (s *server) create(owner, name, host string) (*session, string, string, error) {
+// create starts a session for owner on host, going out through the proxy
+// URL proxy ("" for directly), and returns it with its two tokens. The
+// backend call runs without the lock, so a slow host holds up no other
+// session.
+func (s *server) create(owner, name, host, proxy string) (*session, string, string, error) {
 	name, err := cleanName(name)
 	if err != nil {
+		return nil, "", "", err
+	}
+	if proxy, err = cleanProxy(proxy); err != nil {
 		return nil, "", "", err
 	}
 	if host == "" && len(s.cfg.Backends) == 1 {
@@ -420,6 +443,7 @@ func (s *server) create(owner, name, host string) (*session, string, string, err
 		ViewPassword:    rand.Text(),
 		MCPToken:        rand.Text(),
 		Created:         s.now(),
+		Proxy:           proxy,
 		starting:        true,
 	}
 	se.newRoleContext(controller)
@@ -484,6 +508,57 @@ func (s *server) rename(id, owner, name string) error {
 	}
 	se.Name = name
 	return s.save()
+}
+
+// setProxy sets the proxy URL ("" for none) of a session. A running
+// session restarts with it the way an idle one comes back: it stops now
+// and starts again in the background, viewers get the waking-up page
+// meanwhile. A stopped one gets it at its next start. If the stop fails
+// nothing changes.
+func (s *server) setProxy(id, owner, proxy string) error {
+	proxy, err := cleanProxy(proxy)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	se, ok := s.owned(id, owner)
+	s.mu.Unlock()
+	if !ok {
+		return os.ErrNotExist
+	}
+	se.power.Lock()
+	defer se.power.Unlock()
+	s.mu.Lock()
+	if s.sessions[id] != se {
+		s.mu.Unlock()
+		return os.ErrNotExist
+	}
+	running := !se.Stopped
+	at := se.at()
+	if running {
+		// requests from now on wait for the restart
+		se.ready = false
+	}
+	s.mu.Unlock()
+	if running {
+		if err := s.callBackend(context.Background(), stopTimeout, at, http.MethodPost, "/stop", nil); err != nil {
+			return err
+		}
+	}
+	s.mu.Lock()
+	se.Proxy = proxy
+	se.Stopped = true
+	err = s.save()
+	s.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	if running {
+		log.Printf("session %s: restarting with a new proxy", id)
+		// its goroutine waits until this returns and unlocks power
+		s.wakeInBackground(se)
+	}
+	return nil
 }
 
 // kill stops a session and deletes its state for good. If that fails the

@@ -23,6 +23,7 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("POST /sessions/{id}/rename", s.handleRename)
 	mux.HandleFunc("POST /sessions/{id}/kill", s.handleKill)
 	mux.HandleFunc("POST /sessions/{id}/move", s.handleMove)
+	mux.HandleFunc("POST /sessions/{id}/proxy", s.handleSetProxy)
 	mux.HandleFunc("/s/{token}", s.handleSession)
 	mux.HandleFunc("/s/{token}/{rest...}", s.handleSession)
 	return mux
@@ -47,6 +48,8 @@ type sessionInfo struct {
 	Name      string    `json:"name,omitempty"`
 	Created   time.Time `json:"created"`
 	Connected bool      `json:"connected"`
+	// the URL of the proxy it goes out through; "" for directly
+	Proxy string `json:"proxy,omitempty"`
 }
 
 var page = template.Must(template.New("page").Parse(`<!doctype html>
@@ -58,11 +61,14 @@ var page = template.Must(template.New("page").Parse(`<!doctype html>
 {{if not .Owner}}<p><a href="/login">Log in</a> to create sessions.</p>{{else}}
 {{if .Error}}<p><strong>{{.Error}}</strong></p>{{end}}
 <form method="post" action="/sessions"><input name="name" maxlength="{{.MaxName}}" placeholder="Name (optional)">
-{{if gt (len .Hosts) 1}}<select name="host">{{range .Hosts}}<option>{{.}}</option>{{end}}</select>{{end}} <button>New session</button></form>
+{{if gt (len .Hosts) 1}}<select name="host">{{range .Hosts}}<option>{{.}}</option>{{end}}</select>{{end}}
+<input name="proxy" size="30" placeholder="Proxy URL (optional)"> <button>New session</button></form>
+<p><small>A proxy URL is http://, socks4://, socks5:// or socks5h://host:port, without a user or password; Firefox resolves names through SOCKS proxies. Empty: directly.</small></p>
 <form method="post" action="/logout"><button>Log out</button></form>
 {{range .Sessions}}<section>
 <h2>{{if .Name}}{{.Name}} <small>{{.ID}}</small>{{else}}{{.ID}}{{end}}</h2>
 <p>On {{.Host}}, {{.State}}, created {{.Created.Format "2006-01-02 15:04"}}{{if .Connected}}, connected{{end}}</p>
+<p>Proxy: {{if .Proxy}}<code>{{.Proxy}}</code>{{else}}none, direct{{end}}</p>
 <ul>
 <li>View only: {{if .View}}<a href="{{.View}}"><code>{{.View}}</code></a>{{else}}link not stored, regenerate to show{{end}}
 <form method="post" action="/sessions/{{.ID}}/regenerate/view"><button>New view link</button></form></li>
@@ -74,6 +80,7 @@ var page = template.Must(template.New("page").Parse(`<!doctype html>
 <form method="post" action="/sessions/{{.ID}}/kill"><button>Kill</button></form>
 {{if .MoveTo}}<form method="post" action="/sessions/{{.ID}}/move"><select name="host">{{range .MoveTo}}<option>{{.}}</option>{{end}}</select> <button>Move</button></form>
 {{end}}
+<form method="post" action="/sessions/{{.ID}}/proxy"><input name="proxy" value="{{.Proxy}}" size="30" placeholder="Proxy URL, empty: direct"> <button>Set proxy</button> <small>restarts the session if it runs; tabs and cookies stay</small></form>
 </section>{{end}}
 {{end}}
 </body></html>
@@ -107,6 +114,7 @@ func (s *server) list(sub string) []sessionInfo {
 				Name:      se.Name,
 				Created:   se.Created,
 				Connected: se.active > 0,
+				Proxy:     se.Proxy,
 			})
 		}
 	}
@@ -177,13 +185,13 @@ func (s *server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "log in first", http.StatusUnauthorized)
 		return
 	}
-	se, control, view, err := s.create(sub, r.FormValue("name"), r.FormValue("host"))
+	se, control, view, err := s.create(sub, r.FormValue("name"), r.FormValue("host"), r.FormValue("proxy"))
 	if err != nil {
 		status := http.StatusInternalServerError
 		switch {
 		case errors.Is(err, errFull):
 			status = http.StatusServiceUnavailable
-		case errors.Is(err, errName), errors.Is(err, errHost):
+		case errors.Is(err, errName), errors.Is(err, errHost), errors.Is(err, errProxy):
 			status = http.StatusBadRequest
 		default:
 			log.Printf("create: %v", err)
@@ -249,6 +257,26 @@ func (s *server) handleRename(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	done(w, r, http.StatusOK, nil)
+}
+
+func (s *server) handleSetProxy(w http.ResponseWriter, r *http.Request) {
+	sub := s.owner(r)
+	if sub == "" {
+		http.Error(w, "log in first", http.StatusUnauthorized)
+		return
+	}
+	err := s.setProxy(r.PathValue("id"), sub, r.FormValue("proxy"))
+	switch {
+	case err == nil:
+		done(w, r, http.StatusOK, nil)
+	case errors.Is(err, os.ErrNotExist):
+		http.NotFound(w, r)
+	case errors.Is(err, errProxy):
+		s.render(w, r, http.StatusBadRequest, sub, err.Error(), nil)
+	default:
+		log.Printf("proxy: %v", err)
+		s.render(w, r, http.StatusInternalServerError, sub, err.Error(), nil)
+	}
 }
 
 func (s *server) handleKill(w http.ResponseWriter, r *http.Request) {

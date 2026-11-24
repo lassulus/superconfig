@@ -9,7 +9,9 @@
 # browser-mcp's HTTP server, as a dynamic user. Its home with the Firefox
 # profile is the unit's StateDirectory, which outlives restarts and reboots
 # until the backend cleans it when the session is killed; sockets, the X
-# display and caches stay in the unit's private /tmp.
+# display and caches stay in the unit's private /tmp. Firefox goes out
+# directly or through the proxy URL the owner gave for the session, which
+# the backend hands it in the slot's env file.
 {
   config,
   lib,
@@ -59,6 +61,38 @@ let
       lockPref("privacy.clearOnShutdown.cookies", false);
       lockPref("privacy.clearOnShutdown.sessions", false);
       lockPref("privacy.clearOnShutdown_v2.cookiesAndStorage", false);
+      // The session's proxy from the slot's env file, which the backend
+      // writes at every start: BROWSER_SESSION_PROXY_TYPE (http, socks4 or
+      // socks5), _HOST and _PORT. Without one Firefox goes out directly.
+      // Locked prefs live only in this run, so neither the profile nor
+      // about:config keeps or overrides a proxy across starts.
+      var proxyType = getenv("BROWSER_SESSION_PROXY_TYPE") || "";
+      var proxyHost = getenv("BROWSER_SESSION_PROXY_HOST") || "";
+      var proxyPort = parseInt(getenv("BROWSER_SESSION_PROXY_PORT"), 10) || 0;
+      var socksProxy = proxyType == "socks4" || proxyType == "socks5";
+      var httpProxy = proxyType == "http";
+      var proxied = socksProxy || httpProxy;
+      lockPref("network.proxy.type", proxied ? 1 : 0);
+      lockPref("network.proxy.socks", socksProxy ? proxyHost : "");
+      lockPref("network.proxy.socks_port", socksProxy ? proxyPort : 0);
+      lockPref("network.proxy.socks_version", proxyType == "socks4" ? 4 : 5);
+      lockPref("network.proxy.http", httpProxy ? proxyHost : "");
+      lockPref("network.proxy.http_port", httpProxy ? proxyPort : 0);
+      lockPref("network.proxy.ssl", httpProxy ? proxyHost : "");
+      lockPref("network.proxy.ssl_port", httpProxy ? proxyPort : 0);
+      lockPref("network.proxy.no_proxies_on", "");
+      // no direct connection when the proxy fails, and names resolve at
+      // the proxy, not on the host (socks5h, socks4a)
+      lockPref("network.proxy.failover_direct", false);
+      lockPref("network.proxy.socks_remote_dns", true);
+      lockPref("network.proxy.socks5_remote_dns", true);
+      lockPref("network.dns.disablePrefetch", proxied);
+      // Firefox's own WebRTC (pages', not neko's stream, which neko sends
+      // itself) uses only the proxy, so pages never see the host's
+      // addresses; through a SOCKS proxy that means no WebRTC
+      lockPref("media.peerconnection.ice.proxy_only", proxied);
+      lockPref("media.peerconnection.ice.default_address_only", proxied);
+      lockPref("media.peerconnection.ice.no_host", proxied);
     '';
   };
 
