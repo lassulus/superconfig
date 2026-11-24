@@ -96,6 +96,9 @@ in
     # Phone-approved ssh for the agent: the phonetpm user service runs in the
     # hermes user manager (the module sets linger), see SSH_AUTH_SOCK below.
     ../../configs/phonetpm.nix
+    # BROWSER_SESSIONS_TOKEN in hermes-env: create and kill browser sessions
+    # over the gateway's API (tools/browser-sessions/api.go)
+    ../../configs/services/browser-sessions/api-tokens.nix
   ];
 
   # slopulus: Hermes Agent (Nous Research), an autonomous agent run as a
@@ -651,6 +654,7 @@ in
       "hermes-mail"
       "hermes-homeassistant"
       "agentd"
+      "browser-sessions-api"
     ];
     files."hermes.env" = { };
     # clan regenerates a var only when its validation changes, not when the
@@ -668,6 +672,8 @@ in
       EMAIL_PASSWORD=$(cat "$in"/hermes-mail/password)
       HASS_TOKEN=$(cat "$in"/hermes-homeassistant/token)
       AGENTD_TOKEN=$(cat "$in"/agentd/hermes-token)
+      BROWSER_SESSIONS_URL=https://${(import ../../configs/services/browser-sessions/common.nix).domain}
+      BROWSER_SESSIONS_TOKEN=$(cat "$in"/browser-sessions-api/hermes-token)
       EOF
     '';
   };
