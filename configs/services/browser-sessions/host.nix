@@ -43,9 +43,9 @@ in
     enable = true;
     listen = "0.0.0.0:${toString config.lass.servicePorts.browser-sessions}";
     tokenFile = config.clan.core.vars.generators.browser-sessions-backend.files.token.path;
-    publicAddress = self.inputs.kartei.hosts.${common.proxy}.nets.internet.ip4.addr;
+    publicAddresses = [ self.inputs.kartei.hosts.${common.proxy}.nets.internet.ip4.addr ];
     # proxy.nix forwards the UDP and TCP ports to this address
-    privateAddress = retiolum name;
+    privateAddresses = [ (retiolum name) ];
     inherit slots;
   };
 

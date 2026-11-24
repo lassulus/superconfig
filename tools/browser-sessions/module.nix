@@ -23,11 +23,19 @@ let
   cfg = config.services.browser-sessions;
   gateway = config.services.browser-sessions-gateway;
   forward = config.services.browser-sessions-forward;
-  # the forwarded ports of each backend as an nftables set
-  forwards = lib.mapAttrsToList (_: b: {
-    inherit (b) address;
-    ports = "{ ${lib.concatMapStringsSep ", " toString b.ports} }";
-  }) forward.backends;
+  isIPv6 = lib.hasInfix ":";
+  # one per backend address: its family and the backend's ports as a set
+  forwards = lib.concatLists (
+    lib.mapAttrsToList (
+      _: b:
+      map (address: {
+        inherit address;
+        family = if isIPv6 address then "ip6" else "ip";
+        nfproto = if isIPv6 address then "ipv6" else "ipv4";
+        ports = "{ ${lib.concatMapStringsSep ", " toString b.ports} }";
+      }) b.addresses
+    ) forward.backends
+  );
   packages = self.packages.${pkgs.stdenv.hostPlatform.system};
   neko = packages.neko;
 
@@ -320,22 +328,26 @@ in
     };
     backends = lib.mkOption {
       description = ''
-        The session hosts by name: their IPv4 address on the interface
-        (services.browser-sessions.privateAddress) and their slots' WebRTC
-        ports. These ports to any local address of this host go there,
-        masqueraded, also from this host itself (a TURN server here relays
-        to the address neko announces).
+        The session hosts by name: their addresses on the interface (one per
+        family, their services.browser-sessions.privateAddresses) and their
+        slots' WebRTC ports. These ports to any local address of this host
+        of a family go to the backend's address of that family, masqueraded,
+        also from this host itself (a TURN server here relays to the
+        addresses neko announces).
       '';
       example = {
         atlas = {
-          address = "10.243.1.3";
+          addresses = [
+            "10.243.1.3"
+            "42:0:ce16::3"
+          ];
           ports = [ 8967 ];
         };
       };
       type = lib.types.attrsOf (
         lib.types.submodule {
           options = {
-            address = lib.mkOption { type = lib.types.str; };
+            addresses = lib.mkOption { type = lib.types.nonEmptyListOf lib.types.str; };
             ports = lib.mkOption { type = lib.types.nonEmptyListOf lib.types.port; };
           };
         }
@@ -354,16 +366,24 @@ in
       type = lib.types.str;
       description = "File with the token the gateway sends (services.browser-sessions-gateway.tokenFile).";
     };
-    publicAddress = lib.mkOption {
-      type = lib.types.str;
-      description = "IPv4 address WebRTC clients reach the slots' UDP and TCP ports at (neko's NAT 1:1 address).";
-    };
-    privateAddress = lib.mkOption {
-      type = lib.types.str;
+    publicAddresses = lib.mkOption {
+      type = lib.types.nonEmptyListOf lib.types.str;
+      example = [
+        "192.0.2.1"
+        "2001:db8::1"
+      ];
       description = ''
-        IPv4 address of this host that publicAddress forwards the UDP and
-        TCP ports to. neko's UDP mux listens only there, and its TCP mux
-        announces only that address, so it answers the forwarded checks
+        Addresses (IPv4 and IPv6) WebRTC clients reach the slots' UDP and TCP
+        ports at. neko announces them instead of privateAddresses (NAT 1:1),
+        each for the private addresses of its family.
+      '';
+    };
+    privateAddresses = lib.mkOption {
+      type = lib.types.nonEmptyListOf lib.types.str;
+      description = ''
+        Addresses of this host that publicAddresses forward the UDP and TCP
+        ports to, one per family. neko's UDP mux listens only there, and its
+        TCP mux announces only these, so it answers the forwarded checks
         from the socket they arrived on.
       '';
     };
@@ -440,39 +460,52 @@ in
 
     (lib.mkIf forward.enable {
       networking.nftables.tables.browser-sessions = {
-        family = "ip";
+        family = "inet";
         content = ''
           chain prerouting {
             type nat hook prerouting priority dstnat; policy accept;
             ${lib.concatMapStringsSep "\n  " (
               f:
-              ''iifname != "${forward.interface}" fib daddr type local meta l4proto { tcp, udp } th dport ${f.ports} dnat to ${f.address}''
+              ''iifname != "${forward.interface}" meta nfproto ${f.nfproto} fib daddr type local meta l4proto { tcp, udp } th dport ${f.ports} dnat ${f.family} to ${f.address}''
             ) forwards}
           }
           chain output {
             type nat hook output priority -100; policy accept;
             ${lib.concatMapStringsSep "\n  " (
-              f: "fib daddr type local meta l4proto { tcp, udp } th dport ${f.ports} dnat to ${f.address}"
+              f:
+              "meta nfproto ${f.nfproto} fib daddr type local meta l4proto { tcp, udp } th dport ${f.ports} dnat ${f.family} to ${f.address}"
             ) forwards}
           }
           chain postrouting {
             type nat hook postrouting priority srcnat; policy accept;
             # the backend answers this host over the interface, not the client directly
             ${lib.concatMapStringsSep "\n  " (
-              f: "ip daddr ${f.address} meta l4proto { tcp, udp } th dport ${f.ports} ct status dnat masquerade"
+              f:
+              "${f.family} daddr ${f.address} meta l4proto { tcp, udp } th dport ${f.ports} ct status dnat masquerade"
             ) forwards}
           }
         '';
       };
       # the interface's MTU may be smaller than the clients' links
       networking.firewall.extraForwardRules = lib.concatMapStrings (f: ''
-        ip daddr ${f.address} tcp dport ${f.ports} ct status dnat tcp flags syn tcp option maxseg size set rt mtu
-        ip daddr ${f.address} meta l4proto { tcp, udp } th dport ${f.ports} ct status dnat accept
+        ${f.family} daddr ${f.address} tcp dport ${f.ports} ct status dnat tcp flags syn tcp option maxseg size set rt mtu
+        ${f.family} daddr ${f.address} meta l4proto { tcp, udp } th dport ${f.ports} ct status dnat accept
       '') forwards;
-      boot.kernel.sysctl."net.ipv4.ip_forward" = 1;
+      boot.kernel.sysctl = {
+        "net.ipv4.ip_forward" = lib.mkIf (lib.any (f: f.family == "ip") forwards) 1;
+        "net.ipv6.conf.all.forwarding" = lib.mkIf (lib.any (f: f.family == "ip6") forwards) 1;
+      };
     })
 
     (lib.mkIf cfg.enable {
+      assertions = [
+        {
+          assertion =
+            lib.length (lib.filter isIPv6 cfg.privateAddresses) <= 1
+            && lib.length (lib.filter (a: !isIPv6 a) cfg.privateAddresses) <= 1;
+          message = "services.browser-sessions.privateAddresses: at most one address per family; neko would announce both under the same public one and drop the checks arriving on the second";
+        }
+      ];
       # the backend may start, stop and clean (delete the state of) the
       # session units and start their export and import, nothing else;
       # systemctl clean refs the unit to wait for the cleaning
@@ -579,8 +612,9 @@ in
             }
           );
           NEKO_SESSION_IMPLICIT_HOSTING = "true";
-          NEKO_WEBRTC_NAT1TO1 = cfg.publicAddress;
-          NEKO_WEBRTC_UDPMUX_IPS = cfg.privateAddress;
+          # lists from the environment are separated by spaces (viper)
+          NEKO_WEBRTC_NAT1TO1 = lib.concatStringsSep " " cfg.publicAddresses;
+          NEKO_WEBRTC_UDPMUX_IPS = lib.concatStringsSep " " cfg.privateAddresses;
           NEKO_LEGACY = "false";
           NEKO_SERVER_METRICS = "false";
         };

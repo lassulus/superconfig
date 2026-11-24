@@ -127,7 +127,7 @@ in
       map (
         b:
         lib.nameValuePair b.name {
-          address = b.addr;
+          addresses = [ b.addr ];
           ports = b.webrtc;
         }
       ) backends
