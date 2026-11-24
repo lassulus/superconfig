@@ -8,6 +8,7 @@
     ../../configs
     ../../configs/retiolum.nix
     ../../configs/services/continuum
+    ../../configs/services/agentd
     ../../configs/pipewire.nix
     ../../configs/green-host.nix
     ../../configs/syncthing.nix
