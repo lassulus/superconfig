@@ -10,6 +10,14 @@ let
   cfg = config.services.tranquil-pds;
   package = self.packages.${pkgs.stdenv.hostPlatform.system}.tranquil-pds;
   zitadelEnv = config.lass.zitadel.projects.pds.apps.web.envFile.path;
+  # agentd-ssh public keys of every agentd host (configs/services/agentd),
+  # from the clan vars in the repo: a new host gets push access once its vars
+  # are committed and this host is redeployed.
+  varsDir = "${self}/vars/per-machine";
+  agentdKey = m: "${varsDir}/${m}/agentd-ssh/id_ed25519.pub/value";
+  agentdKeys = map (m: lib.fileContents (agentdKey m)) (
+    lib.filter (m: builtins.pathExists (agentdKey m)) (lib.attrNames (builtins.readDir varsDir))
+  );
 
   # Who may log in (the grant on the Zitadel project pds), by the address of
   # their id.lassul.us user. With a handle, pds-reconcile creates the
@@ -23,7 +31,7 @@ let
     "lass@lassul.us" = { };
     # agentd's account (configs/services/agentd), forks and PRs on
     # knot.lassul.us
-    "slop@lassul.us" = { };
+    "slop@lassul.us".sshKeys = agentdKeys;
     # slopulus' account: its PRs from its fork (instead of crit reviews),
     # also those of the update-pkgs and cve-watch bots
     "slopulus@lassul.us" = { };
