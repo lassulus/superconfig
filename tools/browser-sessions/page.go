@@ -24,6 +24,10 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("POST /sessions/{id}/kill", s.handleKill)
 	mux.HandleFunc("POST /sessions/{id}/move", s.handleMove)
 	mux.HandleFunc("POST /sessions/{id}/proxy", s.handleSetProxy)
+	mux.HandleFunc("GET /api/sessions", s.api(s.handleAPIList))
+	mux.HandleFunc("POST /api/sessions", s.api(s.handleAPICreate))
+	mux.HandleFunc("PATCH /api/sessions/{id}", s.api(s.handleAPIRename))
+	mux.HandleFunc("DELETE /api/sessions/{id}", s.api(s.handleAPIKill))
 	mux.HandleFunc("/s/{token}", s.handleSession)
 	mux.HandleFunc("/s/{token}/{rest...}", s.handleSession)
 	return mux
@@ -50,6 +54,8 @@ type sessionInfo struct {
 	Connected bool      `json:"connected"`
 	// the URL of the proxy it goes out through; "" for directly
 	Proxy string `json:"proxy,omitempty"`
+	// the API token that created it
+	CreatedBy string `json:"created_by,omitempty"`
 }
 
 var page = template.Must(template.New("page").Parse(`<!doctype html>
@@ -67,7 +73,7 @@ var page = template.Must(template.New("page").Parse(`<!doctype html>
 <form method="post" action="/logout"><button>Log out</button></form>
 {{range .Sessions}}<section>
 <h2>{{if .Name}}{{.Name}} <small>{{.ID}}</small>{{else}}{{.ID}}{{end}}</h2>
-<p>On {{.Host}}, {{.State}}, created {{.Created.Format "2006-01-02 15:04"}}{{if .Connected}}, connected{{end}}</p>
+<p>On {{.Host}}, {{.State}}, created {{.Created.Format "2006-01-02 15:04"}}{{if .CreatedBy}} by {{.CreatedBy}}{{end}}{{if .Connected}}, connected{{end}}</p>
 <p>Proxy: {{if .Proxy}}<code>{{.Proxy}}</code>{{else}}none, direct{{end}}</p>
 <ul>
 <li>View only: {{if .View}}<a href="{{.View}}"><code>{{.View}}</code></a>{{else}}link not stored, regenerate to show{{end}}
@@ -115,6 +121,7 @@ func (s *server) list(sub string) []sessionInfo {
 				Created:   se.Created,
 				Connected: se.active > 0,
 				Proxy:     se.Proxy,
+				CreatedBy: se.CreatedBy,
 			})
 		}
 	}
@@ -185,7 +192,7 @@ func (s *server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "log in first", http.StatusUnauthorized)
 		return
 	}
-	se, control, view, err := s.create(sub, r.FormValue("name"), r.FormValue("host"), r.FormValue("proxy"))
+	se, control, view, err := s.create(sub, r.FormValue("name"), r.FormValue("host"), r.FormValue("proxy"), "")
 	if err != nil {
 		status := http.StatusInternalServerError
 		switch {

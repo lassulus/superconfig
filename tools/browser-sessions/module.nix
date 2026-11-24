@@ -1,8 +1,8 @@
 # The browser-sessions gateway (services.browser-sessions-gateway: the
-# page, the login, the sessions and their tokens, proxying the links), the
-# forward of the backends' WebRTC ports on the public host
-# (services.browser-sessions-forward) and the session hosts
-# (services.browser-sessions: the backend that the gateway
+# page, the login, the JSON API for agents with a token, the sessions and
+# their tokens, proxying the links), the forward of the backends' WebRTC
+# ports on the public host (services.browser-sessions-forward) and the
+# session hosts (services.browser-sessions: the backend that the gateway
 # drives over the network, and the session units it starts). Session i of a
 # host runs in browser-session@i.service: Xorg (neko's dummy setup),
 # pulseaudio, openbox, Firefox with the browser-mcp extension, neko and
@@ -260,6 +260,27 @@ in
         description = "File with the client id of a public (PKCE) client whose redirect URI is <url>/callback.";
       };
     };
+    api = {
+      tokensFile = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        description = ''
+          File with the tokens of the JSON API at /api/sessions, one
+          `<name> <sha256 of the token in hex>` per line (agentd's
+          auth.tokensFile format). A token creates, lists, renames and kills
+          only its own sessions; null turns the API off.
+        '';
+      };
+      owner = lib.mkOption {
+        type = lib.types.str;
+        default = "";
+        description = ''
+          OIDC sub of the user the API tokens' sessions belong to as well:
+          his page shows them marked with the token's name. Needed with
+          tokensFile.
+        '';
+      };
+    };
     stopAfterMinutes = lib.mkOption {
       type = lib.types.ints.unsigned;
       default = 30;
@@ -442,6 +463,10 @@ in
                 token_file = "/run/credentials/browser-sessions-gateway.service/token";
                 oidc_issuer = gateway.oidc.issuer;
                 oidc_client_id_file = "/run/credentials/browser-sessions-gateway.service/oidc-client-id";
+                api_tokens_file = lib.optionalString (
+                  gateway.api.tokensFile != null
+                ) "/run/credentials/browser-sessions-gateway.service/api-tokens";
+                api_owner = gateway.api.owner;
               }
             )
           }";
@@ -450,7 +475,8 @@ in
             "token:${gateway.tokenFile}"
             "oidc-client-id:${gateway.oidc.clientIdFile}"
           ]
-          ++ lib.optional (gateway.turn.urls != [ ]) "turn-secret:${gateway.turn.secretFile}";
+          ++ lib.optional (gateway.turn.urls != [ ]) "turn-secret:${gateway.turn.secretFile}"
+          ++ lib.optional (gateway.api.tokensFile != null) "api-tokens:${gateway.api.tokensFile}";
         };
       };
 

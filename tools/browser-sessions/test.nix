@@ -9,11 +9,14 @@
 # through it. Then the gateway on the same VM: a session created with
 # a proxy URL goes out only through it, names resolved there; changing the
 # proxy restarts the running session, which then goes out directly, and
-# through the proxy again once it gets it back.
+# through the proxy again once it gets it back. At the end the gateway's API
+# (with a token, without a login) creates a session, lists it, drives it
+# over MCP through its control link and kills it.
 { self, pkgs }:
 let
   token = "0123456789abcdef0123456789abcdef";
   mcpToken = "MCPTOKENMCPTOKENMCPTOKEN";
+  apiToken = "APITOKENAPITOKENAPITOKEN";
   secrets = pkgs.writeText "secrets.json" (
     builtins.toJSON {
       control_password = "CONTROLPASSWORDCONTROL";
@@ -250,6 +253,10 @@ pkgs.testers.runNixOSTest {
           backends.machine = {
             url = "http://127.0.0.1:8950";
             slots = 2;
+          };
+          api = {
+            tokensFile = "${pkgs.writeText "api-tokens" "hermes ${builtins.hashString "sha256" apiToken}\n"}";
+            owner = "lass";
           };
         };
         networking.firewall.interfaces.eth1 = {
@@ -586,5 +593,34 @@ pkgs.testers.runNixOSTest {
           assert loads(gw, "http://site.test:8000/show")
           connects_more(count)
           assert candidates(gw) == []
+
+      with subtest("an API token creates a session, drives it over MCP and kills it"):
+          api = "curl -sf -H 'Authorization: Bearer ${apiToken}' http://127.0.0.1:8949/api/sessions"
+          machine.fail("curl -sf -H 'Authorization: Bearer wrong' http://127.0.0.1:8949/api/sessions")
+          # the token is no login for the page
+          code = machine.succeed("curl -s -o /dev/null -w '%{http_code}' -H 'Accept: application/json' -H 'Authorization: Bearer ${apiToken}' http://127.0.0.1:8949/")
+          assert code == "401", code
+          # without a host the page's default; lass's proxy session holds slot 0
+          created = json.loads(machine.succeed(f"{api} -X POST --data '{{\"name\": \"vm\"}}'"))
+          print(created)
+          assert created["name"] == "vm" and created["host"] == "machine" and created["state"] == "running" and created["created_by"] == "hermes", created
+          machine.succeed("systemctl is-active browser-session@1.service")
+          # lass's own session is not the token's
+          listed = json.loads(machine.succeed(api))
+          assert [s["id"] for s in listed] == [created["id"]], listed
+          assert created["mcp"].startswith("http://127.0.0.1:8949/s/"), created
+          wait_for_tabs(created["mcp"])
+          tabs = json.loads(mcp(created["mcp"], "list_tabs"))
+          assert isinstance(tabs, list) and tabs, tabs
+          code = machine.succeed(f"curl -s -o /dev/null -w '%{{http_code}}' -X DELETE -H 'Authorization: Bearer ${apiToken}' http://127.0.0.1:8949/api/sessions/{session['id']}")
+          assert code == "404", code
+          machine.succeed(f"{api}/{created['id']} -X DELETE")
+          machine.fail("systemctl is-active browser-session@1.service")
+          machine.fail("test -e /var/lib/private/browser-session/1")
+          assert json.loads(machine.succeed(api)) == [], machine.succeed(api)
+          code = machine.succeed(f"curl -s -o /dev/null -w '%{{http_code}}' {created['mcp']} -X POST")
+          assert code == "404", code
+          # lass's session runs on
+          machine.succeed("systemctl is-active browser-session@0.service")
     '';
 }

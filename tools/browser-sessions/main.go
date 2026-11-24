@@ -8,13 +8,15 @@
 // is stopped, keeping its profile, and started again by the next request.
 // The owner can move a session to another host; its links stay. A session
 // goes out directly or through a proxy whose URL the owner gives; changing
-// it restarts a running session.
+// it restarts a running session. Agents with an API token create, list and
+// kill their own sessions over JSON (api.go); those belong to the
+// configured API owner as well.
 //
-// The gateway (this file, page.go, auth.go, proxy.go) holds the page, the
-// login and the sessions with their tokens, and knows which host and slot
-// each runs in. The hosts run the backend (backend.go), which starts, stops
-// and removes the units, hands their state out and in for moves, and passes
-// the gateway's requests on to them.
+// The gateway (this file, page.go, auth.go, api.go, proxy.go) holds the
+// page, the login and the sessions with their tokens, and knows which host
+// and slot each runs in. The hosts run the backend (backend.go), which
+// starts, stops and removes the units, hands their state out and in for
+// moves, and passes the gateway's requests on to them.
 package main
 
 import (
@@ -60,6 +62,10 @@ type config struct {
 	StopAfterMinutes int `json:"stop_after_minutes"`
 	// TURN server for the viewers' browsers (turn.go)
 	TURN turnConfig `json:"turn"`
+	// `<name> <sha256>` lines of the API tokens (api.go), and the OIDC sub
+	// of the owner their sessions belong to as well
+	APITokensFile string `json:"api_tokens_file"`
+	APIOwner      string `json:"api_owner"`
 }
 
 // backendRef is a host's backend: its base URL (http://<address>:<port>)
@@ -99,6 +105,8 @@ type session struct {
 	ViewPassword    string    `json:"view_password"`
 	MCPToken        string    `json:"mcp_token"`
 	Created         time.Time `json:"created"`
+	// the name of the API token that created it; "" for the owner's own
+	CreatedBy string `json:"created_by,omitempty"`
 	// SHA-256 of the tokens of sessions from before the tokens were kept;
 	// regenerating the role's token replaces it with the token
 	ControlHash []byte `json:"control_hash,omitempty"`
@@ -161,6 +169,8 @@ type server struct {
 	secure       bool
 	// coturn's secret, when there is a TURN server
 	turnSecret []byte
+	// the API tokens (api.go)
+	apiTokens []apiToken
 
 	mu       sync.Mutex
 	sessions map[string]*session
@@ -183,6 +193,16 @@ func newServer(cfg config) (*server, error) {
 			return nil, fmt.Errorf("backend %s: needs a URL and slots", host)
 		}
 		s.backends[host] = u
+	}
+	if cfg.APITokensFile != "" {
+		if cfg.APIOwner == "" {
+			return nil, errors.New("API tokens need an api_owner")
+		}
+		tokens, err := readAPITokens(cfg.APITokensFile)
+		if err != nil {
+			return nil, err
+		}
+		s.apiTokens = tokens
 	}
 	token, err := readSecret(cfg.TokenFile)
 	if err != nil {
@@ -406,10 +426,10 @@ func backendStatus(p place, resp *http.Response, want int) error {
 }
 
 // create starts a session for owner on host, going out through the proxy
-// URL proxy ("" for directly), and returns it with its two tokens. The
-// backend call runs without the lock, so a slow host holds up no other
-// session.
-func (s *server) create(owner, name, host, proxy string) (*session, string, string, error) {
+// URL proxy ("" for directly), and returns it with its two tokens;
+// createdBy is the API token that asks for it, if any. The backend call
+// runs without the lock, so a slow host holds up no other session.
+func (s *server) create(owner, name, host, proxy, createdBy string) (*session, string, string, error) {
 	name, err := cleanName(name)
 	if err != nil {
 		return nil, "", "", err
@@ -444,6 +464,7 @@ func (s *server) create(owner, name, host, proxy string) (*session, string, stri
 		MCPToken:        rand.Text(),
 		Created:         s.now(),
 		Proxy:           proxy,
+		CreatedBy:       createdBy,
 		starting:        true,
 	}
 	se.newRoleContext(controller)

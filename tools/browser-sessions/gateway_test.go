@@ -1273,3 +1273,195 @@ func TestProxy(t *testing.T) {
 		}
 	}
 }
+
+// withAPI restarts the gateway with the API tokens hermes and other,
+// whose sessions belong to lass.
+func (f *fixture) withAPI(t *testing.T) {
+	t.Helper()
+	path := t.TempDir() + "/api-tokens"
+	lines := fmt.Sprintf("hermes %x\n\nother %x\n", hashToken("hermes-token"), hashToken("other-token"))
+	if err := os.WriteFile(path, []byte(lines), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := f.s.cfg
+	cfg.APITokensFile, cfg.APIOwner = path, "lass"
+	f.start(t, cfg)
+}
+
+// api sends a request with the API token ("" for none).
+func (f *fixture) api(t *testing.T, method, path, token, body string) (int, string) {
+	t.Helper()
+	req, _ := http.NewRequest(method, f.web.URL+path, strings.NewReader(body))
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	return f.send(t, req, "")
+}
+
+func (f *fixture) apiList(t *testing.T, token string) []sessionInfo {
+	t.Helper()
+	status, body := f.api(t, "GET", "/api/sessions", token, "")
+	if status != 200 {
+		t.Fatalf("api list: %d %s", status, body)
+	}
+	var list []sessionInfo
+	if err := json.Unmarshal([]byte(body), &list); err != nil {
+		t.Fatal(err)
+	}
+	return list
+}
+
+func (f *fixture) apiCreate(t *testing.T, token, body string) sessionInfo {
+	t.Helper()
+	status, out := f.api(t, "POST", "/api/sessions", token, body)
+	if status != http.StatusCreated {
+		t.Fatalf("api create: %d %s", status, out)
+	}
+	var se sessionInfo
+	if err := json.Unmarshal([]byte(out), &se); err != nil {
+		t.Fatal(err)
+	}
+	return se
+}
+
+func TestAPI(t *testing.T) {
+	f := setupHosts(t, "atlas", "styx", "venus", "zeus")
+	f.withAPI(t)
+	own, _, _ := f.create(t, "lass", "zeus")
+
+	for _, token := range []string{"", "wrong", "hermes-tokenx", fmt.Sprintf("%x", hashToken("hermes-token"))} {
+		for _, req := range [][2]string{{"GET", "/api/sessions"}, {"POST", "/api/sessions"}, {"DELETE", "/api/sessions/" + own.ID}, {"PATCH", "/api/sessions/" + own.ID}} {
+			if status, body := f.api(t, req[0], req[1], token, ""); status != http.StatusUnauthorized {
+				t.Fatalf("%s %s with token %q: %d %s", req[0], req[1], token, status, body)
+			}
+		}
+	}
+	// a token is no login
+	req, _ := http.NewRequest("GET", f.web.URL+"/", nil)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Authorization", "Bearer hermes-token")
+	if status, _ := f.send(t, req, ""); status != http.StatusUnauthorized {
+		t.Fatalf("owner list with an API token: %d", status)
+	}
+	if status, _ := f.api(t, "POST", "/sessions", "hermes-token", ""); status != http.StatusUnauthorized {
+		t.Fatalf("page create with an API token: %d", status)
+	}
+
+	if list := f.apiList(t, "hermes-token"); len(list) != 0 {
+		t.Fatalf("hermes sees %+v", list)
+	}
+	if status, _ := f.api(t, "POST", "/api/sessions", "hermes-token", `{"host":"nowhere"}`); status != http.StatusBadRequest {
+		t.Fatalf("create on an unknown host: %d", status)
+	}
+
+	// without a host: the page's default, the first host by name
+	se := f.apiCreate(t, "hermes-token", `{"name":"research"}`)
+	if se.Host != "atlas" || se.Name != "research" || se.State != "running" || se.CreatedBy != "hermes" ||
+		se.Control == "" || se.View == "" || se.MCP != se.Control+"mcp" {
+		t.Fatalf("created %+v", se)
+	}
+	control := tokenOf(t, se.Control)
+	if status, body := f.do(t, "POST", "/s/"+control+"/mcp", "", "{}"); status != 200 || body != "backend /mcp" {
+		t.Fatalf("mcp over the created link: %d %s", status, body)
+	}
+	f.now = f.now.Add(time.Minute)
+	se2 := f.apiCreate(t, "hermes-token", `{"host":"styx"}`)
+	if se2.Host != "styx" || se2.Name != "" {
+		t.Fatalf("created on styx %+v", se2)
+	}
+	if status, _ := f.api(t, "POST", "/api/sessions", "other-token", ""); status != http.StatusServiceUnavailable {
+		t.Fatalf("create on the full default host: %d", status)
+	}
+	other := f.apiCreate(t, "other-token", `{"host":"venus"}`)
+	if other.Host != "venus" {
+		t.Fatalf("other on %s", other.Host)
+	}
+	if status, _ := f.api(t, "POST", "/api/sessions", "hermes-token", `{"host":"zeus"}`); status != http.StatusServiceUnavailable {
+		t.Fatalf("create with all slots in use: %d", status)
+	}
+
+	list := f.apiList(t, "hermes-token")
+	if len(list) != 2 || list[0].ID != se.ID || list[0].Control != se.Control || list[1].ID != se2.ID ||
+		list[0].Host != "atlas" || list[1].Host != "styx" || list[1].State != "running" {
+		t.Fatalf("hermes lists %+v", list)
+	}
+	if list := f.apiList(t, "other-token"); len(list) != 1 || list[0].ID != other.ID {
+		t.Fatalf("other lists %+v", list)
+	}
+
+	// neither lass's sessions nor the other token's
+	for _, id := range []string{own.ID, other.ID, "nosuchid"} {
+		if status, _ := f.api(t, "DELETE", "/api/sessions/"+id, "hermes-token", ""); status != 404 {
+			t.Fatalf("hermes killed %s: %d", id, status)
+		}
+		if status, _ := f.api(t, "PATCH", "/api/sessions/"+id, "hermes-token", `{"name":"x"}`); status != 404 {
+			t.Fatalf("hermes renamed %s: %d", id, status)
+		}
+	}
+
+	// lass sees and controls them, marked with the token's name
+	page := f.page(t, "lass")
+	if !strings.Contains(page, se.ID) || !strings.Contains(page, "by hermes") || !strings.Contains(page, "by other") {
+		t.Fatalf("lass's page lacks the API sessions:\n%s", page)
+	}
+	if n := len(f.sessions(t, "lass")); n != 4 {
+		t.Fatalf("lass has %d sessions", n)
+	}
+	if list := f.sessions(t, "bob"); len(list) != 0 {
+		t.Fatalf("bob sees %+v", list)
+	}
+
+	status, body := f.api(t, "PATCH", "/api/sessions/"+se.ID, "hermes-token", `{"name":"renamed"}`)
+	if status != 200 || !strings.Contains(body, `"name":"renamed"`) {
+		t.Fatalf("rename: %d %s", status, body)
+	}
+
+	// on any host
+	for _, s := range []sessionInfo{se, se2} {
+		if status, body := f.api(t, "DELETE", "/api/sessions/"+s.ID, "hermes-token", ""); status != http.StatusNoContent {
+			t.Fatalf("kill on %s: %d %s", s.Host, status, body)
+		}
+		if f.hosts[s.Host].units.isRunning(0) {
+			t.Fatalf("unit of the killed session on %s still runs", s.Host)
+		}
+	}
+	if status, _ := f.do(t, "GET", "/s/"+control+"/", "", ""); status != 404 {
+		t.Fatalf("link of the killed session: %d", status)
+	}
+	if list := f.apiList(t, "hermes-token"); len(list) != 0 {
+		t.Fatalf("hermes lists %+v after the kill", list)
+	}
+	if n := len(f.sessions(t, "lass")); n != 2 {
+		t.Fatalf("lass has %d sessions after the kill", n)
+	}
+
+	// lass kills one of other's
+	if status, _ := f.do(t, "POST", "/sessions/"+other.ID+"/kill", "lass", ""); status != http.StatusNoContent {
+		t.Fatalf("lass kills other's session: %d", status)
+	}
+	if list := f.apiList(t, "other-token"); len(list) != 0 {
+		t.Fatalf("other lists %+v after lass killed it", list)
+	}
+}
+
+func TestAPITokensFile(t *testing.T) {
+	f := setup(t)
+	path := t.TempDir() + "/api-tokens"
+	for _, c := range []struct {
+		lines, owner string
+	}{
+		{fmt.Sprintf("hermes %x\n", hashToken("x")), ""},
+		{"hermes abc\n", "lass"},
+		{fmt.Sprintf("hermes %x extra\n", hashToken("x")), "lass"},
+		{fmt.Sprintf("hermes %x\nhermes %x\n", hashToken("x"), hashToken("y")), "lass"},
+	} {
+		if err := os.WriteFile(path, []byte(c.lines), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		cfg := f.s.cfg
+		cfg.APITokensFile, cfg.APIOwner = path, c.owner
+		if _, err := newServer(cfg); err == nil {
+			t.Fatalf("accepted %q with owner %q", c.lines, c.owner)
+		}
+	}
+}
