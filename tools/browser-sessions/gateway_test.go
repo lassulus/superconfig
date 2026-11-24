@@ -976,7 +976,7 @@ func TestMove(t *testing.T) {
 		t.Helper()
 		return f.post(t, "/sessions/"+id+"/move", sub, url.Values{"host": {host}})
 	}
-	if page := f.page(t, "alice"); !strings.Contains(page, `action="/sessions/`+l.ID+`/move"><input type="hidden" name="host" value="styx"><button>Move to styx</button>`) || strings.Contains(page, "Move to atlas") {
+	if page := f.page(t, "alice"); !strings.Contains(page, `action="/sessions/`+l.ID+`/move"><select name="host"><option>styx</option></select> <button>Move</button>`) || strings.Contains(page, "<option>atlas</option></select> <button>Move") {
 		t.Fatalf("move buttons:\n%s", page)
 	}
 	// a running session's state does not leave its host

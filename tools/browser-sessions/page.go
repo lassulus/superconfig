@@ -72,7 +72,7 @@ var page = template.Must(template.New("page").Parse(`<!doctype html>
 </ul>
 <form method="post" action="/sessions/{{.ID}}/rename"><input name="name" value="{{.Name}}" maxlength="{{$.MaxName}}" placeholder="Name"> <button>Rename</button></form>
 <form method="post" action="/sessions/{{.ID}}/kill"><button>Kill</button></form>
-{{$id := .ID}}{{range .MoveTo}}<form method="post" action="/sessions/{{$id}}/move"><input type="hidden" name="host" value="{{.}}"><button>Move to {{.}}</button></form>
+{{if .MoveTo}}<form method="post" action="/sessions/{{.ID}}/move"><select name="host">{{range .MoveTo}}<option>{{.}}</option>{{end}}</select> <button>Move</button></form>
 {{end}}
 </section>{{end}}
 {{end}}
