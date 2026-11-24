@@ -116,10 +116,11 @@ buildGoModule {
   modRoot = "server";
   vendorHash = "sha256-LjCVw5dgfesyTUnPS77RO0m2Qk4ahJasmNOHmFQkVKE=";
   subPackages = [ "cmd/neko" ];
-  # webrtc.udpmux_ips: listen with the UDP mux only on these addresses. With
-  # NAT 1:1 every local address maps to the same public one, pion keeps only
-  # the first address's socket for a peer and drops checks arriving on the
-  # others.
+  # webrtc.udpmux_ips: listen with the UDP mux only on these addresses, and
+  # announce the TCP mux (which listens on all) only on them. With NAT 1:1
+  # every local address maps to the same public one, pion keeps only the
+  # first address's socket (or TCP candidate) for a peer and drops checks
+  # arriving on the others.
   patches = [ ./udpmux-ips.patch ];
 
   ldflags = [

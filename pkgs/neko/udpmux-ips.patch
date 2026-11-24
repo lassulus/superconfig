@@ -12,7 +12,7 @@
  		return err
  	}
  
-+	cmd.PersistentFlags().StringSlice("webrtc.udpmux_ips", []string{}, "local IP addresses the UDP mux listens on, all if empty")
++	cmd.PersistentFlags().StringSlice("webrtc.udpmux_ips", []string{}, "local IP addresses the UDP mux listens on and the TCP mux announces, all if empty")
 +	if err := viper.BindPFlag("webrtc.udpmux_ips", cmd.PersistentFlags().Lookup("webrtc.udpmux_ips")); err != nil {
 +		return err
 +	}
@@ -38,15 +38,39 @@
  	"strings"
  	"sync"
  	"sync/atomic"
-@@ -139,6 +140,11 @@
+@@ -139,6 +140,7 @@
  		var err error
  		manager.udpMux, err = ice.NewMultiUDPMuxFromPort(manager.config.UDPMux,
  			ice.UDPMuxFromPortWithLogger(logger.NewLogger("ice-udp")),
-+			ice.UDPMuxFromPortWithIPFilter(func(ip net.IP) bool {
-+				return len(manager.config.UDPMuxIPs) == 0 || slices.ContainsFunc(manager.config.UDPMuxIPs, func(s string) bool {
-+					return ip.Equal(net.ParseIP(s))
-+				})
-+			}),
++			ice.UDPMuxFromPortWithIPFilter(manager.muxIP),
  		)
  
  		if err != nil {
+@@ -158,6 +160,14 @@
+ 		Msg("webrtc starting")
+ }
+ 
++// muxIP tells whether the muxes' candidates use this local address
++// (webrtc.udpmux_ips, all if empty).
++func (manager *WebRTCManagerCtx) muxIP(ip net.IP) bool {
++	return len(manager.config.UDPMuxIPs) == 0 || slices.ContainsFunc(manager.config.UDPMuxIPs, func(s string) bool {
++		return ip.Equal(net.ParseIP(s))
++	})
++}
++
+ func (manager *WebRTCManagerCtx) Shutdown() error {
+ 	manager.logger.Info().Msg("shutdown")
+ 
+@@ -188,6 +198,12 @@
+ 	settings.DisableMediaEngineCopy(true)
+ 	settings.SetICETimeouts(disconnectedTimeout, failedTimeout, keepAliveInterval)
+ 	settings.SetNAT1To1IPs(manager.config.NAT1To1IPs, webrtc.ICECandidateTypeHost)
++	// the TCP mux listens on all addresses; its candidates need the same
++	// restriction as the UDP mux, or the NAT 1:1 address stands for several
++	// local ones and pion keeps the first
++	if len(manager.config.UDPMuxIPs) > 0 {
++		settings.SetIPFilter(manager.muxIP)
++	}
+ 	settings.SetLite(manager.config.ICELite)
+ 	// make sure server answer sdp setup as passive, to not force DTLS renegotiation
+ 	// otherwise iOS renegotiation fails with: Failed to set SSL role for the transport.
