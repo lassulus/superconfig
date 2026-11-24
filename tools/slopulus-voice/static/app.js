@@ -1,4 +1,4 @@
-// slopulus-voice page: one WebRTC session with gpt-live-1 per "call", client
+// slopulus-voice page: one WebRTC session with gpt-live-1.1 per "call", client
 // delegation answered by slopulus through the local server (/delegate).
 "use strict";
 
@@ -56,7 +56,7 @@ function classifyApproval(said) {
   return null;
 }
 
-let settings = { idle_seconds: 90 };
+let settings = { idle_seconds: 30 };
 let call = null;
 let state = loadState();
 

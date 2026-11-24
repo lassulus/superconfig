@@ -1,6 +1,6 @@
-"""slopulus-voice: talk to slopulus through OpenAI's full-duplex gpt-live-1.
+"""slopulus-voice: talk to slopulus through OpenAI's full-duplex gpt-live-1.1.
 
-The browser holds a WebRTC session with gpt-live-1, which listens and speaks at
+The browser holds a WebRTC session with gpt-live-1.1, which listens and speaks at
 the same time and chats on its own. Whenever the user asks for real work, the
 voice model emits a client delegation; the page hands the recent transcript to
 this server, which starts it as a Hermes run on the API server (POST /v1/runs,
@@ -60,9 +60,9 @@ from pathlib import Path
 log = logging.getLogger("slopulus-voice")
 
 OPENAI_BASE_URL = "https://api.openai.com/v1"
-DEFAULT_MODEL = "gpt-live-1"
+DEFAULT_MODEL = "gpt-live-1.1"
 DEFAULT_VOICE = "marin"
-# gpt-live-1 voices as OpenAI's voice picker lists them: language, regional
+# gpt-live-1.1 voices as OpenAI's voice picker lists them: language, regional
 # influence, presentation and character, natural voices first, then the
 # generated ones. The docs' voice table and the openai SDK (3.28.0) list only
 # part of them; /v1/live/sessions accepts the German, French, Hindi, Japanese
@@ -100,9 +100,9 @@ BUILT_IN_VOICES = {
     "delta": "English, Southern U.S., female, generated: warm and easygoing",
     "cinder": "English, Southern U.S., male, generated: steady and grounded",
 }
-# gpt-live-1 bills every second a session is open, silence included; the page
+# gpt-live-1.1 bills every second a session is open, silence included; the page
 # closes the session after this much inactivity.
-DEFAULT_IDLE_SECONDS = 90
+DEFAULT_IDLE_SECONDS = 30
 MAX_BODY = 256 * 1024
 # The run event stream sends a keepalive every 10s, so a read that stalls this
 # long means the API server is gone.

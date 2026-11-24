@@ -1,5 +1,5 @@
 bin "slopulus-voice"
-about "Serve a page for live voice conversations with slopulus through OpenAI gpt-live-1"
+about "Serve a page for live voice conversations with slopulus through OpenAI gpt-live-1.1"
 
 flag "--listen" help="host:port to serve on; IPv6 as [::]:port (default: 127.0.0.1:8790)" {
   arg "<host:port>"

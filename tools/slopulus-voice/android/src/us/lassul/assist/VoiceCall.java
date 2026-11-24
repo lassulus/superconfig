@@ -37,7 +37,7 @@ import org.webrtc.SessionDescription;
 import org.webrtc.audio.JavaAudioDeviceModule;
 
 /**
- * One call with gpt-live-1 over WebRTC, delegating to slopulus through slopulus-voice: the web page's
+ * One call with gpt-live-1.1 over WebRTC, delegating to slopulus through slopulus-voice: the web page's
  * Call (static/app.js) in Java, with the same events, delegation, voice approvals, end_call and
  * idle rules. Lives on the main thread; WebRTC and network callbacks are posted to it.
  */
@@ -92,7 +92,7 @@ final class VoiceCall {
     private AudioTrack mic;
     private DataChannel events;
     private boolean offerSent;
-    private long idleMs = 90_000;
+    private long idleMs = 30_000;
     /** The voice for /session; null leaves the server's default. */
     private String voice;
 
@@ -173,7 +173,7 @@ final class VoiceCall {
             public void run() {
                 try {
                     JSONObject config = api.get("/config");
-                    final long idle = config.optLong("idle_seconds", 90) * 1000;
+                    final long idle = config.optLong("idle_seconds", 30) * 1000;
                     String saved = Api.voice(context);
                     JSONObject voices = config.optJSONObject("voices");
                     // A voice the server no longer offers falls back to its default.
