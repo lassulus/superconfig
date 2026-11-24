@@ -673,13 +673,13 @@ try {
   const aliceLogin = { site: "localhost", account: "" };
   const filled = await ask({ type: "fill", ...aliceLogin, frameId: 0 });
   check(
-    filled.filled?.join() === "user,pass,otp",
+    filled.filled?.join() === "pass,user,otp",
     `fill: ${JSON.stringify(filled)}`,
   );
   check(
     passCalls().slice(before).join("|") ===
-      "show www/localhost/user|show www/localhost/pass|otp www/localhost/otp",
-    "fill: one pass show each for user.age and pass.age, pass otp for otp.age",
+      "show www/localhost/pass|show www/localhost/user|otp www/localhost/otp",
+    "fill: pass show of pass.age, then user.age, pass otp for otp.age",
   );
   const form = () =>
     inTab(pageTab, () =>
@@ -702,7 +702,7 @@ try {
   );
   check(
     got.events.join() ===
-      "user:input,user:change,pass:input,pass:change,otp:input,otp:change",
+      "pass:input,pass:change,user:input,user:change,otp:input,otp:change",
     "fill: input and change events",
   );
 
@@ -711,8 +711,8 @@ try {
   check(
     (
       await ask({ type: "fill", site: "localhost", account: "bob", frameId: 0 })
-    ).filled?.join() === "user,pass",
-    "fill bob: user and pass (no otp.age)",
+    ).filled?.join() === "pass,user",
+    "fill bob: pass and user (no otp.age)",
   );
   got = await form();
   check(
@@ -757,12 +757,12 @@ try {
     frameId: frameOf(`${origin}/plain`),
   });
   check(
-    same.filled?.join() === "user,pass",
-    "same-origin frame (as clicked in its context menu): user, pass",
+    same.filled?.join() === "pass,user",
+    "same-origin frame (as clicked in its context menu): pass, user",
   );
   check(
     passCalls().slice(before).join("|") ===
-      "show www/localhost/user|show www/localhost/pass",
+      "show www/localhost/pass|show www/localhost/user",
     "same-origin frame: no otp (no field), two pass show",
   );
   got = await inTab(pageTab, async () => {

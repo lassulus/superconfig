@@ -22,8 +22,8 @@
           Extensions.Install = [
             "${workspaceTabsExtension}/workspace-tabs@workspace-manager.xpi"
             "${self.packages.${system}.browser-mcp-extension}/browser-mcp@lassul.us.xpi"
-            # passkeys of the passage store; inert (falls back to Firefox's
-            # own WebAuthn) where configs/pass.nix installs no native host
+            # passkeys and logins of the passage store; inert (WebAuthn falls back
+            # to Firefox's own) where configs/pass.nix installs no native host
             "${self.packages.${system}.passkey-firefox-extension}/passkey-firefox@lassul.us.xpi"
           ];
         };

@@ -6,9 +6,10 @@
 //
 // Listing reads file names only. Nothing is decrypted, and nothing reaches a page, until the user
 // picks a login in the toolbar popup (also opened by the context menu of an input field). A fill
-// decrypts what the page has fields for: user.age and pass.age with `pass show`, otp.age with
-// `pass otp`, one approval of the hardware key each. Only the frame the user clicked (or the top
-// frame) is filled, and only when it has the tab's origin.
+// decrypts what the page has fields for: pass.age, then user.age, with `pass show`, otp.age with
+// `pass otp`. One approval per fill where the key caches its PIN (TPM: pinentry-rofi-age keeps
+// it in the session keyring); keys that ask per decrypt ask per file. Only the frame the user
+// clicked (or the top frame) is filled, and only when it has the tab's origin.
 "use strict";
 
 var menuFrames = new Map(); // tab id -> frame id of the last context menu click
@@ -112,7 +113,7 @@ async function fill(tab, frameId, entry) {
   var found = await inFrame(null);
   if (!found) throw new Error("refused: the frame is not of the tab's origin");
   var values = {};
-  for (var field of ["user", "pass", "otp"]) {
+  for (var field of ["pass", "user", "otp"]) {
     var v = found[field] ? await value(entry, field) : undefined;
     if (v !== undefined) values[field] = v;
   }
