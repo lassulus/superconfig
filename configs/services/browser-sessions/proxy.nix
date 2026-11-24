@@ -1,10 +1,11 @@
 # The public side of the browser sessions (common.nix), as
 # configs/atlas-sunshine-forward.nix does it for Moonlight: the gateway
 # runs here behind nginx and drives the backends over retiolum, and every
-# backend's WebRTC ports (UDP and TCP) are forwarded to it; its neko
-# announces this host's address. Browsers that reach neither get the TURN
-# server here (configs/services/coms/coturn.nix), which relays to that
-# address too. The zone's wildcard already points the name here.
+# backend's WebRTC ports (UDP and TCP) are forwarded to it from both
+# families; its neko announces this host's addresses. Browsers that reach
+# neither get the TURN server here (configs/services/coms/coturn.nix),
+# which relays to those addresses too. The zone's wildcard already points
+# the name here.
 {
   config,
   lib,
@@ -120,6 +121,7 @@ in
     };
   };
 
+  # both families of this host to both of the backend (host.nix)
   services.browser-sessions-forward = {
     enable = true;
     interface = "retiolum";
@@ -127,7 +129,10 @@ in
       map (
         b:
         lib.nameValuePair b.name {
-          addresses = [ b.addr ];
+          addresses = [
+            b.addr
+            self.inputs.kartei.hosts.${b.name}.nets.retiolum.ip6.addr
+          ];
           ports = b.webrtc;
         }
       ) backends

@@ -11,7 +11,12 @@ let
   common = import ./common.nix;
   name = config.networking.hostName;
   backend = common.backends.${name};
-  retiolum = host: self.inputs.kartei.hosts.${host}.nets.retiolum.ip4.addr;
+  nets = host: self.inputs.kartei.hosts.${host}.nets;
+  retiolum = host: (nets host).retiolum.ip4.addr;
+  bothFamilies = net: [
+    net.ip4.addr
+    net.ip6.addr
+  ];
   port = block: i: backend.firstPort + 1 + block * backend.slots + i;
   slots = lib.genList (i: {
     neko = port 0 i;
@@ -43,9 +48,10 @@ in
     enable = true;
     listen = "0.0.0.0:${toString config.lass.servicePorts.browser-sessions}";
     tokenFile = config.clan.core.vars.generators.browser-sessions-backend.files.token.path;
-    publicAddresses = [ self.inputs.kartei.hosts.${common.proxy}.nets.internet.ip4.addr ];
-    # proxy.nix forwards the UDP and TCP ports to this address
-    privateAddresses = [ (retiolum name) ];
+    # both families, so clients on IPv6-only networks reach them as well
+    publicAddresses = bothFamilies (nets common.proxy).internet;
+    # proxy.nix forwards the UDP and TCP ports to these addresses
+    privateAddresses = bothFamilies (nets name).retiolum;
     inherit slots;
   };
 
