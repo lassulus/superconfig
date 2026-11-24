@@ -12,8 +12,25 @@ checks that it runs in a voice session and says so; slopulus-voice sees the
 call in the run's event stream and lets the page close the call once the
 current reply has been spoken.
 
-/assist approve|deny [code] answers an approval that slopulus-voice asked in the
-DM because no call could hear it. The gateway only dispatches commands of
+Every request of a voice call runs as a task in its own Hermes session,
+`<call session>-t<n>`, a fork of the call session (slopulus_voice.py,
+start_task). When a task's run starts, the task gets its own Matrix thread:
+the request is posted as a thread root in the room for voice calls
+($SLOPULUS_VOICE_TASK_ROOM), and the thread's route is pointed at the task
+session the way Hermes's own /handoff does it (create_handoff_thread, then
+the runner's _handoff_repoint), so a reply in that thread continues the task
+with its full context, during and after the call. slopulus-voice learns the
+thread (POST /tasks/thread) and posts the result and approvals there. When a
+task's API turn ends, its request and answer are appended to the call
+session, so the next task, a fork of it, knows them.
+
+voice_tasks lists the tasks of the call a session belongs to, voice_task_stop
+stops one (slopulus-voice's /tasks routes): the task that hears a correction
+stops the task it corrects, and the user can ask what runs or stop one, by
+voice or in a task's thread.
+
+/assist approve|deny [code] answers an approval that slopulus-voice asked in
+Matrix because no call could hear it. The gateway only dispatches commands of
 allowed users (MATRIX_ALLOWED_USERS), so the answer is the user's own; the
 agent cannot issue it. The code may be left out while exactly one approval
 waits.
@@ -23,7 +40,10 @@ import asyncio
 import json
 import logging
 import os
+import re
+import threading
 import urllib.error
+import urllib.parse
 import urllib.request
 
 log = logging.getLogger(__name__)
@@ -59,8 +79,42 @@ END_CALL_SCHEMA = {
     "parameters": {"type": "object", "properties": {}},
 }
 
-# slopulus-voice names the Hermes session of a call voice-<date>-<random>.
+TASKS_SCHEMA = {
+    "name": "voice_tasks",
+    "description": (
+        "List the requests (tasks) of the current voice call: each runs in its own session at the "
+        "same time. Shows each task's id, title, state (running, waiting for approval, done, "
+        "stopped, failed), its current step or its result. Only works in a voice call's task."
+    ),
+    "parameters": {"type": "object", "properties": {}},
+}
+
+STOP_SCHEMA = {
+    "name": "voice_task_stop",
+    "description": (
+        "Stop one running task of the current voice call, by its id (t1, t2, ... from the task "
+        "list): one the user corrected, changed or cancelled. Stop only the task the user meant, "
+        "never another one."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {"task": {"type": "string", "description": "The task id, such as t2."}},
+        "required": ["task"],
+    },
+}
+
+# slopulus-voice names the Hermes session of a call voice-<date>-<random>, and
+# the session of each of its tasks <call session>-t<n>.
 VOICE_SESSION_PREFIX = "voice-"
+TASK_SESSION_RE = re.compile(r"^(voice-[A-Za-z0-9_-]+)-(t[0-9]+)$")
+# The room the task threads go to (slopulus-voice.nix).
+TASK_ROOM_ENV = "SLOPULUS_VOICE_TASK_ROOM"
+# slopulus-voice's request header, left out of the thread root.
+TRANSCRIPT_HEADER = "Spoken conversation since the last request, newest last:"
+
+# Task sessions whose thread this gateway opened.
+_threaded = set()
+_threaded_lock = threading.Lock()
 
 CHOICES = {"approve": "once", "deny": "deny"}
 
@@ -119,6 +173,150 @@ def voice_session(session_id):
     return voice_call_id(session_id or get_session_env("HERMES_SESSION_ID", "")) is not None
 
 
+def voice_task(session_id):
+    """(call session, task id) of a slopulus-voice task session, else None."""
+    match = TASK_SESSION_RE.match(session_id or "")
+    return match.groups() if match else None
+
+
+def current_session(session_id):
+    from gateway.session_context import get_session_env
+
+    return session_id or get_session_env("HERMES_SESSION_ID", "")
+
+
+def voice_api(method, path, payload=None):
+    """Call slopulus-voice with the API server key; the parsed JSON answer.
+    Raises urllib.error.HTTPError and URLError/OSError."""
+    from agent.secret_scope import get_secret
+
+    request = urllib.request.Request(
+        os.environ["SLOPULUS_VOICE_URL"].rstrip("/") + path,
+        data=None if payload is None else json.dumps(payload).encode(),
+        method=method,
+        headers={
+            "Authorization": f"Bearer {get_secret('API_SERVER_KEY')}",
+            "Content-Type": "application/json",
+        },
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return json.load(response)
+
+
+def voice_api_error(error):
+    """slopulus-voice's error message of a failed voice_api call."""
+    if isinstance(error, urllib.error.HTTPError):
+        try:
+            return f"slopulus-voice: {json.load(error).get('error')}"
+        except ValueError:
+            return f"slopulus-voice: {error.reason}"
+    return f"slopulus-voice unreachable: {error}"
+
+
+def tasks(args, session_id=None, **_kw):
+    from tools.registry import tool_error
+
+    task = voice_task(current_session(session_id))
+    if task is None:
+        return tool_error("voice_tasks only works in a voice call's task.")
+    try:
+        result = voice_api("GET", "/tasks?" + urllib.parse.urlencode({"call": task[0]}))
+    except (urllib.error.URLError, OSError) as error:
+        return tool_error(voice_api_error(error))
+    return json.dumps({"you_are": task[1], **result})
+
+
+def stop_task(args, session_id=None, **_kw):
+    from tools.registry import tool_error
+
+    task = voice_task(current_session(session_id))
+    if task is None:
+        return tool_error("voice_task_stop only works in a voice call's task.")
+    target = str(args.get("task", "")).strip()
+    if target == task[1]:
+        return tool_error("That is this task itself; just stop working on it.")
+    try:
+        result = voice_api("POST", "/tasks/stop", {"call": task[0], "task": target})
+    except (urllib.error.URLError, OSError) as error:
+        return tool_error(voice_api_error(error))
+    return json.dumps(result)
+
+
+def open_task_thread(session_id=None, user_message=None, platform="", **_kw):
+    """pre_llm_call: a task's API run starts, so the task gets its Matrix
+    thread (once). Only schedules the work on the gateway's loop: a hook must
+    not wait for that loop."""
+    room = os.environ.get(TASK_ROOM_ENV)
+    if platform != "api_server" or not room or voice_task(session_id) is None:
+        return None
+    with _threaded_lock:
+        if session_id in _threaded:
+            return None
+        _threaded.add(session_id)
+    runner, adapter = matrix_adapter()
+    loop = getattr(runner, "_gateway_loop", None)
+    if not (adapter and loop and loop.is_running()):
+        log.warning("no Matrix thread for voice task %s: no live Matrix adapter", session_id)
+        return None
+    text = str(user_message or "").removeprefix(TRANSCRIPT_HEADER).strip()
+    root = f"🎙️ Voice call request {voice_task(session_id)[1]}:\n\n{text}"
+    asyncio.run_coroutine_threadsafe(bind_thread(runner, adapter, room, root, session_id), loop)
+    return None
+
+
+async def bind_thread(runner, adapter, room, text, session_id):
+    """Post `text` as a thread root in `room`, point the thread's route at
+    `session_id` like Hermes's /handoff (gateway/run_startup.py
+    _handoff_resolve_destination and _handoff_repoint, without its synthetic
+    turn) and tell slopulus-voice."""
+    from types import SimpleNamespace
+
+    from gateway.config import Platform
+    from gateway.session import SessionSource
+
+    try:
+        root = await adapter.create_handoff_thread(room, text)
+        if not root:
+            log.warning("no Matrix thread for voice task %s: posting the root failed", session_id)
+            return
+        chat_type = await runner._handoff_home_chat_type(adapter, room, Platform.MATRIX)
+        source = SessionSource(
+            platform=Platform.MATRIX,
+            chat_id=room,
+            chat_type=chat_type,
+            user_id="system:handoff",
+            user_name="Handoff",
+            thread_id=root,
+        )
+        runner._canonicalize(source)
+        dest = SimpleNamespace(source=source, platform=Platform.MATRIX, handoff_config=runner.config)
+        await runner._handoff_repoint(dest, runner._handoff_session_key(dest, None), session_id)
+        await asyncio.to_thread(voice_api, "POST", "/tasks/thread", {"session": session_id, "thread_id": root})
+        log.info("voice task %s has Matrix thread %s", session_id, root)
+    except Exception:
+        log.warning("Matrix thread of voice task %s failed", session_id, exc_info=True)
+
+
+def record_task(session_id=None, user_message=None, assistant_response=None, platform="", **_kw):
+    """post_llm_call: append a task's request and answer to its call session,
+    which the call's next tasks fork."""
+    task = voice_task(session_id)
+    if platform != "api_server" or task is None:
+        return
+    from gateway.mirror import mirror_to_session
+
+    text = str(user_message or "").removeprefix(TRANSCRIPT_HEADER).strip()
+    mirror_to_session(
+        "api_server",
+        task[0],
+        f"[Voice call task {task[1]}, session {session_id}]\n{text}\n\n"
+        f"slopulus answered:\n{assistant_response or ''}",
+        source_label="slopulus-voice",
+        role="user",
+        session_id=task[0],
+    )
+
+
 def end_call(args, session_id=None, **_kw):
     from tools.registry import tool_error
 
@@ -141,34 +339,16 @@ def matrix_adapter():
 
 
 def assist(raw_args):
-    from agent.secret_scope import get_secret
-
     words = raw_args.split()
     if not words or words[0] not in CHOICES or len(words) > 2:
         return "Usage: /assist approve|deny [code]"
     answer = {"choice": CHOICES[words[0]]}
     if len(words) == 2:
         answer["code"] = words[1]
-    request = urllib.request.Request(
-        os.environ["SLOPULUS_VOICE_URL"].rstrip("/") + "/approve",
-        data=json.dumps(answer).encode(),
-        method="POST",
-        headers={
-            "Authorization": f"Bearer {get_secret('API_SERVER_KEY')}",
-            "Content-Type": "application/json",
-        },
-    )
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            result = json.load(response)
-    except urllib.error.HTTPError as error:
-        try:
-            reason = json.load(error).get("error")
-        except ValueError:
-            reason = error.reason
-        return f"slopulus-voice: {reason}"
+        result = voice_api("POST", "/approve", answer)
     except (urllib.error.URLError, OSError) as error:
-        return f"slopulus-voice unreachable: {error}"
+        return voice_api_error(error)
     what = result.get("description") or "the command"
     if answer["choice"] == "deny":
         return f"Denied: {what}."
@@ -190,6 +370,22 @@ def register(ctx):
         handler=end_call,
         emoji="📴",
     )
+    ctx.register_tool(
+        name="voice_tasks",
+        toolset="voice_call",
+        schema=TASKS_SCHEMA,
+        handler=tasks,
+        emoji="📋",
+    )
+    ctx.register_tool(
+        name="voice_task_stop",
+        toolset="voice_call",
+        schema=STOP_SCHEMA,
+        handler=stop_task,
+        emoji="⏹️",
+    )
+    ctx.register_hook("pre_llm_call", open_task_thread)
+    ctx.register_hook("post_llm_call", record_task)
     ctx.register_command(
         "assist",
         handler=assist,

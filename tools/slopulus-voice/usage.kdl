@@ -16,6 +16,9 @@ flag "--openai-key-file" help="File holding the OpenAI API key" required=#true {
 flag "--access-token-file" help="File holding the token every API route requires; mandatory unless listening on loopback, since the page drives slopulus" {
   arg "<file>"
 }
+flag "--task-webhook" help="Hermes webhook route (deliver_only to Matrix, signed with API_SERVER_KEY) whose payload's thread_id picks the thread: each task's result and approvals go to its thread" {
+  arg "<url>"
+}
 flag "--config" help="JSON file with voice, model, idle_seconds, glossary and instructions" {
   arg "<file>"
 }

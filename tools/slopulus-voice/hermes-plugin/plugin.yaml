@@ -1,7 +1,12 @@
 name: slopulus-voice
-version: 1.0.0
-description: "slopulus-voice's side in the gateway: sessions may write to the owner's Matrix DM (the Matrix home room), voice calls can be ended by the agent, and /assist answers approvals of voice-call runs from Matrix."
+version: 1.1.0
+description: "slopulus-voice's side in the gateway: sessions may write to the owner's Matrix DM (the Matrix home room), voice calls can be ended by the agent, each voice-call task gets its own Matrix thread bound to its session, the call's tasks can be listed and stopped, and /assist answers approvals of voice-call runs from Matrix."
 author: lassulus
 provides_tools:
   - matrix_dm_send
   - end_call
+  - voice_tasks
+  - voice_task_stop
+provides_hooks:
+  - pre_llm_call
+  - post_llm_call

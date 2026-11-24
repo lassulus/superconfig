@@ -14,7 +14,9 @@ import java.nio.ShortBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.regex.Pattern;
@@ -101,7 +103,8 @@ final class VoiceCall {
     private long lastActivity = SystemClock.elapsedRealtime();
     private boolean speaking;
     private String lastSpeaker;
-    private Delegation delegation;
+    /** Running slopulus tasks by delegation id: each runs next to the others. */
+    private final Map<String, Delegation> delegations = new LinkedHashMap<>();
     private Approval approval;
     private boolean closed;
     private boolean closing;
@@ -297,7 +300,7 @@ final class VoiceCall {
         }
         if (ending && endingSpoken && quiet >= END_CALL_QUIET_MS) {
             close();
-        } else if (delegation == null && !speaking && now - lastActivity > idleMs) {
+        } else if (delegations.isEmpty() && !speaking && now - lastActivity > idleMs) {
             Log.i(CallService.TAG, "hanging up (idle)");
             close();
         }
@@ -388,30 +391,27 @@ final class VoiceCall {
     }
 
     private void delegate(String id) {
-        // One slopulus turn at a time: a newer delegation (usually a correction) supersedes the
-        // running one, and the server stops the old run. While slopulus waits for an approval,
-        // the next delegation is the user's answer, not a new request.
+        // Every delegation is a slopulus task of its own and runs next to the ones still going;
+        // the task that hears a correction stops the one it corrects (server side). While
+        // slopulus waits for an approval, the next delegation is the user's answer, not a new
+        // request.
         if (approval != null) {
             answerApproval(id);
             return;
         }
-        final boolean replace = delegation != null;
-        if (delegation != null) {
-            abort(delegation);
-        }
         final Delegation current = new Delegation(id);
-        delegation = current;
+        delegations.put(id, current);
         main.postDelayed(new Runnable() {
             @Override
             public void run() {
-                runDelegation(current, replace);
+                runDelegation(current);
             }
         }, DELEGATION_SETTLE_MS);
     }
 
-    private void runDelegation(final Delegation current, boolean replace) {
+    private void runDelegation(final Delegation current) {
         // A hang-up meanwhile sent these lines along itself.
-        if (delegation != current || closed) {
+        if (delegations.get(current.id) != current || closed) {
             return;
         }
         List<Conversation.Line> lines = conversation.undelegated("user", "assistant");
@@ -434,8 +434,7 @@ final class VoiceCall {
         try {
             body = new JSONObject()
                     .put("hermes_session", conversation.hermesSession)
-                    .put("lines", Conversation.toJson(lines))
-                    .put("replace", replace);
+                    .put("lines", Conversation.toJson(lines));
         } catch (JSONException error) {
             return;
         }
@@ -492,7 +491,7 @@ final class VoiceCall {
     }
 
     private void onItem(Delegation current, JSONObject item) {
-        if (delegation != current) {
+        if (delegations.get(current.id) != current) {
             return;
         }
         lastActivity = SystemClock.elapsedRealtime();
@@ -503,8 +502,15 @@ final class VoiceCall {
         }
         // Anything after an approval request means slopulus moved on (answered here, from Matrix,
         // or by its own timeout).
-        approval = null;
-        if (type.equals("tool") && item.optString("status").equals("running")) {
+        if (approval != null && approval.delegationId.equals(current.id)) {
+            approval = null;
+        }
+        if (type.equals("task")) {
+            // Lets the voice model tell the user which requests run.
+            append("session.thinking.append", current.id,
+                    "slopulus works on this as task " + item.optString("task") + ": "
+                            + item.optString("title"));
+        } else if (type.equals("tool") && item.optString("status").equals("running")) {
             append("session.thinking.append", current.id,
                     "slopulus is working on it. " + item.optString("note") + " (" + item.optString("label")
                             + ": " + item.optString("preview") + ")");
@@ -520,11 +526,13 @@ final class VoiceCall {
     }
 
     private void onDone(Delegation current, String streamFailure) {
-        if (delegation != current) {
+        if (delegations.get(current.id) != current) {
             return;
         }
-        delegation = null;
-        approval = null;
+        delegations.remove(current.id);
+        if (approval != null && approval.delegationId.equals(current.id)) {
+            approval = null;
+        }
         lastActivity = SystemClock.elapsedRealtime();
         String failure = current.failure != null ? current.failure : streamFailure;
         String answer = current.answer.toString().trim();
@@ -639,7 +647,7 @@ final class VoiceCall {
                         conversation.add(sent ? "hermes" : "error", reply);
                         // A fast turn can finish before this reply returns; its result was already
                         // handed to the voice, so an "is continuing" would be stale.
-                        if (closed || (sent && delegation == null)) {
+                        if (closed || (sent && !delegations.containsKey(answered.delegationId))) {
                             return;
                         }
                         append("session.commentary.append",
@@ -693,11 +701,11 @@ final class VoiceCall {
         closed = true;
         main.removeCallbacksAndMessages(null);
         hangUp();
-        // Only the stream is dropped; the server keeps following the Hermes run.
-        if (delegation != null) {
-            abort(delegation);
-            delegation = null;
+        // Only the streams are dropped; the server keeps following the tasks.
+        for (Delegation running : delegations.values()) {
+            abort(running);
         }
+        delegations.clear();
         if (events != null) {
             events.unregisterObserver();
             events.close();

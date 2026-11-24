@@ -183,7 +183,8 @@ class Call {
     this.lastActivity = Date.now();
     this.speaking = false;
     this.lastSpeaker = null;
-    this.delegation = null;
+    // Running slopulus tasks by delegation id: each runs next to the others.
+    this.delegations = new Map();
     this.closed = false;
     this.closing = false;
     this.ending = null;
@@ -348,24 +349,22 @@ class Call {
   }
 
   async delegate(id) {
-    // One slopulus turn at a time: a newer delegation (usually a correction)
-    // supersedes the running one, and the server stops the old run.
-    // While slopulus waits for an approval, the next delegation is the user's
-    // answer, not a new request: the turn must keep running.
+    // Every delegation is a slopulus task of its own and runs next to the
+    // ones still going; the task that hears a correction stops the one it
+    // corrects (server side). While slopulus waits for an approval, the next
+    // delegation is the user's answer, not a new request.
     if (this.approval) {
       this.answerApproval(id);
       return;
     }
-    const replace = Boolean(this.delegation);
-    if (this.delegation) this.delegation.controller.abort();
     const controller = new AbortController();
     const delegation = { id, controller };
-    this.delegation = delegation;
+    this.delegations.set(id, delegation);
     setStatus("slopulus is working…");
 
     await new Promise((resolve) => setTimeout(resolve, DELEGATION_SETTLE_MS));
     // A hang-up meanwhile sent these lines along itself.
-    if (this.delegation !== delegation || this.closed) return;
+    if (this.delegations.get(id) !== delegation || this.closed) return;
     const fresh = state.lines
       .slice(state.delegated)
       .filter((line) => line.speaker !== "hermes" && line.speaker !== "error");
@@ -389,7 +388,6 @@ class Call {
         body: JSON.stringify({
           hermes_session: state.hermesSession,
           lines,
-          replace,
         }),
         signal: controller.signal,
       });
@@ -420,8 +418,19 @@ class Call {
           }
           // Anything after an approval request means slopulus moved on
           // (answered here, by button, or by its own timeout).
-          if (this.approval) this.clearApproval();
-          if (item.type === "tool" && item.status === "running") {
+          if (this.approval?.delegationId === id) this.clearApproval();
+          if (item.type === "task") {
+            // Lets the voice model tell the user which requests run.
+            this.send({
+              type: "session.thinking.append",
+              delegation_id: id,
+              content:
+                `slopulus works on this as task ${item.task}: ${item.title}`.slice(
+                  0,
+                  APPEND_CHAR_LIMIT,
+                ),
+            });
+          } else if (item.type === "tool" && item.status === "running") {
             setStatus(`slopulus: ${item.label}`);
             this.send({
               type: "session.thinking.append",
@@ -447,9 +456,9 @@ class Call {
       if (controller.signal.aborted) return;
       failure = String(error.message || error);
     }
-    if (this.delegation !== delegation) return;
-    this.delegation = null;
-    this.clearApproval();
+    if (this.delegations.get(id) !== delegation) return;
+    this.delegations.delete(id);
+    if (this.approval?.delegationId === id) this.clearApproval();
     this.lastActivity = Date.now();
 
     if (failure && !answer.trim()) {
@@ -473,7 +482,7 @@ class Call {
         });
     }
     if (endCall) this.endAfterReply();
-    else setStatus("Listening");
+    else if (!this.delegations.size && !this.approval) setStatus("Listening");
   }
 
   // slopulus ended the call: close it once the voice has spoken the reply just
@@ -558,7 +567,7 @@ class Call {
     addLine(ok ? "hermes" : "error", message);
     // A fast turn can finish before this reply returns; its result was
     // already handed to the voice, so an "is continuing" would be stale.
-    if (ok && !this.delegation) return;
+    if (ok && !this.delegations.has(approval.delegationId)) return;
     setStatus(ok ? "slopulus is working…" : "Listening");
     this.send({
       type: "session.commentary.append",
@@ -568,7 +577,7 @@ class Call {
   }
 
   checkIdle() {
-    if (this.closed || this.delegation || this.speaking) return;
+    if (this.closed || this.delegations.size || this.speaking) return;
     if (Date.now() - this.lastActivity > settings.idle_seconds * 1000) {
       setStatus("Hanging up (idle)");
       this.close();
@@ -618,8 +627,9 @@ class Call {
     clearInterval(this.idleTimer);
     clearInterval(this.probe);
     this.hangUp();
-    // Only the stream is dropped; the server keeps following the Hermes run.
-    if (this.delegation) this.delegation.controller.abort();
+    // Only the streams are dropped; the server keeps following the tasks.
+    for (const running of this.delegations.values()) running.controller.abort();
+    this.delegations.clear();
     this.audioContext?.close().catch(() => {});
     this.mic?.getTracks().forEach((track) => track.stop());
     this.events?.close();

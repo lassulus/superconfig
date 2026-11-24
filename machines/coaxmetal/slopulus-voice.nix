@@ -9,6 +9,9 @@ let
   port = config.lass.servicePorts.slopulus-voice;
   # The gateway's webhook platform (slopulus.nix), loopback only.
   webhookPort = config.services.hermes-agent.settings.platforms.webhook.extra.port;
+  # "Voice calls" in the Hermes space: every call's transcript, and a thread
+  # for every task of a call.
+  voiceCallsRoom = "!Thd1S8q0NG33XpPn1ZMgw_ahLowb3adgt7_sIy7Hw2E";
 in
 {
   imports = [ ../../configs/slopulus-voice-vars.nix ];
@@ -55,6 +58,8 @@ in
         "http://127.0.0.1:${toString webhookPort}/webhooks/voice-approval"
         "--transcript-webhook"
         "http://127.0.0.1:${toString webhookPort}/webhooks/voice-transcript"
+        "--task-webhook"
+        "http://127.0.0.1:${toString webhookPort}/webhooks/voice-task"
       ];
       LoadCredential = [
         "hermes-key:${config.clan.core.vars.generators.hermes-api.files."api_key".path}"
@@ -88,16 +93,21 @@ in
   networking.firewall.interfaces.retiolum.allowedTCPPorts = [ port ];
 
   # slopulus-voice's side in the gateway (tools/slopulus-voice/hermes-plugin): the
-  # matrix_dm_send and end_call tools, on for every platform like any plugin
-  # toolset (end_call refuses outside voice sessions), /assist, which
-  # answers approvals asked in the Matrix DM through slopulus-voice
-  # (authenticated with API_SERVER_KEY).
+  # matrix_dm_send, end_call, voice_tasks and voice_task_stop tools, on for
+  # every platform like any plugin toolset (the voice ones refuse outside voice
+  # sessions), /assist, which answers approvals asked in Matrix through
+  # slopulus-voice (authenticated with API_SERVER_KEY), and the hooks that
+  # give every task of a call its own thread in the "Voice calls" room, bound
+  # to the task's session so replies there continue it.
   services.hermes-agent.extraPlugins = [
     (pkgs.runCommand "slopulus-voice" { } ''
       cp -r ${../../tools/slopulus-voice/hermes-plugin} $out
     '')
   ];
-  services.hermes-agent.environment.SLOPULUS_VOICE_URL = "http://localhost:${toString port}";
+  services.hermes-agent.environment = {
+    SLOPULUS_VOICE_URL = "http://localhost:${toString port}";
+    SLOPULUS_VOICE_TASK_ROOM = voiceCallsRoom;
+  };
 
   # How slopulus-voice asks for an approval when no call can hear it, and
   # where it posts each call's transcript after the hang-up: a
@@ -114,7 +124,19 @@ in
     deliver = "matrix";
     deliver_only = true;
     prompt = "{text}";
-    deliver_extra.chat_id = "!Thd1S8q0NG33XpPn1ZMgw_ahLowb3adgt7_sIy7Hw2E";
+    deliver_extra.chat_id = voiceCallsRoom;
+  };
+  # A task's result and the approvals no call can answer, into the task's
+  # thread in "Voice calls" (thread_id from the payload; empty posts to the
+  # room itself). Not mirrored: the task session has the result already.
+  services.hermes-agent.settings.platforms.webhook.extra.routes.voice-task = {
+    deliver = "matrix";
+    deliver_only = true;
+    prompt = "{text}";
+    deliver_extra = {
+      chat_id = voiceCallsRoom;
+      thread_id = "{thread_id}";
+    };
   };
 
   # OpenAI project key with GPT-Live access; billed per second of open voice

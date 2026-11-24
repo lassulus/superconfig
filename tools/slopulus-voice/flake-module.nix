@@ -40,6 +40,17 @@
         }).overrideAttrs
           { passthru.usage = builtins.readFile ./usage.kdl; };
 
+      # Tasks of a call against a fake Hermes API server: parallel runs,
+      # stopping one task, the task list, Matrix threads, hang-up.
+      checks.slopulus-voice =
+        pkgs.runCommand "slopulus-voice-test" { nativeBuildInputs = [ pkgs.python3 ]; }
+          ''
+            cp ${./slopulus_voice.py} slopulus_voice.py
+            cp ${./test_slopulus_voice.py} test_slopulus_voice.py
+            python3 -m unittest test_slopulus_voice 2>&1
+            touch $out
+          '';
+
       # The Android app: holds calls itself (WebRTC) and answers the headset's
       # voice button, unsigned.
       packages.slopulus-voice-android = android;
