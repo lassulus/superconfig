@@ -13,6 +13,8 @@
   # a session without any request (an open viewer counts) for this many
   # minutes is stopped, keeping its profile, until the next request; 0 never
   stopAfterMinutes = 30;
+  # OIDC sub (Zitadel user id) owning the API tokens' sessions; same as agentd's users
+  apiOwner = "395780385822936760";
   # Session hosts by hostname: up to `slots` parallel sessions. The backend
   # listens on firstPort for the gateway; then follow blocks of `slots`
   # ports each: neko, MCP and WebRTC (UDP and TCP, forwarded by the proxy, so

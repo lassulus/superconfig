@@ -27,6 +27,7 @@ in
     ../../../tools/browser-sessions/module.nix
     ./token.nix
     ../coms/coturn.nix
+    ./api-tokens.nix
   ];
 
   lass.ports = {
@@ -76,6 +77,10 @@ in
         ];
       secretFile = config.clan.core.vars.generators.coturn.files.secret.path;
     };
+    api = {
+      tokensFile = config.clan.core.vars.generators.browser-sessions-api.files.tokens.path;
+      owner = common.apiOwner;
+    };
     backends = lib.listToAttrs (
       map (
         b:
@@ -112,6 +117,7 @@ in
       access_log /var/log/nginx/access.log browser_sessions;
       error_log stderr crit;
     '';
+    # everything, the API at /api/ included
     locations."/" = {
       proxyPass = "http://127.0.0.1:${toString config.lass.servicePorts.browser-sessions-gateway}";
       proxyWebsockets = true;
