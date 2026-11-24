@@ -18,12 +18,14 @@ in
   }
   // lib.genAttrs (map toString (lib.range minPort maxPort)) (port: "coturn-relay-${port}");
 
-  # STUN/TURN for jitsi.lassul.us. Clients get the servers and short-lived
-  # credentials (TURN REST, HMAC over the shared secret) from Prosody's
-  # mod_external_services (XEP-0215), see the prosody block below.
+  # STUN/TURN for jitsi.lassul.us and the browser sessions
+  # (configs/services/browser-sessions/proxy.nix). Clients get the servers
+  # and short-lived credentials (TURN REST, HMAC over the shared secret)
+  # from Prosody's mod_external_services (XEP-0215), see the prosody block
+  # below, and from the browser-sessions gateway.
   clan.core.vars.generators.coturn = {
-    # coturn's preStart reads it as turnserver; prosody gets it via
-    # LoadCredential as root.
+    # coturn's preStart reads it as turnserver; prosody and the
+    # browser-sessions gateway get it via LoadCredential as root.
     files.secret.owner = "turnserver";
     runtimeInputs = [ pkgs.pwgen ];
     script = ''
@@ -78,6 +80,79 @@ in
     reloadServices = [ "coturn.service" ];
   };
   users.groups.turnserver.members = [ "nginx" ];
+
+  # turns: on 443 too, for networks that let only HTTPS out. nginx's stream
+  # module takes 443 and splits by SNI without terminating TLS: this name to
+  # coturn's TLS port, everything else to the HTTPS vhosts, which listen on
+  # a unix socket instead. The PROXY protocol carries the client's address
+  # to them, real_ip makes it $remote_addr again (logs, limit_req, the
+  # proxied apps' X-Forwarded-For). coturn cannot read it, so a second hop
+  # drops it: coturn sees its own address as the client's, which only shows
+  # in its logs and in the STUN mapped address it hands out.
+  services.nginx = {
+    defaultListen = [
+      {
+        addr = "0.0.0.0";
+        ssl = false;
+      }
+      {
+        addr = "[::0]";
+        ssl = false;
+      }
+      {
+        addr = "unix:/run/nginx/https.sock";
+        ssl = true;
+        proxyProtocol = true;
+      }
+    ];
+    commonHttpConfig = ''
+      set_real_ip_from unix:;
+      real_ip_header proxy_protocol;
+    '';
+    streamConfig = ''
+      map $ssl_preread_server_name $https_upstream {
+        ${domain} unix:/run/nginx/turns.sock;
+        default unix:/run/nginx/https.sock;
+      }
+      server {
+        listen 0.0.0.0:${toString config.lass.servicePorts.nginx-https};
+        listen [::0]:${toString config.lass.servicePorts.nginx-https};
+        ssl_preread on;
+        proxy_protocol on;
+        proxy_pass $https_upstream;
+        # idle connections may stay as long as the vhosts let them (up to
+        # proxy_read_timeout 1d), not the stream default of 10m
+        proxy_timeout 1d;
+      }
+      server {
+        listen unix:/run/nginx/turns.sock proxy_protocol;
+        proxy_pass ${ip4}:${toString config.lass.servicePorts.coturn-tls};
+        proxy_timeout 1d;
+      }
+    '';
+  };
+
+  # coturn may relay to this host's own addresses (the forwarded browser
+  # sessions' ports are rewritten to the backends before this, see
+  # services.browser-sessions-forward), which would reach every service
+  # listening here past the firewall. From the relay ports only to the
+  # bridge and to other relays.
+  networking.nftables.tables.coturn-local-peers = {
+    family = "inet";
+    content = ''
+      chain output {
+        type filter hook output priority filter; policy accept;
+        # coturn by uid: the ruleset check at build time has no such user
+        meta skuid ${toString config.users.users.turnserver.uid} ct state new meta l4proto { tcp, udp } th sport ${toString minPort}-${toString maxPort} fib daddr type local jump local-peer
+      }
+      chain local-peer {
+        th dport ${toString minPort}-${toString maxPort} accept
+        udp dport ${toString config.lass.servicePorts.jitsi-videobridge} accept
+        tcp dport ${toString config.lass.servicePorts.jitsi-videobridge-tcp} accept
+        reject
+      }
+    '';
+  };
 
   services.prosody.virtualHosts.${config.services.jitsi-meet.hostName}.extraConfig = ''
     external_service_secret = Credential("coturn-secret")

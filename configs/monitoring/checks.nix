@@ -75,6 +75,8 @@ in
       (tls "smtps" "tls://mail.lassul.us:465")
       (tls "imaps" "tls://mail.lassul.us:993")
       (tls "turns" "tls://turn.lassul.us:5349" // { group = "jitsi"; })
+      # through nginx's SNI split (configs/services/coms/coturn.nix)
+      (tls "turns-443" "tls://turn.lassul.us:443" // { group = "jitsi"; })
       {
         name = "federation";
         group = "matrix";
