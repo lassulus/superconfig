@@ -6,16 +6,36 @@
       system,
       ...
     }:
-    let
-      identity = import ./identity.nix { inherit self pkgs system; };
-    in
     {
       packages.pass = inputs.wrappers.lib.wrapPackage {
         pkgs = pkgs;
         # gitMinimal: full git pulls python3, whose darwin build keeps
         # apple-sdk and llvm as runtime deps (~1.4 GiB closure)
         package = pkgs.passage.override { git = pkgs.gitMinimal; };
-        runtimeInputs = identity.runtimeInputs ++ [ self.packages.${system}.pass-otp ];
+        runtimeInputs = [
+          pkgs.age-plugin-fido2-hmac
+          pkgs.age-plugin-yubikey
+          pkgs.age-plugin-tpm
+          self.packages.${system}.age-plugin-gpg
+          self.packages.${system}.pass-otp
+          self.packages.${system}.age-detect
+          # age-plugin-phone: encrypts to the phonetpm recipient, decrypts via the daemon
+          self.packages.${system}.phonetpm
+        ]
+        ++ (pkgs.lib.optionals pkgs.stdenv.isLinux [
+          self.packages.${system}.pinentry-rofi-age
+        ])
+        ++ (pkgs.lib.optionals pkgs.stdenv.isDarwin [
+          pkgs.age-plugin-se
+        ])
+        ++ (pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
+          # Dummy age-plugin-se for Linux (encryption only, no Secure Enclave hardware)
+          (pkgs.writeShellScriptBin "age-plugin-se" ''
+            exec env PYTHONUNBUFFERED=1 ${
+              pkgs.python3.withPackages (ps: [ ps.cryptography ])
+            }/bin/python3 ${./age-plugin-se-dummy.py} "$@"
+          '')
+        ]);
         aliases = [ "pass" ];
         wrapper =
           {
@@ -58,10 +78,21 @@
                 ''
             }
 
-            ${identity.detectIdentity}
-
                         setup_identities() {
-                          detect_identity
+                          # Always detect available age keys first
+                          export AGE_DETECT_KEYS_DIR="${
+                            builtins.path {
+                              path = self + "/keys";
+                              name = "keys";
+                            }
+                          }"
+                          eval "$(age-detect)"
+
+                          # Set up identity file if detected
+                          if [[ -n "''${IDENTITY_FILE:-}" ]]; then
+                            export PASSAGE_IDENTITIES_FILE="$IDENTITY_FILE"
+                            trap 'rm -f "$IDENTITY_FILE"' EXIT
+                          fi
 
                           # Try to decrypt and cache the bulk key using the detected identity
                           if [[ -n "''${PASS_BULK_KEY_FILE:-}" ]]; then

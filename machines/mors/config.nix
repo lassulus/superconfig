@@ -14,7 +14,6 @@
     ../../configs/pipewire.nix
     ../../configs/browsers.nix
     ../../configs/pass.nix
-    ../../configs/passless.nix
     ../../configs/steam.nix
     ../../configs/mail.nix
     ../../configs/syncthing.nix

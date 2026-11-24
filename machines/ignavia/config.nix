@@ -27,7 +27,6 @@
     ../../configs/steam.nix
     # ../../configs/wine.nix
     ../../configs/pass.nix
-    ../../configs/passless.nix
     ../../configs/mail.nix
     ../../configs/printing
     ../../configs/auto-timezone.nix
