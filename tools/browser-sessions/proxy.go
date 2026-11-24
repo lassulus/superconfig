@@ -6,10 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strconv"
+	"strings"
 )
 
 var tokenPath = regexp.MustCompile(`/s/[^/?\s]+`)
@@ -37,6 +39,8 @@ func (s *server) handleSession(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	// every request counts as activity, the redirects too
+	defer s.touch(se)()
 	if r.PathValue("rest") == "" && r.URL.Path == "/s/"+token {
 		http.Redirect(w, r, "/s/"+token+"/", http.StatusFound)
 		return
@@ -47,9 +51,36 @@ func (s *server) handleSession(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/s/"+token+"/?"+url.Values{"usr": {role.String()}, "pwd": {"-"}}.Encode(), http.StatusFound)
 		return
 	}
+	if rest == "/mcp" && role != controller {
+		http.Error(w, "the view token has no MCP access", http.StatusForbidden)
+		return
+	}
 	s.mu.Lock()
-	backend := s.backends[se.Host]
-	slotPath := "/slots/" + strconv.Itoa(se.Slot)
+	ready := se.ready
+	s.mu.Unlock()
+	if !ready {
+		// a browser opening the session gets a page that reloads itself
+		// until it answers; everything else waits for it
+		if r.Method == http.MethodGet && strings.Contains(r.Header.Get("Accept"), "text/html") {
+			s.wakeInBackground(se)
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.Header().Set("Cache-Control", "no-store")
+			w.Header().Set("Retry-After", "2")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			io.WriteString(w, wakingPage)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), wakeTimeout)
+		err := s.ensureUp(ctx, se)
+		cancel()
+		if err != nil {
+			log.Printf("session %s: start: %v", se.ID, err)
+			http.Error(w, "the session is starting and did not answer in time; try again", http.StatusServiceUnavailable)
+			return
+		}
+	}
+	s.mu.Lock()
+	at := se.at()
 	roleCtx := se.ctx[role]
 	controlPassword, viewPassword, mcpToken := se.ControlPassword, se.ViewPassword, se.MCPToken
 	s.mu.Unlock()
@@ -57,17 +88,12 @@ func (s *server) handleSession(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	defer context.AfterFunc(roleCtx, cancel)()
-	defer s.touch(se)()
 	r = r.WithContext(ctx)
 
 	if rest == "/mcp" {
-		if role != controller {
-			http.Error(w, "the view token has no MCP access", http.StatusForbidden)
-			return
-		}
 		// browser-mcp only accepts its own address as Origin; the token in
 		// the path is the authorization
-		s.proxy(backend, slotPath+"/mcp", func(out *http.Request) {
+		s.proxy(at, "/mcp", func(out *http.Request) {
 			out.Header.Set("Authorization", "Bearer "+mcpToken)
 			out.Header.Del("Origin")
 		}).ServeHTTP(w, r)
@@ -83,8 +109,16 @@ func (s *server) handleSession(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	s.proxy(backend, slotPath+"/neko"+rest, nil).ServeHTTP(w, r)
+	s.proxy(at, "/neko"+rest, nil).ServeHTTP(w, r)
 }
+
+// wakingPage stands in for a session that is being started.
+const wakingPage = `<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<meta http-equiv="refresh" content="2"><title>Waking up</title>
+<style>body{font-family:sans-serif;max-width:50em;margin:2em auto;padding:0 1em}</style>
+</head><body><p>Waking up the browser session, one moment…</p></body></html>
+`
 
 // setLoginPassword replaces the password of a neko login request.
 func setLoginPassword(r *http.Request, password string) error {
@@ -100,11 +134,11 @@ func setLoginPassword(r *http.Request, password string) error {
 	return nil
 }
 
-// proxy forwards to path on a host's backend, with the backend token and
-// without the gateway's cookies; edit may change the outgoing request
-// further.
-func (s *server) proxy(backend *url.URL, path string, edit func(*http.Request)) http.Handler {
-	return forward(backend, path, func(out *http.Request) {
+// proxy forwards to rest in p's slot on its host's backend, with the
+// backend token and without the gateway's cookies; edit may change the
+// outgoing request further.
+func (s *server) proxy(p place, rest string, edit func(*http.Request)) http.Handler {
+	return forward(s.backends[p.host], p.path(rest), func(out *http.Request) {
 		out.Header.Del("Cookie")
 		out.Header.Set(tokenHeader, s.token)
 		if edit != nil {

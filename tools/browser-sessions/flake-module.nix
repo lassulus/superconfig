@@ -1,9 +1,9 @@
-{ ... }:
+{ self, ... }:
 {
   perSystem =
     { pkgs, lib, ... }:
     {
-      # Gateway of the shared browser sessions (module.nix,
+      # Gateway and backend of the shared browser sessions (module.nix,
       # configs/services/browser-sessions).
       packages.browser-sessions = pkgs.buildGoModule {
         pname = "browser-sessions";
@@ -18,6 +18,10 @@
           mainProgram = "browser-sessions";
           platforms = lib.platforms.linux;
         };
+      };
+
+      checks = lib.optionalAttrs pkgs.stdenv.hostPlatform.isx86_64 {
+        browser-sessions = import ./test.nix { inherit self pkgs; };
       };
     };
 }

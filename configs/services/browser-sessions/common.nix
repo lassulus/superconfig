@@ -10,6 +10,9 @@
   proxy = "neoprism";
   # the gateway on the proxy, behind nginx
   gatewayPort = 8949;
+  # a session without any request (an open viewer counts) for this many
+  # minutes is stopped, keeping its profile, until the next request; 0 never
+  stopAfterMinutes = 30;
   # Session hosts by hostname: up to `slots` parallel sessions. The backend
   # listens on firstPort for the gateway; then follow blocks of `slots`
   # ports each: neko, MCP and WebRTC (UDP, forwarded by the proxy, so these

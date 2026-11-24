@@ -4,12 +4,15 @@
 // fixed slot of ports there, and two random tokens give access to it:
 // /s/<control>/ (watch and control, MCP at /s/<control>/mcp) and /s/<view>/
 // (watch only). The page shows the owner both links of every session. A
-// session lasts until its owner kills it.
+// session lasts until its owner kills it; one without requests for a while
+// is stopped, keeping its profile, and started again by the next request.
+// The owner can move a session to another host; its links stay.
 //
 // The gateway (this file, page.go, auth.go, proxy.go) holds the page, the
 // login and the sessions with their tokens, and knows which host and slot
-// each runs in. The hosts run the backend (backend.go), which starts and
-// removes the units and passes the gateway's requests on to them.
+// each runs in. The hosts run the backend (backend.go), which starts, stops
+// and removes the units, hands their state out and in for moves, and passes
+// the gateway's requests on to them.
 package main
 
 import (
@@ -50,6 +53,9 @@ type config struct {
 	TokenFile string `json:"token_file"`
 	// the hosts the sessions run on, by name
 	Backends map[string]backendRef `json:"backends"`
+	// a session without any request for this long is stopped, keeping its
+	// profile, until the next request; 0 never stops one
+	StopAfterMinutes int `json:"stop_after_minutes"`
 }
 
 // backendRef is a host's backend: its base URL (http://<address>:<port>)
@@ -93,11 +99,25 @@ type session struct {
 	// regenerating the role's token replaces it with the token
 	ControlHash []byte `json:"control_hash,omitempty"`
 	ViewHash    []byte `json:"view_hash,omitempty"`
+	// stopped while idle, started by the next request
+	Stopped bool `json:"stopped,omitempty"`
 
 	// its unit is being started: it holds the slot, but is not saved yet
 	starting bool
+	// its neko and browser-mcp answer; false until a request found them
+	// answering after the gateway started, and while it is stopped or moved
+	ready bool
+	// a request is starting it for the waking-up page
+	waking bool
+	// the slot it is being moved to, held for it meanwhile
+	moving *place
 	// proxied requests in flight (websockets and MCP streams included)
 	active int
+	// when the last proxied request started or ended; zero until the
+	// first idle check after the gateway started
+	lastActive time.Time
+	// held while the session is started, stopped, moved or killed
+	power sync.Mutex
 	// cancelled when the role's token is regenerated or the session ends,
 	// which cuts the connections made with the old token
 	revoke [2]context.CancelFunc
@@ -256,28 +276,95 @@ const (
 	// starting a unit returns once it runs
 	startTimeout = 30 * time.Second
 	// stopping waits for the session to end, up to systemd's stop timeout
-	removeTimeout = 3 * time.Minute
+	stopTimeout = 3 * time.Minute
+	// a move copies the whole profile
+	moveTimeout = 30 * time.Minute
 )
 
-// callBackend sends a request to the backend of host.
-func (s *server) callBackend(host string, timeout time.Duration, method, path string, body []byte) error {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, method, s.backends[host].JoinPath(path).String(), bytes.NewReader(body))
+var (
+	// a stopped session takes this long at most to answer again; MCP
+	// calls and other requests that are no page wait for it
+	wakeTimeout = 90 * time.Second
+	// how often the wait asks whether it answers yet
+	wakePoll = 500 * time.Millisecond
+)
+
+// place is a slot on a host.
+type place struct {
+	host string
+	slot int
+}
+
+// path is the backend path of rest in p's slot.
+func (p place) path(rest string) string { return "/slots/" + strconv.Itoa(p.slot) + rest }
+
+// url is the backend URL of rest (a path and query) in p's slot.
+func (s *server) url(p place, rest string) string {
+	return strings.TrimSuffix(s.backends[p.host].String(), "/") + p.path(rest)
+}
+
+// at is where a session runs; s.mu must be held.
+func (se *session) at() place { return place{se.Host, se.Slot} }
+
+// secrets are what the session's unit gets; s.mu must be held.
+func (se *session) secrets() []byte {
+	b, _ := json.Marshal(secrets{ControlPassword: se.ControlPassword, ViewPassword: se.ViewPassword, MCPToken: se.MCPToken})
+	return b
+}
+
+// freeSlot returns a slot of host no session has or is moving to, or -1;
+// s.mu must be held.
+func (s *server) freeSlot(host string) int {
+	used := map[int]bool{}
+	for _, se := range s.sessions {
+		if se.Host == host {
+			used[se.Slot] = true
+		}
+		if se.moving != nil && se.moving.host == host {
+			used[se.moving.slot] = true
+		}
+	}
+	for i := range s.cfg.Backends[host].Slots {
+		if !used[i] {
+			return i
+		}
+	}
+	return -1
+}
+
+// backendRequest sends a request to the backend of p's host.
+func (s *server) backendRequest(ctx context.Context, p place, method, rest string, body io.Reader) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, method, s.url(p, rest), body)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	req.Header.Set(tokenHeader, s.token)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("%s: %w", host, err)
+		return nil, fmt.Errorf("%s: %w", p.host, err)
+	}
+	return resp, nil
+}
+
+// callBackend sends a request to the backend of p's host that answers 204.
+func (s *server) callBackend(ctx context.Context, timeout time.Duration, p place, method, rest string, body io.Reader) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	resp, err := s.backendRequest(ctx, p, method, rest, body)
+	if err != nil {
+		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusNoContent {
-		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
-		return fmt.Errorf("%s: %s: %s", host, resp.Status, strings.TrimSpace(string(msg)))
+	return backendStatus(p, resp, http.StatusNoContent)
+}
+
+// backendStatus is an error unless resp has the status want.
+func backendStatus(p place, resp *http.Response, want int) error {
+	if resp.StatusCode == want {
+		return nil
 	}
-	return nil
+	msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+	return fmt.Errorf("%s: %s: %s", p.host, resp.Status, strings.TrimSpace(string(msg)))
 }
 
 // create starts a session for owner on host and returns it with its two
@@ -291,24 +378,12 @@ func (s *server) create(owner, name, host string) (*session, string, string, err
 	if host == "" && len(s.cfg.Backends) == 1 {
 		host = s.hosts()[0]
 	}
-	b, ok := s.cfg.Backends[host]
+	_, ok := s.cfg.Backends[host]
 	if !ok {
 		return nil, "", "", errHost
 	}
 	s.mu.Lock()
-	used := map[int]bool{}
-	for _, se := range s.sessions {
-		if se.Host == host {
-			used[se.Slot] = true
-		}
-	}
-	free := -1
-	for i := range b.Slots {
-		if !used[i] {
-			free = i
-			break
-		}
-	}
+	free := s.freeSlot(host)
 	if free < 0 {
 		s.mu.Unlock()
 		return nil, "", "", errFull
@@ -331,10 +406,11 @@ func (s *server) create(owner, name, host string) (*session, string, string, err
 	se.newRoleContext(controller)
 	se.newRoleContext(viewer)
 	s.sessions[se.ID] = se
+	body := se.secrets()
 	s.mu.Unlock()
 
-	body, _ := json.Marshal(secrets{ControlPassword: se.ControlPassword, ViewPassword: se.ViewPassword, MCPToken: se.MCPToken})
-	err = s.callBackend(host, startTimeout, http.MethodPut, "/slots/"+strconv.Itoa(free), body)
+	// fresh: whatever an earlier session left in the slot goes
+	err = s.callBackend(context.Background(), startTimeout, place{host, free}, http.MethodPut, "?fresh", bytes.NewReader(body))
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -401,7 +477,16 @@ func (s *server) kill(id, owner string) error {
 	if !ok {
 		return os.ErrNotExist
 	}
-	if err := s.callBackend(se.Host, removeTimeout, http.MethodDelete, "/slots/"+strconv.Itoa(se.Slot), nil); err != nil {
+	se.power.Lock()
+	defer se.power.Unlock()
+	s.mu.Lock()
+	at := se.at()
+	s.mu.Unlock()
+	if err := s.callBackend(context.Background(), stopTimeout, at, http.MethodDelete, "", nil); err != nil {
+		// it may be stopped now; the next request starts it again
+		s.mu.Lock()
+		se.ready = false
+		s.mu.Unlock()
 		return err
 	}
 	s.mu.Lock()
@@ -416,16 +501,238 @@ func (s *server) kill(id, owner string) error {
 	return s.save()
 }
 
-// touch counts a proxied request as connected until the returned func runs.
+// touch counts a proxied request as activity and as connected until the
+// returned func runs.
 func (s *server) touch(se *session) func() {
 	s.mu.Lock()
 	se.active++
+	se.lastActive = s.now()
 	s.mu.Unlock()
 	return func() {
 		s.mu.Lock()
 		se.active--
+		se.lastActive = s.now()
 		s.mu.Unlock()
 	}
+}
+
+// idle tells whether a running session has had no request for the stop
+// time; s.mu must be held.
+func (s *server) idle(se *session) bool {
+	if se.lastActive.IsZero() {
+		se.lastActive = s.now()
+	}
+	after := time.Duration(s.cfg.StopAfterMinutes) * time.Minute
+	return after > 0 && !se.starting && !se.Stopped && se.active == 0 && s.now().Sub(se.lastActive) >= after
+}
+
+// stopIdle stops the sessions that are idle, skipping those being started,
+// moved or killed. A request that comes meanwhile counts as activity
+// first, so either the check below sees it, or it waits for the stop and
+// starts the session again.
+func (s *server) stopIdle() {
+	s.mu.Lock()
+	var idle []*session
+	for _, se := range s.sessions {
+		if s.idle(se) {
+			idle = append(idle, se)
+		}
+	}
+	s.mu.Unlock()
+	for _, se := range idle {
+		if !se.power.TryLock() {
+			continue
+		}
+		s.mu.Lock()
+		still := s.sessions[se.ID] == se && s.idle(se)
+		at := se.at()
+		if still {
+			// requests from now on wait for the stop, then start it again
+			se.ready = false
+		}
+		s.mu.Unlock()
+		if still {
+			err := s.callBackend(context.Background(), stopTimeout, at, http.MethodPost, "/stop", nil)
+			s.mu.Lock()
+			if err != nil {
+				log.Printf("session %s: stop: %v", se.ID, err)
+			} else {
+				se.Stopped = true
+				log.Printf("session %s: stopped while idle", se.ID)
+				if err := s.save(); err != nil {
+					log.Printf("save: %v", err)
+				}
+			}
+			s.mu.Unlock()
+		}
+		se.power.Unlock()
+	}
+}
+
+var errGone = errors.New("the session is gone")
+
+// ensureUp starts the session unless it answers, and waits until it does.
+// Starting a running one does nothing, so after a gateway restart this
+// only checks it once.
+func (s *server) ensureUp(ctx context.Context, se *session) error {
+	se.power.Lock()
+	defer se.power.Unlock()
+	s.mu.Lock()
+	ready, at, body := se.ready, se.at(), se.secrets()
+	gone := s.sessions[se.ID] != se
+	s.mu.Unlock()
+	if gone {
+		return errGone
+	}
+	if ready {
+		return nil
+	}
+	if err := s.callBackend(ctx, startTimeout, at, http.MethodPut, "", bytes.NewReader(body)); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	if se.Stopped {
+		se.Stopped = false
+		log.Printf("session %s: started again", se.ID)
+		if err := s.save(); err != nil {
+			log.Printf("save: %v", err)
+		}
+	}
+	s.mu.Unlock()
+	for {
+		if s.callBackend(ctx, 5*time.Second, at, http.MethodGet, "", nil) == nil {
+			s.mu.Lock()
+			se.ready = true
+			s.mu.Unlock()
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(wakePoll):
+		}
+	}
+}
+
+// wakeInBackground starts the session for a page that shows the waking-up
+// page meanwhile, once at a time.
+func (s *server) wakeInBackground(se *session) {
+	s.mu.Lock()
+	if se.waking {
+		s.mu.Unlock()
+		return
+	}
+	se.waking = true
+	s.mu.Unlock()
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), wakeTimeout)
+		defer cancel()
+		if err := s.ensureUp(ctx, se); err != nil {
+			log.Printf("session %s: start: %v", se.ID, err)
+		}
+		s.mu.Lock()
+		se.waking = false
+		s.mu.Unlock()
+	}()
+}
+
+var errSameHost = errors.New("the session runs on that host already")
+
+// move moves a session to host: it stops the session, copies its state
+// there and starts it in a free slot, and only then deletes the old copy.
+// If anything before the start fails, the session stays where it was,
+// stopped until the next request.
+func (s *server) move(id, owner, host string) error {
+	s.mu.Lock()
+	se, ok := s.owned(id, owner)
+	s.mu.Unlock()
+	if !ok {
+		return os.ErrNotExist
+	}
+	if _, ok := s.cfg.Backends[host]; !ok {
+		return errHost
+	}
+	se.power.Lock()
+	defer se.power.Unlock()
+	s.mu.Lock()
+	if s.sessions[id] != se {
+		s.mu.Unlock()
+		return os.ErrNotExist
+	}
+	from := se.at()
+	if from.host == host {
+		s.mu.Unlock()
+		return errSameHost
+	}
+	slot := s.freeSlot(host)
+	if slot < 0 {
+		s.mu.Unlock()
+		return errFull
+	}
+	to := place{host, slot}
+	se.moving = &to
+	// requests from now on wait for the move
+	se.ready = false
+	body := se.secrets()
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		se.moving = nil
+		s.mu.Unlock()
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), moveTimeout)
+	defer cancel()
+	if err := s.callBackend(ctx, stopTimeout, from, http.MethodPost, "/stop", nil); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	se.Stopped = true
+	err := s.save()
+	s.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	if err := s.copyState(ctx, from, to); err != nil {
+		return err
+	}
+	if err := s.callBackend(ctx, startTimeout, to, http.MethodPut, "", bytes.NewReader(body)); err != nil {
+		if rerr := s.callBackend(ctx, stopTimeout, to, http.MethodDelete, "", nil); rerr != nil {
+			log.Printf("session %s: removing the copy on %s: %v", id, host, rerr)
+		}
+		return err
+	}
+	s.mu.Lock()
+	se.Host, se.Slot, se.Stopped = to.host, to.slot, false
+	err = s.save()
+	s.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	log.Printf("session %s: moved from slot %d on %s to slot %d on %s", id, from.slot, from.host, to.slot, to.host)
+	// a copy left behind goes when a new session starts fresh in its slot
+	if err := s.callBackend(ctx, stopTimeout, from, http.MethodDelete, "", nil); err != nil {
+		log.Printf("session %s: removing the old copy on %s: %v", id, from.host, err)
+	}
+	return nil
+}
+
+// copyState streams the state of the stopped slot from to the slot to.
+func (s *server) copyState(ctx context.Context, from, to place) error {
+	resp, err := s.backendRequest(ctx, from, http.MethodGet, "/state", nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if err := backendStatus(from, resp, http.StatusOK); err != nil {
+		return err
+	}
+	put, err := s.backendRequest(ctx, to, http.MethodPut, "/state", resp.Body)
+	if err != nil {
+		return err
+	}
+	defer put.Body.Close()
+	return backendStatus(to, put, http.StatusNoContent)
 }
 
 func main() {
@@ -449,10 +756,21 @@ func main() {
 		}
 		s.oidcClientID = strings.TrimSpace(string(id))
 		listen, handler = cfg.Listen, s.routes()
+		go func() {
+			for range time.Tick(time.Minute) {
+				s.stopIdle()
+			}
+		}()
 	case *backendConfigPath != "" && *gatewayConfig == "":
 		var cfg backendConfig
 		readConfig(*backendConfigPath, &cfg)
-		b, err := newBackend(cfg, systemctl{bin: cfg.Systemctl, unit: cfg.Unit})
+		b, err := newBackend(cfg, systemctl{
+			bin:         cfg.Systemctl,
+			unit:        cfg.Unit,
+			exportUnit:  cfg.ExportUnit,
+			importUnit:  cfg.ImportUnit,
+			transferDir: filepath.Join(cfg.StateDir, "transfer"),
+		})
 		if err != nil {
 			log.Fatal(err)
 		}

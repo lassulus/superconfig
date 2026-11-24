@@ -39,10 +39,18 @@ let
       lockPref("browser.tabs.closeWindowWithLastTab", false);
       lockPref("datareporting.policy.dataSubmissionPolicyBypassNotification", true);
       // reopen the previous tabs on every start, also after a crash or a
-      // reboot, without the about:sessionrestore page (-1: never)
+      // reboot, without the about:sessionrestore page (-1: never); a stop
+      // (idle, move) ends Firefox like a crash
       lockPref("browser.startup.page", 3);
       lockPref("browser.sessionstore.resume_from_crash", true);
       lockPref("browser.sessionstore.max_resumed_crashes", -1);
+      // the session store keeps session cookies and form data of every
+      // site, and nothing clears them at the end
+      lockPref("browser.sessionstore.privacy_level", 0);
+      lockPref("privacy.sanitize.sanitizeOnShutdown", false);
+      lockPref("privacy.clearOnShutdown.cookies", false);
+      lockPref("privacy.clearOnShutdown.sessions", false);
+      lockPref("privacy.clearOnShutdown_v2.cookiesAndStorage", false);
     '';
   };
 
@@ -105,6 +113,37 @@ let
       exit 1
     '';
   };
+
+  # browser-session-export@ and -import@: tar the state of a stopped
+  # session into <backend state>/transfer/<i>.tar, or extract that file into
+  # it, as the session's own user, so moves between hosts need no root and
+  # the files belong to the user of the new host. systemd opens the file.
+  transferUnit = description: command: stdio: {
+    inherit description;
+    serviceConfig = {
+      Type = "oneshot";
+      ExecStart = command;
+      StandardError = "journal";
+      DynamicUser = true;
+      User = "browser-session-%i";
+      StateDirectory = "browser-session/%i";
+      StateDirectoryMode = "0700";
+      PrivateNetwork = true;
+      PrivateTmp = true;
+      PrivateDevices = true;
+      ProtectHome = true;
+      ProtectSystem = "strict";
+      ProtectProc = "invisible";
+      ProtectKernelTunables = true;
+      ProtectKernelModules = true;
+      ProtectControlGroups = true;
+      CapabilityBoundingSet = "";
+      NoNewPrivileges = true;
+      UMask = "0077";
+    }
+    // stdio;
+  };
+  transferFile = "/var/lib/browser-sessions/transfer/%i.tar";
 
   # neko permissions of both roles; neko's defaults fill in missing fields,
   # so all are set
@@ -170,6 +209,15 @@ in
         type = lib.types.str;
         description = "File with the client id of a public (PKCE) client whose redirect URI is <url>/callback.";
       };
+    };
+    stopAfterMinutes = lib.mkOption {
+      type = lib.types.ints.unsigned;
+      default = 30;
+      description = ''
+        Minutes without any request (an open viewer counts as one) after
+        which a session's unit is stopped, keeping its profile, until the
+        next request starts it again. 0 never stops one.
+      '';
     };
     backends = lib.mkOption {
       description = "The session hosts by name: their backend's base URL and number of slots.";
@@ -252,6 +300,7 @@ in
             pkgs.writeText "browser-sessions-gateway.json" (
               builtins.toJSON {
                 inherit (gateway) listen url backends;
+                stop_after_minutes = gateway.stopAfterMinutes;
                 state_dir = "/var/lib/browser-sessions";
                 token_file = "/run/credentials/browser-sessions-gateway.service/token";
                 oidc_issuer = gateway.oidc.issuer;
@@ -273,15 +322,17 @@ in
 
     (lib.mkIf cfg.enable {
       # the backend may start, stop and clean (delete the state of) the
-      # session units, nothing else; systemctl clean refs the unit to wait
-      # for the cleaning
+      # session units and start their export and import, nothing else;
+      # systemctl clean refs the unit to wait for the cleaning
       security.polkit.enable = true;
       security.polkit.extraConfig = ''
         polkit.addRule(function(action, subject) {
+          var unit = action.lookup("unit"), verb = action.lookup("verb");
           if (action.id == "org.freedesktop.systemd1.manage-units" &&
               subject.user == "browser-sessions" &&
-              /^browser-session@[0-9]+\.service$/.test(action.lookup("unit")) &&
-              ["start", "stop", "clean", "ref"].indexOf(action.lookup("verb")) >= 0) {
+              ((/^browser-session@[0-9]+\.service$/.test(unit) &&
+                ["start", "stop", "clean", "ref"].indexOf(verb) >= 0) ||
+               (/^browser-session-(export|import)@[0-9]+\.service$/.test(unit) && verb == "start"))) {
             return polkit.Result.YES;
           }
         });
@@ -313,6 +364,8 @@ in
                 state_dir = "/var/lib/browser-sessions";
                 token_file = "/run/credentials/browser-sessions.service/token";
                 unit = "browser-session@%d.service";
+                export_unit = "browser-session-export@%d.service";
+                import_unit = "browser-session-import@%d.service";
                 systemctl = "${config.systemd.package}/bin/systemctl";
                 slots = map (s: { inherit (s) neko mcp; }) cfg.slots;
               }
@@ -404,6 +457,15 @@ in
           UMask = "0077";
         };
       };
+
+      systemd.services."browser-session-export@" =
+        transferUnit "Write the state of the stopped browser session %i to a tar"
+          "${lib.getExe pkgs.gnutar} -c -C %S/browser-session/%i ."
+          { StandardOutput = "truncate:${transferFile}"; };
+      systemd.services."browser-session-import@" =
+        transferUnit "Fill the state of the stopped browser session %i from a tar"
+          "${lib.getExe pkgs.gnutar} -x --no-same-owner -C %S/browser-session/%i"
+          { StandardInput = "file:${transferFile}"; };
     })
   ];
 }

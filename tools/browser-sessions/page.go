@@ -22,6 +22,7 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("POST /sessions/{id}/regenerate/{role}", s.handleRegenerate)
 	mux.HandleFunc("POST /sessions/{id}/rename", s.handleRename)
 	mux.HandleFunc("POST /sessions/{id}/kill", s.handleKill)
+	mux.HandleFunc("POST /sessions/{id}/move", s.handleMove)
 	mux.HandleFunc("/s/{token}", s.handleSession)
 	mux.HandleFunc("/s/{token}/{rest...}", s.handleSession)
 	return mux
@@ -38,7 +39,11 @@ type links struct {
 
 type sessionInfo struct {
 	links
-	Host      string    `json:"host"`
+	Host string `json:"host"`
+	// running, or stopped until the next request
+	State string `json:"state"`
+	// the other hosts it can move to
+	MoveTo    []string  `json:"move_to,omitempty"`
 	Name      string    `json:"name,omitempty"`
 	Created   time.Time `json:"created"`
 	Connected bool      `json:"connected"`
@@ -57,7 +62,7 @@ var page = template.Must(template.New("page").Parse(`<!doctype html>
 <form method="post" action="/logout"><button>Log out</button></form>
 {{range .Sessions}}<section>
 <h2>{{if .Name}}{{.Name}} <small>{{.ID}}</small>{{else}}{{.ID}}{{end}}</h2>
-<p>On {{.Host}}, created {{.Created.Format "2006-01-02 15:04"}}{{if .Connected}}, connected{{end}}</p>
+<p>On {{.Host}}, {{.State}}, created {{.Created.Format "2006-01-02 15:04"}}{{if .Connected}}, connected{{end}}</p>
 <ul>
 <li>View only: {{if .View}}<a href="{{.View}}"><code>{{.View}}</code></a>{{else}}link not stored, regenerate to show{{end}}
 <form method="post" action="/sessions/{{.ID}}/regenerate/view"><button>New view link</button></form></li>
@@ -67,6 +72,8 @@ var page = template.Must(template.New("page").Parse(`<!doctype html>
 </ul>
 <form method="post" action="/sessions/{{.ID}}/rename"><input name="name" value="{{.Name}}" maxlength="{{$.MaxName}}" placeholder="Name"> <button>Rename</button></form>
 <form method="post" action="/sessions/{{.ID}}/kill"><button>Kill</button></form>
+{{$id := .ID}}{{range .MoveTo}}<form method="post" action="/sessions/{{$id}}/move"><input type="hidden" name="host" value="{{.}}"><button>Move to {{.}}</button></form>
+{{end}}
 </section>{{end}}
 {{end}}
 </body></html>
@@ -82,9 +89,21 @@ func (s *server) list(sub string) []sessionInfo {
 	var out []sessionInfo
 	for _, se := range s.sessions {
 		if se.Owner == sub && !se.starting {
+			state := "running"
+			if se.Stopped {
+				state = "stopped"
+			}
+			var moveTo []string
+			for _, h := range s.hosts() {
+				if h != se.Host {
+					moveTo = append(moveTo, h)
+				}
+			}
 			out = append(out, sessionInfo{
 				links:     *s.links(se.ID, se.ControlToken, se.ViewToken),
 				Host:      se.Host,
+				State:     state,
+				MoveTo:    moveTo,
 				Name:      se.Name,
 				Created:   se.Created,
 				Connected: se.active > 0,
@@ -249,4 +268,26 @@ func (s *server) handleKill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	done(w, r, http.StatusOK, nil)
+}
+
+func (s *server) handleMove(w http.ResponseWriter, r *http.Request) {
+	sub := s.owner(r)
+	if sub == "" {
+		http.Error(w, "log in first", http.StatusUnauthorized)
+		return
+	}
+	err := s.move(r.PathValue("id"), sub, r.FormValue("host"))
+	switch {
+	case err == nil:
+		done(w, r, http.StatusOK, nil)
+	case errors.Is(err, os.ErrNotExist):
+		http.NotFound(w, r)
+	case errors.Is(err, errHost), errors.Is(err, errSameHost):
+		s.render(w, r, http.StatusBadRequest, sub, err.Error(), nil)
+	case errors.Is(err, errFull):
+		s.render(w, r, http.StatusServiceUnavailable, sub, err.Error(), nil)
+	default:
+		log.Printf("move: %v", err)
+		s.render(w, r, http.StatusInternalServerError, sub, "move: "+err.Error(), nil)
+	}
 }

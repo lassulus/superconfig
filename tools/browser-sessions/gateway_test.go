@@ -19,31 +19,109 @@ import (
 	"time"
 )
 
+// fakeUnits keeps a slot's state as a string, the profile the session
+// writes.
 type fakeUnits struct {
 	mu      sync.Mutex
 	running map[int]bool
+	state   map[int]string
 	// slots whose state was deleted
 	cleaned map[int]bool
-	fail    error
+	// Clean fails
+	fail error
+	// Start fails
+	startFail error
+	// a started slot answers only after this many readiness checks
+	slowStart int
+	checks    int
+}
+
+func newFakeUnits() *fakeUnits {
+	return &fakeUnits{running: map[int]bool{}, state: map[int]string{}, cleaned: map[int]bool{}}
 }
 
 func (f *fakeUnits) Start(slot int) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.startFail != nil {
+		return f.startFail
+	}
 	f.running[slot] = true
+	f.checks = 0
 	delete(f.cleaned, slot)
 	return nil
 }
 
-func (f *fakeUnits) Remove(slot int) error {
+func (f *fakeUnits) Stop(slot int) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.running, slot)
+	return nil
+}
+
+func (f *fakeUnits) Clean(slot int) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.fail != nil {
 		return f.fail
 	}
-	delete(f.running, slot)
+	delete(f.state, slot)
 	f.cleaned[slot] = true
 	return nil
+}
+
+func (f *fakeUnits) Active(slot int) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.running[slot], nil
+}
+
+func (f *fakeUnits) Export(slot int, w io.Writer) error {
+	f.mu.Lock()
+	state := f.state[slot]
+	f.mu.Unlock()
+	_, err := io.WriteString(w, state)
+	return err
+}
+
+func (f *fakeUnits) Import(slot int, r io.Reader) error {
+	b, err := io.ReadAll(r)
+	if err != nil {
+		return err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.state[slot] = string(b)
+	return nil
+}
+
+// answers is the backend's readiness: a running slot, after slowStart
+// checks.
+func (f *fakeUnits) answers(slot int) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.checks++
+	return f.running[slot] && f.checks > f.slowStart
+}
+
+func (f *fakeUnits) isRunning(slot int) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.running[slot]
+}
+
+// setState is what the session writes into its profile.
+func (f *fakeUnits) setState(slot int, state string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.state[slot] = state
+}
+
+func (f *fakeUnits) getState(slot int) (string, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	s, ok := f.state[slot]
+	return s, ok
 }
 
 // recorder records what reached a session's neko or MCP server.
@@ -97,6 +175,8 @@ type fixture struct {
 	web   *httptest.Server
 	hosts map[string]*host
 	now   time.Time
+	// guards now where requests run meanwhile
+	clock sync.Mutex
 	// of the first host
 	units *fakeUnits
 	neko  *recorder
@@ -119,14 +199,18 @@ func setupHosts(t *testing.T, names ...string) *fixture {
 		StateDir:  t.TempDir(),
 		TokenFile: tokenFile,
 		Backends:  map[string]backendRef{},
+
+		StopAfterMinutes: 30,
 	}
 	for _, name := range names {
-		h := &host{units: &fakeUnits{running: map[int]bool{}, cleaned: map[int]bool{}}, neko: newRecorder(t), mcp: newRecorder(t)}
+		h := &host{units: newFakeUnits(), neko: newRecorder(t), mcp: newRecorder(t)}
 		h.start(t, backendConfig{
-			StateDir:  t.TempDir(),
-			TokenFile: tokenFile,
-			Unit:      "browser-session@%d.service",
-			Slots:     []slot{{Neko: h.neko.port(t), MCP: h.mcp.port(t)}},
+			StateDir:   t.TempDir(),
+			TokenFile:  tokenFile,
+			Unit:       "browser-session@%d.service",
+			ExportUnit: "browser-session-export@%d.service",
+			ImportUnit: "browser-session-import@%d.service",
+			Slots:      []slot{{Neko: h.neko.port(t), MCP: h.mcp.port(t)}},
 		})
 		f.hosts[name] = h
 		cfg.Backends[name] = backendRef{URL: h.web.URL, Slots: 1}
@@ -145,6 +229,7 @@ func (h *host) start(t *testing.T, cfg backendConfig) {
 		t.Fatal(err)
 	}
 	b.startAll()
+	b.answers = h.units.answers
 	h.b = b
 	if h.web == nil {
 		h.web = httptest.NewServer(b.routes())
@@ -162,7 +247,11 @@ func (f *fixture) start(t *testing.T, cfg config) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.now = func() time.Time { return f.now }
+	s.now = func() time.Time {
+		f.clock.Lock()
+		defer f.clock.Unlock()
+		return f.now
+	}
 	f.s = s
 	f.web = httptest.NewServer(s.routes())
 	t.Cleanup(f.web.Close)
@@ -401,7 +490,7 @@ func TestLinksShown(t *testing.T) {
 		t.Fatalf("list %+v, created %+v", list, l)
 	}
 	page := f.page(t, "alice")
-	for _, want := range []string{`href="` + l.Control + `"`, `href="` + l.View + `"`, "<code>" + l.MCP + "</code>", "Shop &lt;b&gt; <small>" + l.ID + "</small>", "On atlas, created"} {
+	for _, want := range []string{`href="` + l.Control + `"`, `href="` + l.View + `"`, "<code>" + l.MCP + "</code>", "Shop &lt;b&gt; <small>" + l.ID + "</small>", "On atlas, running, created"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("page lacks %s", want)
 		}
@@ -427,7 +516,7 @@ func TestLegacySession(t *testing.T) {
 	legacy := []map[string]any{{
 		"id": "OLDSESSION", "owner": "alice", "host": "atlas", "slot": 0,
 		"control_hash": hashToken("OLDCONTROL"), "view_hash": hashToken("OLDVIEW"),
-		"control_password": "cp", "view_password": "vp", "mcp_token": "mt", "created": f.now,
+		"control_password": "CPCPCPCPCPCPCPCPCP", "view_password": "VPVPVPVPVPVPVPVPVP", "mcp_token": "MTMTMTMTMTMTMTMTMT", "created": f.now,
 	}}
 	b, _ := json.Marshal(legacy)
 	if err := os.WriteFile(f.s.statePath(), b, 0o600); err != nil {
@@ -557,7 +646,7 @@ func TestHosts(t *testing.T) {
 		t.Fatalf("list %+v", list)
 	}
 	page := f.page(t, "alice")
-	for _, want := range []string{`<select name="host"><option>atlas</option><option>styx</option></select>`, "On atlas, created", "On styx, created"} {
+	for _, want := range []string{`<select name="host"><option>atlas</option><option>styx</option></select>`, "On atlas, running, created", "On styx, running, created"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("page lacks %s", want)
 		}
@@ -690,10 +779,9 @@ func TestSlotsAndOwners(t *testing.T) {
 	}
 }
 
-// neko's API runs over a websocket, through the gateway and the backend.
-func TestWebsocket(t *testing.T) {
-	f := setup(t)
-	_, control, _ := f.create(t, "alice", "")
+// echoWebsocket makes the neko of the fixture's first host answer a
+// websocket on /api/ws by echoing one line.
+func (f *fixture) echoWebsocket() {
 	f.neko.srv.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Upgrade") != "websocket" || r.URL.Path != "/api/ws" {
 			http.Error(w, "no upgrade", http.StatusBadRequest)
@@ -710,21 +798,282 @@ func TestWebsocket(t *testing.T) {
 		rw.WriteString("echo " + line)
 		rw.Flush()
 	})
+}
+
+// openWebsocket opens neko's websocket with token through the gateway.
+func (f *fixture) openWebsocket(t *testing.T, token string) (net.Conn, *bufio.Reader) {
+	t.Helper()
 	conn, err := net.Dial("tcp", f.web.Listener.Addr().String())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Close()
+	t.Cleanup(func() { conn.Close() })
 	conn.SetDeadline(time.Now().Add(5 * time.Second))
-	fmt.Fprintf(conn, "GET /s/%s/api/ws HTTP/1.1\r\nHost: x\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n", control)
+	fmt.Fprintf(conn, "GET /s/%s/api/ws HTTP/1.1\r\nHost: x\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n", token)
 	br := bufio.NewReader(conn)
 	resp, err := http.ReadResponse(br, nil)
 	if err != nil || resp.StatusCode != http.StatusSwitchingProtocols {
 		t.Fatalf("upgrade: %v %v", resp, err)
 	}
+	return conn, br
+}
+
+// neko's API runs over a websocket, through the gateway and the backend.
+func TestWebsocket(t *testing.T) {
+	f := setup(t)
+	_, control, _ := f.create(t, "alice", "")
+	f.echoWebsocket()
+	conn, br := f.openWebsocket(t, control)
 	fmt.Fprint(conn, "hello\n")
 	if line, err := br.ReadString('\n'); line != "echo hello\n" {
 		t.Fatalf("through the websocket: %q %v", line, err)
+	}
+}
+
+// fastWake makes the gateway check every millisecond whether a session it
+// starts answers.
+func fastWake(t *testing.T) {
+	poll, timeout := wakePoll, wakeTimeout
+	wakePoll = time.Millisecond
+	t.Cleanup(func() { wakePoll, wakeTimeout = poll, timeout })
+}
+
+// A session without requests for the stop time is stopped and keeps its
+// profile; the next request starts it again.
+func TestIdleStop(t *testing.T) {
+	fastWake(t)
+	f := setup(t)
+	atlas := f.hosts["atlas"]
+	l, control, view := f.create(t, "alice", "")
+	f.units.setState(0, "tabs and cookies")
+	state := func() string {
+		t.Helper()
+		list := f.sessions(t, "alice")
+		if len(list) != 1 {
+			t.Fatalf("list %+v", list)
+		}
+		return list[0].State
+	}
+	idle := func(d time.Duration, wantRunning bool) {
+		t.Helper()
+		f.clock.Lock()
+		f.now = f.now.Add(d)
+		f.clock.Unlock()
+		f.s.stopIdle()
+		if got := f.units.isRunning(0); got != wantRunning {
+			t.Fatalf("after %v idle: running %v, want %v", d, got, wantRunning)
+		}
+	}
+	// the first check after a start begins the idle time
+	idle(0, true)
+	idle(29*time.Minute, true)
+	idle(time.Minute, false)
+	if s := state(); s != "stopped" || !strings.Contains(f.page(t, "alice"), "On atlas, stopped, created") {
+		t.Fatalf("state %q", s)
+	}
+	if p, ok := f.units.getState(0); !ok || p != "tabs and cookies" {
+		t.Fatalf("profile after the stop: %q", p)
+	}
+	// stays stopped across a reboot of the host and a gateway restart
+	atlas.start(t, atlas.b.cfg)
+	f.start(t, f.s.cfg)
+	if s := state(); s != "stopped" || f.units.isRunning(0) {
+		t.Fatalf("state after restarts %q", s)
+	}
+
+	// a browser gets a page that reloads itself until the session answers;
+	// the session starts meanwhile
+	f.units.mu.Lock()
+	f.units.slowStart = 3
+	f.units.mu.Unlock()
+	open := func() (int, string) {
+		req, _ := http.NewRequest("GET", f.web.URL+"/s/"+view+"/?usr=view&pwd=-", nil)
+		req.Header.Set("Accept", "text/html,application/xhtml+xml")
+		return f.send(t, req, "")
+	}
+	nekoRequests := len(f.neko.reqs)
+	status, body := open()
+	if status != http.StatusServiceUnavailable || !strings.Contains(body, `http-equiv="refresh"`) || !strings.Contains(body, "Waking up") {
+		t.Fatalf("waking page: %d %s", status, body)
+	}
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(5 * time.Millisecond) {
+		if status, body = open(); status == 200 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the session did not wake up: %d %s", status, body)
+		}
+	}
+	if body != "backend /" || len(f.neko.reqs) != nekoRequests+1 {
+		t.Fatalf("after waking up: %s, neko got %d requests", body, len(f.neko.reqs)-nekoRequests)
+	}
+	if p, _ := f.units.getState(0); state() != "running" || p != "tabs and cookies" {
+		t.Fatalf("after waking up: state %q, profile %q", state(), p)
+	}
+
+	// an MCP call counts as activity, and waits until a stopped session
+	// answers
+	idle(20*time.Minute, true)
+	if status, _ := f.do(t, "POST", "/s/"+control+"/mcp", "", "{}"); status != 200 {
+		t.Fatalf("mcp: %d", status)
+	}
+	idle(29*time.Minute, true)
+	idle(time.Minute, false)
+	f.units.mu.Lock()
+	f.units.slowStart = 5
+	f.units.mu.Unlock()
+	if status, body := f.do(t, "POST", "/s/"+control+"/mcp", "", "{}"); status != 200 || body != "backend /mcp" || !f.units.isRunning(0) {
+		t.Fatalf("mcp to a stopped session: %d %s", status, body)
+	}
+
+	// an open viewer keeps it running however long it stays
+	f.echoWebsocket()
+	conn, br := f.openWebsocket(t, view)
+	idle(5*time.Hour, true)
+	fmt.Fprint(conn, "bye\n")
+	br.ReadString('\n')
+	conn.Close()
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		f.s.mu.Lock()
+		active := f.s.sessions[l.ID].active
+		f.s.mu.Unlock()
+		if active == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the closed websocket still counts")
+		}
+	}
+	idle(29*time.Minute, true)
+	idle(time.Minute, false)
+
+	// a session that does not answer in time fails the request clearly
+	f.units.mu.Lock()
+	f.units.slowStart = 1 << 30
+	f.units.mu.Unlock()
+	wakeTimeout = 50 * time.Millisecond
+	if status, body := f.do(t, "GET", "/s/"+view+"/x", "", ""); status != http.StatusServiceUnavailable || !strings.Contains(body, "did not answer in time") {
+		t.Fatalf("no answer: %d %s", status, body)
+	}
+
+	// a stopped session can be killed
+	idle(30*time.Minute, false)
+	if status, _ := f.do(t, "POST", "/sessions/"+l.ID+"/kill", "alice", ""); status != http.StatusNoContent || !f.units.cleaned[0] {
+		t.Fatalf("kill of a stopped session: %d", status)
+	}
+}
+
+// A move copies the profile to a free slot of the other host and starts
+// the session there; the links stay.
+func TestMove(t *testing.T) {
+	fastWake(t)
+	f := setupHosts(t, "atlas", "styx")
+	atlas, styx := f.hosts["atlas"], f.hosts["styx"]
+	l, control, _ := f.create(t, "alice", "atlas")
+	lb, _, _ := f.create(t, "bob", "styx")
+	atlas.units.setState(0, "alice's profile")
+	move := func(sub, id, host string) (int, string) {
+		t.Helper()
+		return f.post(t, "/sessions/"+id+"/move", sub, url.Values{"host": {host}})
+	}
+	if page := f.page(t, "alice"); !strings.Contains(page, `action="/sessions/`+l.ID+`/move"><input type="hidden" name="host" value="styx"><button>Move to styx</button>`) || strings.Contains(page, "Move to atlas") {
+		t.Fatalf("move buttons:\n%s", page)
+	}
+	// a running session's state does not leave its host
+	req, _ := http.NewRequest("GET", atlas.web.URL+"/slots/0/state", nil)
+	req.Header.Set(tokenHeader, testToken)
+	if resp, err := http.DefaultClient.Do(req); err != nil || resp.StatusCode != http.StatusConflict {
+		t.Fatalf("export of a running slot: %v %v", resp, err)
+	}
+
+	if status, body := move("alice", l.ID, "styx"); status != http.StatusServiceUnavailable || !strings.Contains(body, "in use") {
+		t.Fatalf("move to a full host: %d %s", status, body)
+	}
+	if status, _ := move("bob", l.ID, "styx"); status != 404 {
+		t.Fatalf("bob moved alice's session: %d", status)
+	}
+	if status, _ := move("alice", l.ID, "atlas"); status != http.StatusBadRequest {
+		t.Fatalf("move to its own host: %d", status)
+	}
+	if status, _ := move("alice", l.ID, "nowhere"); status != http.StatusBadRequest {
+		t.Fatalf("move to an unknown host: %d", status)
+	}
+	if !atlas.units.isRunning(0) {
+		t.Fatal("a refused move stopped the session")
+	}
+
+	f.do(t, "POST", "/sessions/"+lb.ID+"/kill", "bob", "")
+	if status, body := move("alice", l.ID, "styx"); status != http.StatusNoContent {
+		t.Fatalf("move: %d %s", status, body)
+	}
+	if p, _ := styx.units.getState(0); p != "alice's profile" || !styx.units.isRunning(0) {
+		t.Fatalf("on styx: profile %q, running %v", p, styx.units.isRunning(0))
+	}
+	if _, ok := atlas.units.getState(0); ok || atlas.units.isRunning(0) {
+		t.Fatal("the old copy stayed on atlas")
+	}
+	if list := f.sessions(t, "alice"); len(list) != 1 || list[0].Host != "styx" || list[0].State != "running" || list[0].links != l {
+		t.Fatalf("list after the move %+v", list)
+	}
+	atlasRequests := len(atlas.neko.reqs)
+	if status, body := f.do(t, "GET", "/s/"+control+"/after-move", "", ""); status != 200 || body != "backend /after-move" {
+		t.Fatalf("link after the move: %d %s", status, body)
+	}
+	if req, _ := styx.neko.last(); req.URL.Path != "/after-move" || len(atlas.neko.reqs) != atlasRequests {
+		t.Fatal("the link did not reach styx")
+	}
+	// the move is kept across a gateway restart
+	f.start(t, f.s.cfg)
+	if list := f.sessions(t, "alice"); list[0].Host != "styx" {
+		t.Fatalf("host after restart %q", list[0].Host)
+	}
+
+	// a stopped session moves too; the first check after the gateway
+	// restart begins the idle time
+	f.s.stopIdle()
+	f.clock.Lock()
+	f.now = f.now.Add(time.Hour)
+	f.clock.Unlock()
+	f.s.stopIdle()
+	if styx.units.isRunning(0) {
+		t.Fatal("not stopped")
+	}
+	if status, body := move("alice", l.ID, "atlas"); status != http.StatusNoContent {
+		t.Fatalf("move of a stopped session: %d %s", status, body)
+	}
+	if p, _ := atlas.units.getState(0); p != "alice's profile" {
+		t.Fatalf("profile back on atlas %q", p)
+	}
+
+	// if the session does not start on the new host, it stays on the old
+	// one, stopped, and the copy goes
+	styx.units.mu.Lock()
+	styx.units.startFail = errors.New("no start")
+	styx.units.mu.Unlock()
+	if status, _ := move("alice", l.ID, "styx"); status != http.StatusInternalServerError {
+		t.Fatalf("move with a failing start: %d", status)
+	}
+	styx.units.mu.Lock()
+	styx.units.startFail = nil
+	styx.units.mu.Unlock()
+	if list := f.sessions(t, "alice"); list[0].Host != "atlas" || list[0].State != "stopped" {
+		t.Fatalf("after the failed move %+v", list)
+	}
+	if _, ok := styx.units.getState(0); ok {
+		t.Fatal("the copy stayed on styx")
+	}
+	if p, _ := atlas.units.getState(0); p != "alice's profile" {
+		t.Fatalf("profile on atlas after the failed move %q", p)
+	}
+	if status, _ := f.do(t, "GET", "/s/"+control+"/x", "", ""); status != 200 || !atlas.units.isRunning(0) {
+		t.Fatalf("waking on atlas after the failed move: %d", status)
+	}
+
+	// a new session never gets what an earlier one left in its slot
+	styx.units.setState(0, "left behind")
+	f.create(t, "carol", "styx")
+	if p, ok := styx.units.getState(0); ok {
+		t.Fatalf("new session got %q", p)
 	}
 }
 

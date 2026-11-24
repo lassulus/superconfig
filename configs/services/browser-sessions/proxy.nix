@@ -57,6 +57,7 @@ in
       issuer = "https://id.lassul.us";
       inherit (app) clientIdFile;
     };
+    inherit (common) stopAfterMinutes;
     backends = lib.listToAttrs (
       map (
         b:

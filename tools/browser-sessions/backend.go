@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -16,13 +17,15 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // The backend runs the session units of one host for the gateway: it
-// starts a slot's unit with the session's secrets, stops it and deletes its
-// state, and passes the gateway's requests on to the slot's neko and
-// browser-mcp, which listen on localhost only. Every request needs the
-// token shared with the gateway.
+// starts a slot's unit with the session's secrets, stops it (keeping its
+// state) or deletes its state, hands the state of a stopped slot out and
+// takes one in as tars for moves between hosts, and passes the gateway's
+// requests on to the slot's neko and browser-mcp, which listen on
+// localhost only. Every request needs the token shared with the gateway.
 
 // tokenHeader carries the token the gateway and the backends share.
 const tokenHeader = "Browser-Sessions-Token"
@@ -31,10 +34,14 @@ type backendConfig struct {
 	Listen    string `json:"listen"`
 	StateDir  string `json:"state_dir"`
 	TokenFile string `json:"token_file"`
-	// unit of slot i: fmt.Sprintf(Unit, i)
-	Unit      string `json:"unit"`
-	Systemctl string `json:"systemctl"`
-	Slots     []slot `json:"slots"`
+	// units of slot i: fmt.Sprintf(Unit, i) runs the session; ExportUnit
+	// writes its state as a tar to <state_dir>/transfer/<i>.tar, ImportUnit
+	// extracts that file into it
+	Unit       string `json:"unit"`
+	ExportUnit string `json:"export_unit"`
+	ImportUnit string `json:"import_unit"`
+	Systemctl  string `json:"systemctl"`
+	Slots      []slot `json:"slots"`
 }
 
 // slot is where one session runs: the localhost ports of its neko and its
@@ -59,50 +66,135 @@ func (s secrets) valid() bool {
 	return secretChars.MatchString(s.ControlPassword) && secretChars.MatchString(s.ViewPassword) && secretChars.MatchString(s.MCPToken)
 }
 
-// units starts the systemd unit of a slot, and stops it and deletes its
-// state.
+// units runs the systemd units of the slots.
 type units interface {
 	Start(slot int) error
-	Remove(slot int) error
+	// Stop stops the session and keeps its state.
+	Stop(slot int) error
+	// Clean deletes the state of a stopped slot.
+	Clean(slot int) error
+	Active(slot int) (bool, error)
+	// Export writes a tar of a stopped slot's state to w; Import replaces
+	// the state of a stopped slot with the tar from r.
+	Export(slot int, w io.Writer) error
+	Import(slot int, r io.Reader) error
 }
 
-type systemctl struct{ bin, unit string }
+type systemctl struct {
+	bin, unit, exportUnit, importUnit string
+	// where the export and import units find the tar of slot i: i.tar
+	transferDir string
+}
 
-func (s systemctl) run(slot int, args ...string) error {
-	out, err := exec.Command(s.bin, append(args, fmt.Sprintf(s.unit, slot))...).CombinedOutput()
+func (s systemctl) run(unit string, slot int, args ...string) (string, error) {
+	out, err := exec.Command(s.bin, append(args, fmt.Sprintf(unit, slot))...).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("systemctl %s: %v: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+		return "", fmt.Errorf("systemctl %s: %v: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
 	}
-	return nil
+	return strings.TrimSpace(string(out)), nil
 }
 
-func (s systemctl) Start(slot int) error { return s.run(slot, "start") }
+func (s systemctl) Start(slot int) error {
+	_, err := s.run(s.unit, slot, "start")
+	return err
+}
 
-func (s systemctl) Remove(slot int) error {
-	if err := s.run(slot, "stop"); err != nil {
+func (s systemctl) Stop(slot int) error {
+	_, err := s.run(s.unit, slot, "stop")
+	return err
+}
+
+func (s systemctl) Clean(slot int) error {
+	_, err := s.run(s.unit, slot, "clean", "--what=state")
+	return err
+}
+
+func (s systemctl) Active(slot int) (bool, error) {
+	state, err := s.run(s.unit, slot, "show", "--property=ActiveState", "--value")
+	return state != "inactive" && state != "failed", err
+}
+
+func (s systemctl) transferPath(slot int) string {
+	return filepath.Join(s.transferDir, fmt.Sprintf("%d.tar", slot))
+}
+
+// Export runs the export unit, which writes the tar into the file this
+// creates (systemd opens it for the unit, as root, so it stays this
+// user's), and copies it to w.
+func (s systemctl) Export(slot int, w io.Writer) error {
+	path := s.transferPath(slot)
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
 		return err
 	}
-	return s.run(slot, "clean", "--what=state")
+	defer os.Remove(path)
+	defer f.Close()
+	if _, err := s.run(s.exportUnit, slot, "start"); err != nil {
+		return err
+	}
+	_, err = io.Copy(w, f)
+	return err
+}
+
+// Import writes the tar from r to the file the import unit reads, deletes
+// the slot's old state and runs the import unit.
+func (s systemctl) Import(slot int, r io.Reader) error {
+	path := s.transferPath(slot)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(path)
+	_, err = io.Copy(f, r)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		return err
+	}
+	if err := s.Clean(slot); err != nil {
+		return err
+	}
+	_, err = s.run(s.importUnit, slot, "start")
+	return err
 }
 
 type backendServer struct {
 	cfg   backendConfig
 	units units
 	token []byte
+	// answers tells whether a slot's neko and browser-mcp take connections
+	answers func(slot int) bool
 }
 
 func newBackend(cfg backendConfig, u units) (*backendServer, error) {
-	if cfg.Unit == "" || len(cfg.Slots) == 0 {
-		return nil, errors.New("backend config needs unit and slots")
+	if cfg.Unit == "" || cfg.ExportUnit == "" || cfg.ImportUnit == "" || len(cfg.Slots) == 0 {
+		return nil, errors.New("backend config needs unit, export_unit, import_unit and slots")
 	}
 	token, err := readSecret(cfg.TokenFile)
 	if err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(filepath.Join(cfg.StateDir, "slots"), 0o700); err != nil {
-		return nil, err
+	for _, dir := range []string{"slots", "transfer"} {
+		if err := os.MkdirAll(filepath.Join(cfg.StateDir, dir), 0o700); err != nil {
+			return nil, err
+		}
 	}
-	return &backendServer{cfg: cfg, units: u, token: token}, nil
+	b := &backendServer{cfg: cfg, units: u, token: token}
+	b.answers = b.listening
+	return b, nil
+}
+
+// listening tells whether the slot's neko and browser-mcp take connections.
+func (b *backendServer) listening(slot int) bool {
+	for _, port := range []int{b.cfg.Slots[slot].Neko, b.cfg.Slots[slot].MCP} {
+		c, err := net.DialTimeout("tcp", localhost(port).Host, time.Second)
+		if err != nil {
+			return false
+		}
+		c.Close()
+	}
+	return true
 }
 
 // readSecret reads a key or token of at least 32 bytes.
@@ -119,8 +211,9 @@ func (b *backendServer) envPath(slot int) string {
 	return filepath.Join(b.cfg.StateDir, "slots", fmt.Sprintf("%d.env", slot))
 }
 
-// startAll starts the units of the slots that have a session, as after a
-// reboot; they come back with their state.
+// startAll starts the units of the slots that have a running session, as
+// after a reboot; they come back with their state. A stopped session has no
+// env file.
 func (b *backendServer) startAll() {
 	for i := range b.cfg.Slots {
 		if _, err := os.Stat(b.envPath(i)); err != nil {
@@ -134,8 +227,12 @@ func (b *backendServer) startAll() {
 
 func (b *backendServer) routes() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /slots/{slot}", b.handleReady)
 	mux.HandleFunc("PUT /slots/{slot}", b.handleStart)
+	mux.HandleFunc("POST /slots/{slot}/stop", b.handleStop)
 	mux.HandleFunc("DELETE /slots/{slot}", b.handleRemove)
+	mux.HandleFunc("GET /slots/{slot}/state", b.handleExport)
+	mux.HandleFunc("PUT /slots/{slot}/state", b.handleImport)
 	mux.HandleFunc("/slots/{slot}/mcp", b.handleMCP)
 	mux.HandleFunc("/slots/{slot}/neko/{rest...}", b.handleNeko)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -158,7 +255,41 @@ func (b *backendServer) slot(w http.ResponseWriter, r *http.Request) (int, bool)
 	return i, true
 }
 
-// handleStart writes the slot's env file and starts its unit.
+// fail logs and answers an error of slot i.
+func fail(w http.ResponseWriter, i int, status int, err error) {
+	log.Printf("slot %d: %v", i, err)
+	http.Error(w, err.Error(), status)
+}
+
+// stopped answers 409 unless slot i's unit is stopped.
+func (b *backendServer) stopped(w http.ResponseWriter, i int) bool {
+	active, err := b.units.Active(i)
+	if err == nil && active {
+		err = errors.New("the session runs")
+	}
+	if err != nil {
+		fail(w, i, http.StatusConflict, err)
+		return false
+	}
+	return true
+}
+
+// handleReady answers 204 once the slot's neko and browser-mcp take
+// connections, else 503.
+func (b *backendServer) handleReady(w http.ResponseWriter, r *http.Request) {
+	i, ok := b.slot(w, r)
+	if !ok {
+		return
+	}
+	if !b.answers(i) {
+		http.Error(w, "starting", http.StatusServiceUnavailable)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleStart writes the slot's env file and starts its unit, with the
+// state it has; ?fresh deletes that first, for a new session.
 func (b *backendServer) handleStart(w http.ResponseWriter, r *http.Request) {
 	i, ok := b.slot(w, r)
 	if !ok {
@@ -169,20 +300,43 @@ func (b *backendServer) handleStart(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad secrets", http.StatusBadRequest)
 		return
 	}
+	if r.URL.Query().Has("fresh") {
+		if !b.stopped(w, i) {
+			return
+		}
+		if err := b.units.Clean(i); err != nil {
+			fail(w, i, http.StatusInternalServerError, err)
+			return
+		}
+	}
 	env := fmt.Sprintf("NEKO_MEMBER_MULTIUSER_ADMIN_PASSWORD=%s\nNEKO_MEMBER_MULTIUSER_USER_PASSWORD=%s\nBROWSER_MCP_TOKEN=%s\n",
 		sec.ControlPassword, sec.ViewPassword, sec.MCPToken)
 	if err := os.WriteFile(b.envPath(i), []byte(env), 0o600); err != nil {
-		log.Printf("slot %d: %v", i, err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		fail(w, i, http.StatusInternalServerError, err)
 		return
 	}
 	if err := b.units.Start(i); err != nil {
 		os.Remove(b.envPath(i))
-		log.Printf("slot %d: %v", i, err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		fail(w, i, http.StatusInternalServerError, err)
 		return
 	}
 	log.Printf("slot %d: started", i)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleStop stops the slot's unit and keeps its state; without its env
+// file it stays stopped across reboots.
+func (b *backendServer) handleStop(w http.ResponseWriter, r *http.Request) {
+	i, ok := b.slot(w, r)
+	if !ok {
+		return
+	}
+	if err := b.units.Stop(i); err != nil {
+		fail(w, i, http.StatusInternalServerError, err)
+		return
+	}
+	os.Remove(b.envPath(i))
+	log.Printf("slot %d: stopped", i)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -192,13 +346,61 @@ func (b *backendServer) handleRemove(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := b.units.Remove(i); err != nil {
-		log.Printf("slot %d: %v", i, err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	err := b.units.Stop(i)
+	if err == nil {
+		err = b.units.Clean(i)
+	}
+	if err != nil {
+		fail(w, i, http.StatusInternalServerError, err)
 		return
 	}
 	os.Remove(b.envPath(i))
 	log.Printf("slot %d: removed", i)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// writeTracker tells whether anything went out yet.
+type writeTracker struct {
+	http.ResponseWriter
+	wrote bool
+}
+
+func (t *writeTracker) Write(p []byte) (int, error) {
+	t.wrote = true
+	return t.ResponseWriter.Write(p)
+}
+
+// handleExport sends the state of a stopped slot as a tar.
+func (b *backendServer) handleExport(w http.ResponseWriter, r *http.Request) {
+	i, ok := b.slot(w, r)
+	if !ok || !b.stopped(w, i) {
+		return
+	}
+	w.Header().Set("Content-Type", "application/x-tar")
+	t := &writeTracker{ResponseWriter: w}
+	if err := b.units.Export(i, t); err != nil {
+		if t.wrote {
+			// a cut stream must not look complete
+			log.Printf("slot %d: export: %v", i, err)
+			panic(http.ErrAbortHandler)
+		}
+		fail(w, i, http.StatusInternalServerError, err)
+		return
+	}
+	log.Printf("slot %d: exported", i)
+}
+
+// handleImport replaces the state of a stopped slot with the tar sent.
+func (b *backendServer) handleImport(w http.ResponseWriter, r *http.Request) {
+	i, ok := b.slot(w, r)
+	if !ok || !b.stopped(w, i) {
+		return
+	}
+	if err := b.units.Import(i, r.Body); err != nil {
+		fail(w, i, http.StatusInternalServerError, err)
+		return
+	}
+	log.Printf("slot %d: imported", i)
 	w.WriteHeader(http.StatusNoContent)
 }
 
