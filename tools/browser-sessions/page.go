@@ -38,6 +38,7 @@ type links struct {
 
 type sessionInfo struct {
 	links
+	Host      string    `json:"host"`
 	Name      string    `json:"name,omitempty"`
 	Created   time.Time `json:"created"`
 	Connected bool      `json:"connected"`
@@ -51,11 +52,12 @@ var page = template.Must(template.New("page").Parse(`<!doctype html>
 <h1>Browser sessions</h1>
 {{if not .Owner}}<p><a href="/login">Log in</a> to create sessions.</p>{{else}}
 {{if .Error}}<p><strong>{{.Error}}</strong></p>{{end}}
-<form method="post" action="/sessions"><input name="name" maxlength="{{.MaxName}}" placeholder="Name (optional)"> <button>New session</button></form>
+<form method="post" action="/sessions"><input name="name" maxlength="{{.MaxName}}" placeholder="Name (optional)">
+{{if gt (len .Hosts) 1}}<select name="host">{{range .Hosts}}<option>{{.}}</option>{{end}}</select>{{end}} <button>New session</button></form>
 <form method="post" action="/logout"><button>Log out</button></form>
 {{range .Sessions}}<section>
 <h2>{{if .Name}}{{.Name}} <small>{{.ID}}</small>{{else}}{{.ID}}{{end}}</h2>
-<p>Created {{.Created.Format "2006-01-02 15:04"}}{{if .Connected}}, connected{{end}}</p>
+<p>On {{.Host}}, created {{.Created.Format "2006-01-02 15:04"}}{{if .Connected}}, connected{{end}}</p>
 <ul>
 <li>View only: {{if .View}}<a href="{{.View}}"><code>{{.View}}</code></a>{{else}}link not stored, regenerate to show{{end}}
 <form method="post" action="/sessions/{{.ID}}/regenerate/view"><button>New view link</button></form></li>
@@ -79,9 +81,10 @@ func (s *server) list(sub string) []sessionInfo {
 	defer s.mu.Unlock()
 	var out []sessionInfo
 	for _, se := range s.sessions {
-		if se.Owner == sub {
+		if se.Owner == sub && !se.starting {
 			out = append(out, sessionInfo{
 				links:     *s.links(se.ID, se.ControlToken, se.ViewToken),
+				Host:      se.Host,
 				Name:      se.Name,
 				Created:   se.Created,
 				Connected: se.active > 0,
@@ -106,7 +109,7 @@ func (s *server) render(w http.ResponseWriter, r *http.Request, status int, sub 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
-	err := page.Execute(w, map[string]any{"Owner": sub, "Error": errMsg, "Sessions": s.list(sub), "MaxName": maxName})
+	err := page.Execute(w, map[string]any{"Owner": sub, "Error": errMsg, "Sessions": s.list(sub), "Hosts": s.hosts(), "MaxName": maxName})
 	if err != nil {
 		log.Printf("page: %v", err)
 	}
@@ -155,13 +158,13 @@ func (s *server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "log in first", http.StatusUnauthorized)
 		return
 	}
-	se, control, view, err := s.create(sub, r.FormValue("name"))
+	se, control, view, err := s.create(sub, r.FormValue("name"), r.FormValue("host"))
 	if err != nil {
 		status := http.StatusInternalServerError
 		switch {
 		case errors.Is(err, errFull):
 			status = http.StatusServiceUnavailable
-		case errors.Is(err, errName):
+		case errors.Is(err, errName), errors.Is(err, errHost):
 			status = http.StatusBadRequest
 		default:
 			log.Printf("create: %v", err)

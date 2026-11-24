@@ -1,9 +1,10 @@
 # The public side of the browser sessions (common.nix), as
-# configs/atlas-sunshine-forward.nix does it for Moonlight: nginx serves the
-# name and passes the gateway through over retiolum, and every backend's
-# WebRTC UDP ports are forwarded to it; its neko announces this host's
-# address. The zone's wildcard already points the name here.
+# configs/atlas-sunshine-forward.nix does it for Moonlight: the gateway
+# runs here behind nginx and drives the backends over retiolum, and every
+# backend's WebRTC UDP ports are forwarded to it; its neko announces this
+# host's address. The zone's wildcard already points the name here.
 {
+  config,
   lib,
   self,
   ...
@@ -12,22 +13,23 @@ let
   common = import ./common.nix;
   backends = lib.mapAttrsToList (name: b: rec {
     inherit name;
-    inherit (b) firstPort;
+    inherit (b) firstPort slots;
     addr = self.inputs.kartei.hosts.${name}.nets.retiolum.ip4.addr;
     udp = lib.genList (i: b.firstPort + 1 + 2 * b.slots + i) b.slots;
     udpSet = "{ ${lib.concatMapStringsSep ", " toString udp} }";
   }) common.backends;
-  backend = lib.head backends;
+  app = config.lass.zitadel.projects.browser-sessions.apps.web;
 in
 {
-  assertions = [
-    {
-      assertion = lib.length backends == 1;
-      message = "browser-sessions: proxy.nix sends the page and all links to the one backend; several backends need routing between them, which does not exist yet";
-    }
+  imports = [
+    ../../../tools/browser-sessions/module.nix
+    ./token.nix
   ];
 
-  lass.ports = lib.listToAttrs (
+  lass.ports = {
+    ${toString common.gatewayPort} = "browser-sessions-gateway";
+  }
+  // lib.listToAttrs (
     lib.concatMap (
       b:
       lib.imap0 (
@@ -37,14 +39,38 @@ in
   );
 
   # Who may create sessions: the users an admin granted this project in the
-  # Zitadel console (this is the Zitadel host). A public client with PKCE;
-  # its client id goes into the backends' browser-sessions-oidc var.
+  # Zitadel console (this is the Zitadel host). A public client with PKCE.
   lass.zitadel.projects.browser-sessions = {
     access = "managed";
     apps.web = {
       redirectUris = [ "https://${common.domain}/callback" ];
       authMethod = "none";
     };
+  };
+
+  services.browser-sessions-gateway = {
+    enable = true;
+    url = "https://${common.domain}";
+    listen = "127.0.0.1:${toString config.lass.servicePorts.browser-sessions-gateway}";
+    tokenFile = config.clan.core.vars.generators.browser-sessions-backend.files.token.path;
+    oidc = {
+      issuer = "https://id.lassul.us";
+      inherit (app) clientIdFile;
+    };
+    backends = lib.listToAttrs (
+      map (
+        b:
+        lib.nameValuePair b.name {
+          url = "http://${b.addr}:${toString b.firstPort}";
+          inherit (b) slots;
+        }
+      ) backends
+    );
+  };
+  # reads the client id that reconcile writes
+  systemd.services.browser-sessions-gateway = {
+    wants = [ "zitadel-reconcile.service" ];
+    after = [ "zitadel-reconcile.service" ];
   };
 
   # Links carry the session token in the path: the access log masks it and
@@ -68,7 +94,7 @@ in
       error_log stderr crit;
     '';
     locations."/" = {
-      proxyPass = "http://${backend.addr}:${toString backend.firstPort}";
+      proxyPass = "http://127.0.0.1:${toString config.lass.servicePorts.browser-sessions-gateway}";
       proxyWebsockets = true;
       recommendedProxySettings = true;
       # MCP answers and neko's API stream

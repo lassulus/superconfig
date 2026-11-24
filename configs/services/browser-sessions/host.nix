@@ -1,5 +1,6 @@
-# The gateway and the session units on a backend (common.nix). It is only
-# reachable over retiolum: the proxy forwards the page and the WebRTC ports.
+# The backend and the session units on a session host (common.nix). The
+# gateway on the proxy drives it over retiolum; the proxy also forwards the
+# WebRTC ports here.
 {
   config,
   lib,
@@ -8,7 +9,9 @@
 }:
 let
   common = import ./common.nix;
-  backend = common.backends.${config.networking.hostName};
+  name = config.networking.hostName;
+  backend = common.backends.${name};
+  retiolum = host: self.inputs.kartei.hosts.${host}.nets.retiolum.ip4.addr;
   port = block: i: backend.firstPort + 1 + block * backend.slots + i;
   slots = lib.genList (i: {
     neko = port 0 i;
@@ -17,7 +20,10 @@ let
   }) backend.slots;
 in
 {
-  imports = [ ../../../tools/browser-sessions/module.nix ];
+  imports = [
+    ../../../tools/browser-sessions/module.nix
+    ./token.nix
+  ];
 
   lass.ports = {
     ${toString backend.firstPort} = "browser-sessions";
@@ -35,29 +41,17 @@ in
 
   services.browser-sessions = {
     enable = true;
-    url = "https://${common.domain}";
     listen = "0.0.0.0:${toString config.lass.servicePorts.browser-sessions}";
-    oidc = {
-      issuer = "https://id.lassul.us";
-      clientIdFile = config.clan.core.vars.generators.browser-sessions-oidc.files.client-id.path;
-    };
+    tokenFile = config.clan.core.vars.generators.browser-sessions-backend.files.token.path;
     publicAddress = self.inputs.kartei.hosts.${common.proxy}.nets.internet.ip4.addr;
     # proxy.nix forwards the UDP ports to this address
-    privateAddress = self.inputs.kartei.hosts.${config.networking.hostName}.nets.retiolum.ip4.addr;
+    privateAddress = retiolum name;
     inherit slots;
   };
 
-  networking.firewall.interfaces.retiolum = {
-    allowedTCPPorts = [ config.lass.servicePorts.browser-sessions ];
-    allowedUDPPorts = map (s: s.webrtc) slots;
-  };
-
-  # Zitadel app browser-sessions/web (proxy.nix)
-  clan.core.vars.generators.browser-sessions-oidc = {
-    files.client-id = { };
-    prompts.client-id.description = "Client id of the Zitadel app browser-sessions/web (CLIENT_ID in /var/lib/zitadel-apps/browser-sessions-web.env on the Zitadel host)";
-    script = ''
-      cp "$prompts"/client-id "$out"/client-id
-    '';
-  };
+  # the backend only for the gateway; it checks the token as well
+  networking.firewall.extraInputRules = ''
+    iifname "retiolum" ip saddr ${retiolum common.proxy} tcp dport ${toString config.lass.servicePorts.browser-sessions} accept
+  '';
+  networking.firewall.interfaces.retiolum.allowedUDPPorts = map (s: s.webrtc) slots;
 }

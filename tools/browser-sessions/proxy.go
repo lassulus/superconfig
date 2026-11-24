@@ -6,9 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
-	"net/http/httputil"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -50,7 +48,8 @@ func (s *server) handleSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.mu.Lock()
-	sl := s.cfg.Slots[se.Slot]
+	backend := s.backends[se.Host]
+	slotPath := "/slots/" + strconv.Itoa(se.Slot)
 	roleCtx := se.ctx[role]
 	controlPassword, viewPassword, mcpToken := se.ControlPassword, se.ViewPassword, se.MCPToken
 	s.mu.Unlock()
@@ -68,7 +67,7 @@ func (s *server) handleSession(w http.ResponseWriter, r *http.Request) {
 		}
 		// browser-mcp only accepts its own address as Origin; the token in
 		// the path is the authorization
-		proxy(sl.MCP, rest, func(out *http.Request) {
+		s.proxy(backend, slotPath+"/mcp", func(out *http.Request) {
 			out.Header.Set("Authorization", "Bearer "+mcpToken)
 			out.Header.Del("Origin")
 		}).ServeHTTP(w, r)
@@ -84,7 +83,7 @@ func (s *server) handleSession(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	proxy(sl.Neko, rest, nil).ServeHTTP(w, r)
+	s.proxy(backend, slotPath+"/neko"+rest, nil).ServeHTTP(w, r)
 }
 
 // setLoginPassword replaces the password of a neko login request.
@@ -101,24 +100,15 @@ func setLoginPassword(r *http.Request, password string) error {
 	return nil
 }
 
-// proxy forwards to path on a localhost port, without the gateway's
-// cookies; edit may change the outgoing request further.
-func proxy(port int, path string, edit func(*http.Request)) *httputil.ReverseProxy {
-	return &httputil.ReverseProxy{
-		Rewrite: func(pr *httputil.ProxyRequest) {
-			pr.SetURL(&url.URL{Scheme: "http", Host: "127.0.0.1:" + strconv.Itoa(port)})
-			pr.Out.URL.Path, pr.Out.URL.RawPath = path, ""
-			pr.Out.Header.Del("Cookie")
-			pr.SetXForwarded()
-			if edit != nil {
-				edit(pr.Out)
-			}
-		},
-		// MCP answers as server-sent events
-		FlushInterval: -1,
-		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
-			log.Printf("proxy %s %s: %s", r.Method, mask(r.URL.Path), mask(err.Error()))
-			w.WriteHeader(http.StatusBadGateway)
-		},
-	}
+// proxy forwards to path on a host's backend, with the backend token and
+// without the gateway's cookies; edit may change the outgoing request
+// further.
+func (s *server) proxy(backend *url.URL, path string, edit func(*http.Request)) http.Handler {
+	return forward(backend, path, func(out *http.Request) {
+		out.Header.Del("Cookie")
+		out.Header.Set(tokenHeader, s.token)
+		if edit != nil {
+			edit(out)
+		}
+	})
 }
