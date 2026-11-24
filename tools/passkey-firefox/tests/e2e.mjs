@@ -10,7 +10,7 @@
 // when <firefox> installs the add-on itself (our wrapped firefox) instead of a temporary add-on.
 
 import { execFileSync, spawn } from "node:child_process";
-import { createHash, createPublicKey, verify } from "node:crypto";
+import { createHash, createHmac, createPublicKey, verify } from "node:crypto";
 import { createRequire } from "node:module";
 import { createServer } from "node:http";
 import net from "node:net";
@@ -29,6 +29,7 @@ const w = createRequire(import.meta.url)(
   ),
 );
 const extensionId = "passkey-firefox@lassul.us";
+const extensionUuid = "6b0c4f4e-6d1a-4c55-9a4e-3f1d2c0b9a77";
 
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "passkey-firefox-e2e-"));
 const store = path.join(scratch, ".passage", "store");
@@ -46,6 +47,24 @@ const passCalls = () =>
     : [];
 const shows = () => passCalls().filter((l) => l.startsWith("show "));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// RFC 6238 TOTP (SHA-1, 6 digits, 30 s) of a base32 secret at time t
+function totp(secret, t) {
+  const bits = Array.from(secret, (c) =>
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567".indexOf(c).toString(2).padStart(5, "0"),
+  ).join("");
+  const counter = Buffer.alloc(8);
+  counter.writeBigUInt64BE(BigInt(Math.floor(t / 30)));
+  const mac = createHmac(
+    "sha1",
+    Buffer.from(bits.match(/.{8}/g).map((b) => parseInt(b, 2))),
+  )
+    .update(counter)
+    .digest();
+  return String((mac.readUInt32BE(mac[19] & 15) & 0x7fffffff) % 1e6).padStart(
+    6,
+    "0",
+  );
+}
 const freePort = () =>
   new Promise((resolve) => {
     const s = net.createServer().listen(0, "127.0.0.1", () => {
@@ -212,9 +231,17 @@ window.wioSignIn = async (username) => {
 };
 window.later = (p) => { window.pending = p.then((v) => ({ value: v }), (e) => ({ error: e.name + ": " + e.message })); return 1; };
 `;
+// login forms: with an OTP field (/login) and without (/plain); they log input/change events
+const loginPage = (otp) => `<!doctype html><title>login</title><form>
+<input id="user" type="email" autocomplete="username"><input id="pass" type="password">
+${otp ? '<input id="otp" autocomplete="one-time-code" inputmode="numeric">' : ""}</form><script>
+window.events = []; for (const el of document.querySelectorAll("input")) for (const t of ["input", "change"]) el.addEventListener(t, () => events.push(el.id + ":" + t));
+</script>`;
 const server = createServer((req, res) => {
   res.setHeader("content-type", "text/html");
-  res.end(`<!doctype html><title>rp</title><script>${rpScript}</script>`);
+  if (req.url.startsWith("/login")) res.end(loginPage(true));
+  else if (req.url.startsWith("/plain")) res.end(loginPage(false));
+  else res.end(`<!doctype html><title>rp</title><script>${rpScript}</script>`);
 }).listen(0, "127.0.0.1");
 await new Promise((r) => server.once("listening", r));
 const port = server.address().port;
@@ -224,7 +251,8 @@ const origin = `http://localhost:${port}`;
 const driverPort = await freePort();
 const driver = spawn(
   geckodriver,
-  ["--port", String(driverPort), "--binary", firefox],
+  // system access: the chrome context, to open popup.html in a tab
+  ["--port", String(driverPort), "--binary", firefox, "--allow-system-access"],
   {
     env: { ...env, PATH: process.env.PATH },
     stdio: ["ignore", "pipe", "pipe"],
@@ -268,6 +296,10 @@ try {
           prefs: {
             "browser.shell.checkDefaultBrowser": false,
             "extensions.background.idle.timeout": 2000,
+            // a fixed moz-extension:// host, to load popup.html
+            "extensions.webextensions.uuids": JSON.stringify({
+              [extensionId]: extensionUuid,
+            }),
             // the virtual authenticator of the fallback checks
             "security.webauth.webauthn_enable_softtoken": true,
             "security.webauth.webauthn_enable_usbtoken": false,
@@ -580,6 +612,212 @@ try {
       carol.json.id && shows().slice(-1)[0] === "show www/localhost/passkey",
     "a credential not in the store (after reading passkey.age, its name says nothing): the browser answers",
   );
+
+  // ---- logins ------------------------------------------------------------------------------
+  // WebDriver cannot click the toolbar button or a context menu item, nor navigate to an
+  // extension page. The test opens popup.html in a second tab from the browser chrome and sends
+  // the requests its buttons send; a context menu click is the same fill request with the
+  // clicked frame's id (the popup gets it from the background).
+  for (const [name, content] of [
+    ["user", "alice@example.com"],
+    ["pass", "alice-secret\nnotes: second line"],
+    ["otp", "otpauth://totp/e2e?secret=JBSWY3DPEHPK3PXP&issuer=e2e"],
+    ["bob/pass", "bob-secret"],
+  ])
+    execFileSync(pass, ["insert", "-m", "-f", `www/localhost/${name}`], {
+      env,
+      input: content + "\n",
+    });
+  before = passCalls().length;
+  const pageTab = await wd("GET", `/session/${sid}/window`);
+  await wd("POST", `/session/${sid}/url`, { url: `${origin}/login` });
+  await wd("POST", `/session/${sid}/moz/context`, { context: "chrome" });
+  await wd("POST", `/session/${sid}/execute/sync`, {
+    script: `gBrowser.addTab(arguments[0], { triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal() }); return 1;`,
+    args: [`moz-extension://${extensionUuid}/popup.html`],
+  });
+  await wd("POST", `/session/${sid}/moz/context`, { context: "content" });
+  await sleep(1000);
+  const popupTab = (await wd("GET", `/session/${sid}/window/handles`)).find(
+    (h) => h !== pageTab,
+  );
+  const inTab = async (handle, f) => {
+    await wd("POST", `/session/${sid}/window`, { handle });
+    return f();
+  };
+  await inTab(popupTab, async () => {});
+  const ext = (code) =>
+    run(
+      `(async (browser) => ({ value: await (async () => { ${code} })() }))(window.browser || window.wrappedJSObject.browser)`,
+    ).then((r) => r.value);
+  const tabId = await ext(
+    `return (await browser.tabs.query({})).find((t) => t.url.startsWith(${JSON.stringify(origin)})).id;`,
+  );
+  const ask = (msg) =>
+    ext(
+      `return browser.runtime.sendMessage({ tabId: ${tabId}, ...${JSON.stringify(msg)} });`,
+    );
+  const listed = await ask({ type: "logins" });
+  const entries = listed.logins.map((e) => [e.site, e.account, e.user, e.otp]);
+  check(
+    listed.frameId === 0 &&
+      JSON.stringify(entries) ===
+        '[["localhost","",true,true],["localhost","bob",false,false]]',
+    `logins of the tab: localhost (user, pass, otp) and bob (subfolder, pass only)`,
+  );
+  check(
+    passCalls().length === before,
+    "loading the login page and listing ran no pass",
+  );
+
+  const aliceLogin = { site: "localhost", account: "" };
+  const filled = await ask({ type: "fill", ...aliceLogin, frameId: 0 });
+  check(
+    filled.filled?.join() === "user,pass,otp",
+    `fill: ${JSON.stringify(filled)}`,
+  );
+  check(
+    passCalls().slice(before).join("|") ===
+      "show www/localhost/user|show www/localhost/pass|otp www/localhost/otp",
+    "fill: one pass show each for user.age and pass.age, pass otp for otp.age",
+  );
+  const form = () =>
+    inTab(pageTab, () =>
+      run(
+        "({ user: user.value, pass: pass.value, otp: window.otp?.value, events })",
+      ),
+    );
+  let got = await form();
+  const now = Date.now() / 1000;
+  check(
+    got.user === "alice@example.com" && got.pass === "alice-secret",
+    "fill: user and first line of pass.age in the fields",
+  );
+  check(
+    [
+      totp("JBSWY3DPEHPK3PXP", now),
+      totp("JBSWY3DPEHPK3PXP", now - 30),
+    ].includes(got.otp),
+    `fill: the TOTP code of the otpauth URI (${got.otp})`,
+  );
+  check(
+    got.events.join() ===
+      "user:input,user:change,pass:input,pass:change,otp:input,otp:change",
+    "fill: input and change events",
+  );
+
+  before = passCalls().length;
+  await inTab(popupTab, async () => {});
+  check(
+    (
+      await ask({ type: "fill", site: "localhost", account: "bob", frameId: 0 })
+    ).filled?.join() === "user,pass",
+    "fill bob: user and pass (no otp.age)",
+  );
+  got = await form();
+  check(
+    got.user === "bob" && got.pass === "bob-secret",
+    "fill bob: the folder name as user name",
+  );
+  check(
+    passCalls().slice(before).join("|") === "show www/localhost/bob/pass",
+    "fill bob: one pass show",
+  );
+
+  // frames: same origin is filled, another origin refused before any decrypt
+  await inTab(pageTab, () =>
+    wd("POST", `/session/${sid}/url`, { url: origin }),
+  );
+  await run(
+    `Promise.all(["${origin}/plain", "http://other.localhost:${port}/plain"].map((src) => new Promise((resolve) => { const f = document.createElement("iframe"); f.src = src; f.onload = resolve; document.body.append(f); })))`,
+  );
+  await inTab(popupTab, async () => {});
+  const frames = await ext(
+    `return (await browser.scripting.executeScript({ target: { tabId: ${tabId}, allFrames: true }, func: () => location.href })).map((r) => [r.frameId, r.result]);`,
+  );
+  const frameOf = (url) => frames.find(([, href]) => href === url)[0];
+  before = passCalls().length;
+  const top = await ask({ type: "fill", ...aliceLogin, frameId: 0 });
+  check(
+    /no login fields/.test(top.error) && passCalls().length === before,
+    `top frame without fields: ${top.error}, no decrypt`,
+  );
+  const cross = await ask({
+    type: "fill",
+    ...aliceLogin,
+    frameId: frameOf(`http://other.localhost:${port}/plain`),
+  });
+  check(
+    /refused/.test(cross.error) && passCalls().length === before,
+    `cross-origin frame: ${cross.error}, no decrypt`,
+  );
+  const same = await ask({
+    type: "fill",
+    ...aliceLogin,
+    frameId: frameOf(`${origin}/plain`),
+  });
+  check(
+    same.filled?.join() === "user,pass",
+    "same-origin frame (as clicked in its context menu): user, pass",
+  );
+  check(
+    passCalls().slice(before).join("|") ===
+      "show www/localhost/user|show www/localhost/pass",
+    "same-origin frame: no otp (no field), two pass show",
+  );
+  got = await inTab(pageTab, async () => {
+    const frame = await wd("POST", `/session/${sid}/execute/sync`, {
+      script: "return document.querySelector('iframe')",
+      args: [],
+    });
+    await wd("POST", `/session/${sid}/frame`, { id: frame });
+    const values = await run("({ user: user.value, pass: pass.value })");
+    await wd("POST", `/session/${sid}/frame/parent`, {});
+    return values;
+  });
+  check(
+    got.user === "alice@example.com" && got.pass === "alice-secret",
+    "same-origin frame: values in its fields",
+  );
+
+  // copy: in the clipboard, cleared after 45 s
+  before = passCalls().length;
+  await inTab(popupTab, async () => {});
+  check(
+    (
+      await ask({
+        type: "copy",
+        site: "localhost",
+        account: "bob",
+        field: "pass",
+      })
+    ).copied === "pass",
+    "copy bob's pass",
+  );
+  check(
+    (await ext("return navigator.clipboard.readText();")) === "bob-secret",
+    "the clipboard holds it",
+  );
+  check(
+    passCalls().slice(before).join("|") === "show www/localhost/bob/pass",
+    "copy: one pass show",
+  );
+  await sleep(50000);
+  check(
+    (await ext("return navigator.clipboard.readText();")) === "",
+    "the clipboard is cleared after 45 s",
+  );
+  await ask({ type: "copy", site: "localhost", account: "bob", field: "user" });
+  await ext(
+    'return navigator.clipboard.writeText("copied by the user meanwhile");',
+  );
+  await sleep(50000);
+  check(
+    (await ext("return navigator.clipboard.readText();")) ===
+      "copied by the user meanwhile",
+    "a clipboard that changed meanwhile is left alone",
+  );
+  await inTab(pageTab, async () => {});
 
   // ---- webauthn.io ---------------------------------------------------------------------------
   if (process.env.OFFLINE) {

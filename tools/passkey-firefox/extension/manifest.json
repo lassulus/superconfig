@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "passkey-firefox",
-  "version": "1.0.0",
-  "description": "Passkeys from the passage store: registers and signs in through the passkey_firefox native host and pass.",
+  "version": "1.1.0",
+  "description": "Passkeys and logins from the passage store, through the passkey_firefox native host and pass.",
   "browser_specific_settings": {
     "gecko": {
       "id": "passkey-firefox@lassul.us",
@@ -10,10 +10,14 @@
       "data_collection_permissions": { "required": ["none"] }
     }
   },
-  "permissions": ["nativeMessaging", "scripting"],
+  "permissions": ["nativeMessaging", "scripting", "menus", "alarms", "storage", "clipboardWrite", "clipboardRead"],
   "host_permissions": ["https://*/*", "http://localhost/*", "http://*.localhost/*"],
   "background": {
-    "scripts": ["webauthn.js", "background.js"]
+    "scripts": ["webauthn.js", "background.js", "logins.js"]
+  },
+  "action": {
+    "default_title": "passage logins",
+    "default_popup": "popup.html"
   },
   "content_scripts": [
     {

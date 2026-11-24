@@ -284,6 +284,7 @@ fs.writeFileSync(
 echo "$* bulk=\${PASS_BULK_KEY_FILE-unset}" >> '${log}'
 case "$1" in
   show) cat "$PASSAGE_DIR/$2.age" ;;
+  otp) echo "code of $2" ;;
   insert) mkdir -p "$(dirname "$PASSAGE_DIR/$4")" && cat > "$PASSAGE_DIR/$4.age" ;;
 esac
 `,
@@ -355,9 +356,11 @@ check(
 );
 for (const [req, what] of [
   [
-    { op: "read", rp: "example.com", name: "user" },
-    "read of a non-passkey entry",
+    { op: "read", rp: "example.com", name: "otp" },
+    "read of otp.age (only through pass otp)",
   ],
+  [{ op: "otp", rp: "example.com", name: "pass" }, "pass otp of pass.age"],
+  [{ op: "read", rp: "example.com", name: "notes" }, "read of another file"],
   [
     { op: "read", rp: "example.com", name: "passkey-ffffffff" },
     "read of a missing passkey",
@@ -428,6 +431,60 @@ check(
   calls().slice(1).join("|") ===
     "insert -m -f www/example.com/passkey bulk=unset|insert -m -f www/example.com/passkey-55667788 bulk=unset|insert -m -f www/new.example/passkey bulk=unset",
   "write: one 'pass insert -m' per stored passkey, several requests per host run",
+);
+
+// ---- logins --------------------------------------------------------------------------------
+for (const [host, sites] of [
+  ["login.github.com", "login.github.com,github.com"],
+  ["github.com", "github.com"],
+  ["a.b.example.co.uk", "a.b.example.co.uk,b.example.co.uk,example.co.uk"],
+  ["alice.github.io", "alice.github.io"],
+  ["localhost", "localhost"],
+  ["10.0.0.1", "10.0.0.1"],
+]) {
+  const got = w.loginSites(host, rules).join();
+  check(got === sites, `login sites of ${host}: ${got}`);
+}
+
+fs.mkdirSync(path.join(site, "bob"));
+fs.writeFileSync(path.join(site, "bob", "pass.age"), "bob-pass\n");
+fs.mkdirSync(path.join(site, "carol"));
+fs.writeFileSync(
+  path.join(site, "carol", "user.age"),
+  "no pass.age: not a login",
+);
+fs.mkdirSync(path.join(site, ".git"));
+fs.writeFileSync(path.join(site, ".git", "pass.age"), "x");
+const before = calls().length;
+[r] = host({ op: "logins", rp: "example.com" });
+check(
+  JSON.stringify(r.names) === '["user","pass","otp","bob/pass"]',
+  `logins: folders with pass.age, the site's and subfolders (${JSON.stringify(r.names)})`,
+);
+[r] = host({ op: "logins", rp: "nothing.example" });
+check(JSON.stringify(r.names) === "[]", "logins of a site without folder: []");
+check(calls().length === before, "logins does not run pass");
+const [u, p, b, o, c] = host(
+  { op: "read", rp: "example.com", name: "user" },
+  { op: "read", rp: "example.com", name: "pass" },
+  { op: "read", rp: "example.com", name: "bob/pass" },
+  { op: "otp", rp: "example.com", name: "otp" },
+  { op: "read", rp: "example.com", name: "carol/user" },
+);
+const text = (x) => Buffer.from(x.data, "base64").toString();
+check(
+  text(u) === "user.age" && text(p) === "pass.age" && text(b) === "bob-pass\n",
+  "read: user, pass, bob/pass",
+);
+check(
+  text(o) === "code of www/example.com/otp\n",
+  "otp: the output of pass otp",
+);
+check(typeof c.error === "string", "read of a folder without pass.age refused");
+check(
+  calls().slice(before).join("|") ===
+    "show www/example.com/user bulk=unset|show www/example.com/pass bulk=unset|show www/example.com/bob/pass bulk=unset|otp www/example.com/otp bulk=unset",
+  "one pass call per read, pass otp for otp.age",
 );
 fs.rmSync(scratch, { recursive: true });
 

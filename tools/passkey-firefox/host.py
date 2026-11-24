@@ -1,15 +1,19 @@
-"""Native messaging host of passkey-firefox: the passkey files of the passage store.
+"""Native messaging host of passkey-firefox: passkeys and logins of the passage store.
 
 Requests (Firefox native messaging: 4-byte length + JSON, both ways):
   {"op": "list", "rp": R}             -> {"names": ["passkey", "passkey-0a1b2c3d", ...]}
+  {"op": "logins", "rp": R}           -> {"names": ["user", "pass", "otp", "bob/pass", ...]}
   {"op": "read", "rp": R, "name": N}  -> {"data": base64}   (pass show www/R/N)
+  {"op": "otp", "rp": R, "name": N}   -> {"data": base64}   (pass otp www/R/N)
   {"op": "write", "rp": R, "id": H, "data": base64}
                                       -> {"name": N}        (pass insert -m www/R/N)
   errors                              -> {"error": text}
 
 A new passkey is www/R/passkey, or www/R/passkey-H (H: the first 8 lowercase hex chars of its
-credential id) when that exists; an existing file is never overwritten. Every read is one
-`pass show` and so one approval of the hardware key; nothing is cached.
+credential id) when that exists; an existing file is never overwritten. A login is a folder
+with pass.age (and optionally user.age, otp.age): www/R itself or one subfolder per further
+account, as the Android app reads them. Every read is one `pass show` (or `pass otp`) and so
+one approval of the hardware key; nothing is cached. otp.age is only read through `pass otp`.
 """
 
 import base64
@@ -40,26 +44,51 @@ def names(rp: str) -> list[str]:
     )
 
 
+def logins(rp: str) -> list[str]:
+    site = STORE / "www" / rp
+    if not site.is_dir():
+        return []
+    subfolders = sorted(d for d in site.iterdir() if d.is_dir() and d.name[0] != ".")
+    return [
+        (f"{d.name}/" if d != site else "") + field
+        for d in [site, *subfolders]
+        if (d / "pass.age").is_file()
+        for field in ("user", "pass", "otp")
+        if (d / f"{field}.age").is_file()
+    ]
+
+
+def run(op: str, rp: str, name: str) -> dict[str, Any]:
+    out = subprocess.run(
+        ["pass", op, f"www/{rp}/{name}"],
+        check=False,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        env=ENV,
+    )
+    if out.returncode != 0:
+        return {"error": f"pass {op} failed"}
+    return {"data": base64.b64encode(out.stdout).decode()}
+
+
 def handle(req: dict[str, Any]) -> dict[str, Any]:
     rp = req.get("rp")
     if not isinstance(rp, str) or not RP.fullmatch(rp):
         return {"error": "bad rp id"}
     if req.get("op") == "list":
         return {"names": names(rp)}
+    if req.get("op") == "logins":
+        return {"names": logins(rp)}
+    name = req.get("name")
     if req.get("op") == "read":
-        name = req.get("name")
-        if not isinstance(name, str) or name not in names(rp):
-            return {"error": "no such passkey"}
-        out = subprocess.run(
-            ["pass", "show", f"www/{rp}/{name}"],
-            check=False,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            env=ENV,
-        )
-        if out.returncode != 0:
-            return {"error": "pass show failed"}
-        return {"data": base64.b64encode(out.stdout).decode()}
+        readable = names(rp) + [n for n in logins(rp) if not n.endswith("otp")]
+        if name not in readable:
+            return {"error": "no such entry"}
+        return run("show", rp, name)
+    if req.get("op") == "otp":
+        if name not in logins(rp) or not name.endswith("otp"):
+            return {"error": "no such entry"}
+        return run("otp", rp, name)
     if req.get("op") == "write":
         id8 = req.get("id")
         if not isinstance(id8, str) or not ID8.fullmatch(id8):

@@ -331,6 +331,15 @@ function rpIdAllowed(host, rpId, rules) {
   return !isPublicSuffix(rpId, rules);
 }
 
+// Store folders whose logins a page on `host` may get: the host, then its parent domains down
+// to the registrable domain (login.github.com -> login.github.com, github.com).
+function loginSites(host, rules) {
+  var labels = host.split(".");
+  return labels
+    .map((_, i) => labels.slice(i).join("."))
+    .filter((site) => rpIdAllowed(host, site, rules));
+}
+
 // Origins WebAuthn works on: https, and http for localhost.
 function secureOrigin(url) {
   try {
@@ -363,5 +372,6 @@ if (typeof module !== "undefined") {
     isPublicSuffix,
     rpIdAllowed,
     secureOrigin,
+    loginSites,
   };
 }
