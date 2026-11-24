@@ -351,16 +351,21 @@
           # Check Darwin configurations can be evaluated (without building).
           # CI builds the NixOS machines (ciToplevels) and barnacle
           # (.github/workflows/ci.yml).
-          checks = lib.mapAttrs' (
-            name: config:
-            lib.nameValuePair "darwin-${name}" (
-              pkgs.runCommand "eval-darwin-${name}" { } ''
-                # Force evaluation of the system path without building
-                echo "Evaluating ${name}: ${builtins.unsafeDiscardStringContext config.system.drvPath}"
-                touch $out
-              ''
-            )
-          ) (lib.filterAttrs (_: config: config.pkgs.system == system) self.darwinConfigurations);
+          checks =
+            lib.mapAttrs' (
+              name: config:
+              lib.nameValuePair "darwin-${name}" (
+                pkgs.runCommand "eval-darwin-${name}" { } ''
+                  # Force evaluation of the system path without building
+                  echo "Evaluating ${name}: ${builtins.unsafeDiscardStringContext config.system.drvPath}"
+                  touch $out
+                ''
+              )
+            ) (lib.filterAttrs (_: config: config.pkgs.system == system) self.darwinConfigurations)
+            # NixOS tests of shared configs
+            // lib.optionalAttrs pkgs.stdenv.hostPlatform.isx86_64 {
+              nginx = import ./configs/nginx-test.nix { inherit pkgs; };
+            };
         };
       flake.lib = import ./lib { inherit (nixpkgs) lib; };
     };
