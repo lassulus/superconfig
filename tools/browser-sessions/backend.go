@@ -52,17 +52,24 @@ type slot struct {
 }
 
 // secrets are what a slot's unit gets from the gateway: the neko passwords
-// of both roles and browser-mcp's token.
+// of both roles, browser-mcp's token and the ICE servers (TURN with its
+// credentials) neko gives the browsers.
 type secrets struct {
-	ControlPassword string `json:"control_password"`
-	ViewPassword    string `json:"view_password"`
-	MCPToken        string `json:"mcp_token"`
+	ControlPassword string      `json:"control_password"`
+	ViewPassword    string      `json:"view_password"`
+	MCPToken        string      `json:"mcp_token"`
+	ICEServers      []iceServer `json:"ice_servers,omitempty"`
 }
 
 // they go into an env file, so nothing but letters and digits
 var secretChars = regexp.MustCompile(`^[A-Za-z0-9]{16,}$`)
 
 func (s secrets) valid() bool {
+	for _, i := range s.ICEServers {
+		if !i.valid() {
+			return false
+		}
+	}
 	return secretChars.MatchString(s.ControlPassword) && secretChars.MatchString(s.ViewPassword) && secretChars.MatchString(s.MCPToken)
 }
 
@@ -311,6 +318,10 @@ func (b *backendServer) handleStart(w http.ResponseWriter, r *http.Request) {
 	}
 	env := fmt.Sprintf("NEKO_MEMBER_MULTIUSER_ADMIN_PASSWORD=%s\nNEKO_MEMBER_MULTIUSER_USER_PASSWORD=%s\nBROWSER_MCP_TOKEN=%s\n",
 		sec.ControlPassword, sec.ViewPassword, sec.MCPToken)
+	if len(sec.ICEServers) > 0 {
+		ice, _ := json.Marshal(sec.ICEServers)
+		env += "NEKO_WEBRTC_ICESERVERS_FRONTEND='" + string(ice) + "'\n"
+	}
 	if err := os.WriteFile(b.envPath(i), []byte(env), 0o600); err != nil {
 		fail(w, i, http.StatusInternalServerError, err)
 		return

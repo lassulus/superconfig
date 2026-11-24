@@ -1,6 +1,8 @@
 # The browser-sessions gateway (services.browser-sessions-gateway: the
-# page, the login, the sessions and their tokens, proxying the links) and
-# the session hosts (services.browser-sessions: the backend that the gateway
+# page, the login, the sessions and their tokens, proxying the links), the
+# forward of the backends' WebRTC ports on the public host
+# (services.browser-sessions-forward) and the session hosts
+# (services.browser-sessions: the backend that the gateway
 # drives over the network, and the session units it starts). Session i of a
 # host runs in browser-session@i.service: Xorg (neko's dummy setup),
 # pulseaudio, openbox, Firefox with the browser-mcp extension, neko and
@@ -18,6 +20,12 @@
 let
   cfg = config.services.browser-sessions;
   gateway = config.services.browser-sessions-gateway;
+  forward = config.services.browser-sessions-forward;
+  # the forwarded ports of each backend as an nftables set
+  forwards = lib.mapAttrsToList (_: b: {
+    inherit (b) address;
+    ports = "{ ${lib.concatMapStringsSep ", " toString b.ports} }";
+  }) forward.backends;
   packages = self.packages.${pkgs.stdenv.hostPlatform.system};
   neko = packages.neko;
 
@@ -236,6 +244,69 @@ in
         }
       );
     };
+    turn = {
+      urls = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [ ];
+        example = [
+          "turn:turn.example.org:3478?transport=udp"
+          "turns:turn.example.org:443?transport=tcp"
+        ];
+        description = ''
+          TURN server (coturn with use-auth-secret) that neko offers the
+          viewers' browsers, for networks that block the slots' WebRTC
+          ports. Every start of a session's unit gets credentials for it.
+          None if empty.
+        '';
+      };
+      secretFile = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        description = "File with the TURN server's static-auth-secret.";
+      };
+      ttlHours = lib.mkOption {
+        type = lib.types.ints.positive;
+        default = 168;
+        description = ''
+          Hours the TURN credentials stay valid after a session's unit
+          started. neko keeps them until it is restarted (idle stop, move,
+          reboot), so this should be longer than a session runs without
+          one.
+        '';
+      };
+    };
+  };
+
+  options.services.browser-sessions-forward = {
+    enable = lib.mkEnableOption "forwarding the backends' WebRTC ports (UDP and TCP) from this host's addresses (nftables)";
+    interface = lib.mkOption {
+      type = lib.types.str;
+      example = "retiolum";
+      description = "Interface the backends are reached over; packets arriving on it are not forwarded.";
+    };
+    backends = lib.mkOption {
+      description = ''
+        The session hosts by name: their IPv4 address on the interface
+        (services.browser-sessions.privateAddress) and their slots' WebRTC
+        ports. These ports to any local address of this host go there,
+        masqueraded, also from this host itself (a TURN server here relays
+        to the address neko announces).
+      '';
+      example = {
+        atlas = {
+          address = "10.243.1.3";
+          ports = [ 8967 ];
+        };
+      };
+      type = lib.types.attrsOf (
+        lib.types.submodule {
+          options = {
+            address = lib.mkOption { type = lib.types.str; };
+            ports = lib.mkOption { type = lib.types.nonEmptyListOf lib.types.port; };
+          };
+        }
+      );
+    };
   };
 
   options.services.browser-sessions = {
@@ -251,14 +322,15 @@ in
     };
     publicAddress = lib.mkOption {
       type = lib.types.str;
-      description = "IPv4 address WebRTC clients reach the slots' UDP ports at (neko's NAT 1:1 address).";
+      description = "IPv4 address WebRTC clients reach the slots' UDP and TCP ports at (neko's NAT 1:1 address).";
     };
     privateAddress = lib.mkOption {
       type = lib.types.str;
       description = ''
-        IPv4 address of this host that publicAddress forwards the UDP ports
-        to. neko's UDP mux listens only there, so it answers the forwarded
-        checks from the socket they arrived on.
+        IPv4 address of this host that publicAddress forwards the UDP and
+        TCP ports to. neko's UDP mux listens only there, and its TCP mux
+        announces only that address, so it answers the forwarded checks
+        from the socket they arrived on.
       '';
     };
     screen = lib.mkOption {
@@ -267,7 +339,7 @@ in
       description = "Screen size and frame rate of the sessions, one of the modes in neko's xorg.conf.";
     };
     slots = lib.mkOption {
-      description = "One entry per possible parallel session: its localhost ports and its WebRTC UDP port.";
+      description = "One entry per possible parallel session: its localhost ports and its WebRTC port (the same number for UDP and TCP).";
       type = lib.types.listOf (
         lib.types.submodule {
           options = {
@@ -290,6 +362,12 @@ in
     })
 
     (lib.mkIf gateway.enable {
+      assertions = [
+        {
+          assertion = gateway.turn.urls != [ ] -> gateway.turn.secretFile != null;
+          message = "services.browser-sessions-gateway.turn.urls needs turn.secretFile";
+        }
+      ];
       systemd.services.browser-sessions-gateway = {
         description = "Gateway of the shared browser sessions";
         wantedBy = [ "multi-user.target" ];
@@ -301,6 +379,11 @@ in
               builtins.toJSON {
                 inherit (gateway) listen url backends;
                 stop_after_minutes = gateway.stopAfterMinutes;
+                turn = {
+                  inherit (gateway.turn) urls;
+                  secret_file = "/run/credentials/browser-sessions-gateway.service/turn-secret";
+                  ttl_hours = gateway.turn.ttlHours;
+                };
                 state_dir = "/var/lib/browser-sessions";
                 token_file = "/run/credentials/browser-sessions-gateway.service/token";
                 oidc_issuer = gateway.oidc.issuer;
@@ -312,12 +395,47 @@ in
           LoadCredential = [
             "token:${gateway.tokenFile}"
             "oidc-client-id:${gateway.oidc.clientIdFile}"
-          ];
+          ]
+          ++ lib.optional (gateway.turn.urls != [ ]) "turn-secret:${gateway.turn.secretFile}";
         };
       };
 
       # the sessions with their tokens and the cookie key
       lass.backup.state.browser-sessions.folders = [ "/var/lib/browser-sessions" ];
+    })
+
+    (lib.mkIf forward.enable {
+      networking.nftables.tables.browser-sessions = {
+        family = "ip";
+        content = ''
+          chain prerouting {
+            type nat hook prerouting priority dstnat; policy accept;
+            ${lib.concatMapStringsSep "\n  " (
+              f:
+              ''iifname != "${forward.interface}" fib daddr type local meta l4proto { tcp, udp } th dport ${f.ports} dnat to ${f.address}''
+            ) forwards}
+          }
+          chain output {
+            type nat hook output priority -100; policy accept;
+            ${lib.concatMapStringsSep "\n  " (
+              f: "fib daddr type local meta l4proto { tcp, udp } th dport ${f.ports} dnat to ${f.address}"
+            ) forwards}
+          }
+          chain postrouting {
+            type nat hook postrouting priority srcnat; policy accept;
+            # the backend answers this host over the interface, not the client directly
+            ${lib.concatMapStringsSep "\n  " (
+              f: "ip daddr ${f.address} meta l4proto { tcp, udp } th dport ${f.ports} ct status dnat masquerade"
+            ) forwards}
+          }
+        '';
+      };
+      # the interface's MTU may be smaller than the clients' links
+      networking.firewall.extraForwardRules = lib.concatMapStrings (f: ''
+        ip daddr ${f.address} tcp dport ${f.ports} ct status dnat tcp flags syn tcp option maxseg size set rt mtu
+        ip daddr ${f.address} meta l4proto { tcp, udp } th dport ${f.ports} ct status dnat accept
+      '') forwards;
+      boot.kernel.sysctl."net.ipv4.ip_forward" = 1;
     })
 
     (lib.mkIf cfg.enable {
@@ -391,6 +509,7 @@ in
             text = ''
               NEKO_SERVER_BIND=127.0.0.1:${toString s.neko}
               NEKO_WEBRTC_UDPMUX=${toString s.webrtc}
+              NEKO_WEBRTC_TCPMUX=${toString s.webrtc}
               BROWSER_MCP_HTTP=127.0.0.1:${toString s.mcp}
             '';
           }

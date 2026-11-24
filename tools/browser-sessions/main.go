@@ -56,6 +56,8 @@ type config struct {
 	// a session without any request for this long is stopped, keeping its
 	// profile, until the next request; 0 never stops one
 	StopAfterMinutes int `json:"stop_after_minutes"`
+	// TURN server for the viewers' browsers (turn.go)
+	TURN turnConfig `json:"turn"`
 }
 
 // backendRef is a host's backend: its base URL (http://<address>:<port>)
@@ -152,6 +154,8 @@ type server struct {
 	oidcClientID string
 	cookieKey    []byte
 	secure       bool
+	// coturn's secret, when there is a TURN server
+	turnSecret []byte
 
 	mu       sync.Mutex
 	sessions map[string]*session
@@ -180,6 +184,14 @@ func newServer(cfg config) (*server, error) {
 		return nil, err
 	}
 	s.token = string(token)
+	if len(cfg.TURN.URLs) > 0 {
+		if cfg.TURN.TTLHours < 1 {
+			return nil, errors.New("turn needs ttl_hours")
+		}
+		if s.turnSecret, err = readSecret(cfg.TURN.SecretFile); err != nil {
+			return nil, err
+		}
+	}
 	if err := os.MkdirAll(cfg.StateDir, 0o700); err != nil {
 		return nil, err
 	}
@@ -306,9 +318,16 @@ func (s *server) url(p place, rest string) string {
 // at is where a session runs; s.mu must be held.
 func (se *session) at() place { return place{se.Host, se.Slot} }
 
-// secrets are what the session's unit gets; s.mu must be held.
-func (se *session) secrets() []byte {
-	b, _ := json.Marshal(secrets{ControlPassword: se.ControlPassword, ViewPassword: se.ViewPassword, MCPToken: se.MCPToken})
+// secrets are what the session's unit gets, with TURN credentials from
+// now; s.mu must be held.
+func (s *server) secrets(se *session) []byte {
+	sec := secrets{ControlPassword: se.ControlPassword, ViewPassword: se.ViewPassword, MCPToken: se.MCPToken}
+	if s.turnSecret != nil {
+		ice := iceServer{URLs: s.cfg.TURN.URLs}
+		ice.Username, ice.Credential = turnCredentials(s.turnSecret, se.ID, s.now().Add(time.Duration(s.cfg.TURN.TTLHours)*time.Hour))
+		sec.ICEServers = []iceServer{ice}
+	}
+	b, _ := json.Marshal(sec)
 	return b
 }
 
@@ -406,7 +425,7 @@ func (s *server) create(owner, name, host string) (*session, string, string, err
 	se.newRoleContext(controller)
 	se.newRoleContext(viewer)
 	s.sessions[se.ID] = se
-	body := se.secrets()
+	body := s.secrets(se)
 	s.mu.Unlock()
 
 	// fresh: whatever an earlier session left in the slot goes
@@ -578,7 +597,7 @@ func (s *server) ensureUp(ctx context.Context, se *session) error {
 	se.power.Lock()
 	defer se.power.Unlock()
 	s.mu.Lock()
-	ready, at, body := se.ready, se.at(), se.secrets()
+	ready, at, body := se.ready, se.at(), s.secrets(se)
 	gone := s.sessions[se.ID] != se
 	s.mu.Unlock()
 	if gone {
@@ -673,7 +692,7 @@ func (s *server) move(id, owner, host string) error {
 	se.moving = &to
 	// requests from now on wait for the move
 	se.ready = false
-	body := se.secrets()
+	body := s.secrets(se)
 	s.mu.Unlock()
 	defer func() {
 		s.mu.Lock()
