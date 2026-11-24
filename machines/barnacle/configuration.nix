@@ -197,5 +197,11 @@
       self.packages.${pkgs.system}.browser-mcp
     }/lib/mozilla/native-messaging-hosts/browser_mcp.json \
       "/Library/Application Support/Mozilla/NativeMessagingHosts/browser_mcp.json"
+    # Native messaging host of the passkey-firefox add-on (tools/passkey-firefox).
+    # Release Firefox installs the add-on only signed by addons.mozilla.org.
+    ln -sfn ${
+      self.packages.${pkgs.system}.passkey-firefox-host
+    }/lib/mozilla/native-messaging-hosts/passkey_firefox.json \
+      "/Library/Application Support/Mozilla/NativeMessagingHosts/passkey_firefox.json"
   '';
 }
