@@ -18,4 +18,8 @@
     slots = 8;
     firstPort = 8950;
   };
+  backends.styx = {
+    slots = 2;
+    firstPort = 8975;
+  };
 }

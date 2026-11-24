@@ -9,6 +9,8 @@
     ../../configs/retiolum.nix
     ../../configs/services/continuum
     ../../configs/services/agentd
+    # shared browser sessions (browser.lassul.us through neoprism)
+    ../../configs/services/browser-sessions/host.nix
     ../../configs/pipewire.nix
     ../../configs/green-host.nix
     ../../configs/syncthing.nix
