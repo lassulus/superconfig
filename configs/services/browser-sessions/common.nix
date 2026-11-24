@@ -15,8 +15,8 @@
   stopAfterMinutes = 30;
   # Session hosts by hostname: up to `slots` parallel sessions. The backend
   # listens on firstPort for the gateway; then follow blocks of `slots`
-  # ports each: neko, MCP and WebRTC (UDP, forwarded by the proxy, so these
-  # must differ between backends).
+  # ports each: neko, MCP and WebRTC (UDP and TCP, forwarded by the proxy, so
+  # these must differ between backends).
   backends.atlas = {
     slots = 8;
     firstPort = 8950;

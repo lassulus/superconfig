@@ -44,7 +44,7 @@ in
     listen = "0.0.0.0:${toString config.lass.servicePorts.browser-sessions}";
     tokenFile = config.clan.core.vars.generators.browser-sessions-backend.files.token.path;
     publicAddress = self.inputs.kartei.hosts.${common.proxy}.nets.internet.ip4.addr;
-    # proxy.nix forwards the UDP ports to this address
+    # proxy.nix forwards the UDP and TCP ports to this address
     privateAddress = retiolum name;
     inherit slots;
   };
@@ -53,5 +53,8 @@ in
   networking.firewall.extraInputRules = ''
     iifname "retiolum" ip saddr ${retiolum common.proxy} tcp dport ${toString config.lass.servicePorts.browser-sessions} accept
   '';
+  # WebRTC over UDP, and over TCP (ICE-TCP) for networks that block UDP;
+  # only what the proxy forwards
   networking.firewall.interfaces.retiolum.allowedUDPPorts = map (s: s.webrtc) slots;
+  networking.firewall.interfaces.retiolum.allowedTCPPorts = map (s: s.webrtc) slots;
 }

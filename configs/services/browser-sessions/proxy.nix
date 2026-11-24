@@ -1,8 +1,10 @@
 # The public side of the browser sessions (common.nix), as
 # configs/atlas-sunshine-forward.nix does it for Moonlight: the gateway
 # runs here behind nginx and drives the backends over retiolum, and every
-# backend's WebRTC UDP ports are forwarded to it; its neko announces this
-# host's address. The zone's wildcard already points the name here.
+# backend's WebRTC ports (UDP and TCP) are forwarded to it; its neko
+# announces this host's address. Browsers that reach neither get the TURN
+# server here (configs/services/coms/coturn.nix), which relays to that
+# address too. The zone's wildcard already points the name here.
 {
   config,
   lib,
@@ -11,12 +13,11 @@
 }:
 let
   common = import ./common.nix;
-  backends = lib.mapAttrsToList (name: b: rec {
+  backends = lib.mapAttrsToList (name: b: {
     inherit name;
     inherit (b) firstPort slots;
     addr = self.inputs.kartei.hosts.${name}.nets.retiolum.ip4.addr;
-    udp = lib.genList (i: b.firstPort + 1 + 2 * b.slots + i) b.slots;
-    udpSet = "{ ${lib.concatMapStringsSep ", " toString udp} }";
+    webrtc = lib.genList (i: b.firstPort + 1 + 2 * b.slots + i) b.slots;
   }) common.backends;
   app = config.lass.zitadel.projects.browser-sessions.apps.web;
 in
@@ -24,6 +25,7 @@ in
   imports = [
     ../../../tools/browser-sessions/module.nix
     ./token.nix
+    ../coms/coturn.nix
   ];
 
   lass.ports = {
@@ -34,7 +36,7 @@ in
       b:
       lib.imap0 (
         i: p: lib.nameValuePair (toString p) "browser-session-${b.name}-webrtc-${toString i}"
-      ) b.udp
+      ) b.webrtc
     ) backends
   );
 
@@ -58,6 +60,21 @@ in
       inherit (app) clientIdFile;
     };
     inherit (common) stopAfterMinutes;
+    turn = {
+      urls =
+        let
+          host = config.services.coturn.realm;
+          port = toString config.lass.servicePorts.coturn;
+        in
+        [
+          "turn:${host}:${port}?transport=udp"
+          "turn:${host}:${port}?transport=tcp"
+          # through nginx's SNI split (coturn.nix), for networks that let
+          # only HTTPS out
+          "turns:${host}:${toString config.lass.servicePorts.nginx-https}?transport=tcp"
+        ];
+      secretFile = config.clan.core.vars.generators.coturn.files.secret.path;
+    };
     backends = lib.listToAttrs (
       map (
         b:
@@ -103,25 +120,17 @@ in
     };
   };
 
-  networking.nftables.tables.browser-sessions = {
-    family = "ip";
-    content = ''
-      chain prerouting {
-        type nat hook prerouting priority dstnat; policy accept;
-        ${lib.concatMapStringsSep "\n  " (
-          b: ''iifname != "retiolum" fib daddr type local udp dport ${b.udpSet} dnat to ${b.addr}''
-        ) backends}
-      }
-      chain postrouting {
-        type nat hook postrouting priority srcnat; policy accept;
-        # the host answers the proxy over retiolum, not the client directly
-        ${lib.concatMapStringsSep "\n  " (
-          b: "ip daddr ${b.addr} udp dport ${b.udpSet} ct status dnat masquerade"
-        ) backends}
-      }
-    '';
+  services.browser-sessions-forward = {
+    enable = true;
+    interface = "retiolum";
+    backends = lib.listToAttrs (
+      map (
+        b:
+        lib.nameValuePair b.name {
+          address = b.addr;
+          ports = b.webrtc;
+        }
+      ) backends
+    );
   };
-  networking.firewall.extraForwardRules = lib.concatMapStrings (
-    b: "ip daddr ${b.addr} udp dport ${b.udpSet} ct status dnat accept\n"
-  ) backends;
 }
