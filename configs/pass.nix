@@ -1,4 +1,8 @@
-{ pkgs, self, ... }:
+{
+  pkgs,
+  self,
+  ...
+}:
 
 {
   users.users.mainUser.packages = with pkgs; [
@@ -19,4 +23,12 @@
     "L+ /home/lass/.password-store - - - - sync/pwstore"
   ];
 
+  # native messaging host of the passkey-firefox add-on (installed in our
+  # firefox by tools/firefox): passkeys of this store, through pass. A user
+  # tmpfiles rule, so a missing ~/.mozilla is created as lass, not root.
+  systemd.user.tmpfiles.users.mainUser.rules = [
+    "L+ %h/.mozilla/native-messaging-hosts/passkey_firefox.json - - - - ${
+      self.packages.${pkgs.system}.passkey-firefox-host
+    }/lib/mozilla/native-messaging-hosts/passkey_firefox.json"
+  ];
 }
