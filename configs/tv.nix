@@ -28,12 +28,12 @@ let
       youtube_share = 0.5;
       # channels like the current ones the LLM adds to the suggestions every week
       channel_suggestions_per_week = 3;
-      yt_dlp = "${
-        pkgs.python3.withPackages (ps: [
-          ps.yt-dlp
-          pot
-        ])
-      }/bin/yt-dlp";
+      # yt-dlp master, built on first use: released versions break with YouTube's changes
+      yt_dlp = lib.getExe (
+        self.packages.${pkgs.stdenv.hostPlatform.system}.yt-dlp.override {
+          plugins = [ "bgutil-ytdlp-pot-provider" ];
+        }
+      );
       # YouTube asks datacenter IPs to sign in, so downloads go through styx's residential line
       yt_dlp_args = [
         "--proxy"
