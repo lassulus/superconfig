@@ -50,4 +50,7 @@
     echo 'auto' > '/sys/bus/pci/devices/0000:00:19.0/power/control'
     echo 'auto' > '/sys/bus/pci/devices/0000:00:1c.1/power/control'
   '';
+
+  # /boot size unknown, stay small
+  boot.loader.grub.configurationLimit = 5;
 }

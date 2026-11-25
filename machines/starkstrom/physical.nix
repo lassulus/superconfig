@@ -49,4 +49,7 @@
       ];
     };
   };
+
+  # /boot is on the root filesystem
+  boot.loader.grub.configurationLimit = 20;
 }

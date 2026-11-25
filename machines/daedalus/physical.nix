@@ -83,4 +83,7 @@ in
   services.tlp.enable = true;
 
   services.xserver.dpi = 80;
+
+  # /boot size unknown (sda2), stay small
+  boot.loader.grub.configurationLimit = 5;
 }

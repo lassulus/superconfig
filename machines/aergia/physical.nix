@@ -102,4 +102,7 @@
   services.udev.extraRules = ''
     SUBSYSTEM=="drm", ACTION=="change", RUN+="${pkgs.dash}/bin/dash -c 'echo 0 > /sys/bus/usb/devices/usb9/authorized; echo 1 > /sys/bus/usb/devices/usb9/authorized'"
   '';
+
+  # 1 GiB /boot, one generation's kernel+initrd is ~80 MiB
+  boot.loader.grub.configurationLimit = 10;
 }

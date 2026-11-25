@@ -36,4 +36,7 @@
 
   #weird bug with nixos-enter
   services.logrotate.enable = false;
+
+  # 25 GiB /boot
+  boot.loader.grub.configurationLimit = 100;
 }

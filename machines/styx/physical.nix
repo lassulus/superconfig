@@ -43,4 +43,7 @@
     SUBSYSTEM=="net", ATTR{address}=="3c:7c:3f:7e:e2:39", NAME="et0"
     SUBSYSTEM=="net", ATTR{address}=="00:e0:4c:78:91:50", NAME="int0"
   '';
+
+  # 1 GiB /boot, one generation's kernel+initrd is ~80 MiB
+  boot.loader.grub.configurationLimit = 10;
 }

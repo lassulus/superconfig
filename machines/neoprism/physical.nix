@@ -81,4 +81,7 @@
   #   "ip=dhcp"
   #   "boot.trace"
   # ];
+
+  # 1 GiB /boot, one generation's kernel+initrd is ~80 MiB
+  boot.loader.grub.configurationLimit = 10;
 }
