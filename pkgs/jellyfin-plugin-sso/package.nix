@@ -7,13 +7,13 @@
 
 stdenvNoCC.mkDerivation rec {
   pname = "jellyfin-plugin-sso";
-  version = "6.1.0.0";
+  version = "6.4.0.0";
 
   # Release zip as the Jellyfin plugin catalog installs it (DLLs + meta.json).
   # MaxRink's fork: 9p4/jellyfin-plugin-sso is archived and stops at Jellyfin 10.11.
   src = fetchzip {
     url = "https://github.com/MaxRink/jellyfin-plugin-sso/releases/download/v${version}/sso-auth_${version}.zip";
-    hash = "sha256-ZuQeEeCjzwLT5lqjhNbMCgcHeDV7UIrPmEP2W0BwLlw=";
+    hash = "sha256-2RmsHatpx7SGfkU9p+iMpGe1zceF3BZ541IgX0yiQ3M=";
     stripRoot = false;
   };
 
