@@ -11,6 +11,8 @@
     ../../configs/services/agentd
     # shared browser sessions (browser.lassul.us through neoprism)
     ../../configs/services/browser-sessions/host.nix
+    # gomuks web, a Matrix client (gomuks.lassul.us through neoprism)
+    ../../configs/services/gomuks/host.nix
     ../../configs/pipewire.nix
     ../../configs/green-host.nix
     ../../configs/syncthing.nix
