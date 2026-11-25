@@ -69,7 +69,13 @@ in
       ' "$config"
     '';
     serviceConfig = {
-      ExecStart = lib.getExe pkgs.gomuks-web;
+      # web-unifiedpush.patch: lets the Android app register a Web Push
+      # (UnifiedPush) endpoint instead of an FCM token; not upstream yet
+      ExecStart = lib.getExe (
+        pkgs.gomuks-web.overrideAttrs (old: {
+          patches = (old.patches or [ ]) ++ [ ./web-unifiedpush.patch ];
+        })
+      );
       DynamicUser = true;
       StateDirectory = "gomuks";
       StateDirectoryMode = "0700";

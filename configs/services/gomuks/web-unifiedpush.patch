@@ -1,0 +1,58 @@
+From 7b48ad898cdbe1809937c9e655a28edcc2a2c767 Mon Sep 17 00:00:00 2001
+From: slopulus <slop@lassul.us>
+Date: Wed, 25 Nov 2026 20:54:22 +0100
+Subject: [PATCH] web/android: pass push type and data through from Android app
+
+Allows the Android app to register a Web Push subscription (e.g. a
+UnifiedPush endpoint) instead of an FCM token. Older app versions only
+send a token, so the push type still defaults to fcm with the token as
+data.
+---
+ web/src/api/client.ts        | 4 ++--
+ web/src/api/types/android.ts | 9 +++++++--
+ 2 files changed, 9 insertions(+), 4 deletions(-)
+
+diff --git a/web/src/api/client.ts b/web/src/api/client.ts
+index 05861f99..2d964ba5 100644
+--- a/web/src/api/client.ts
++++ b/web/src/api/client.ts
+@@ -119,9 +119,9 @@ export default class Client {
+ 			switch (evtData.type) {
+ 			case "register_push":
+ 				await this.rpc.registerPush({
+-					type: "fcm",
++					type: evtData.push_type ?? "fcm",
+ 					device_id: evtData.device_id,
+-					data: evtData.token,
++					data: evtData.data ?? evtData.token,
+ 					encryption: evtData.encryption,
+ 					expiration: evtData.expiration,
+ 				})
+diff --git a/web/src/api/types/android.ts b/web/src/api/types/android.ts
+index 5b39d44c..13e826ae 100644
+--- a/web/src/api/types/android.ts
++++ b/web/src/api/types/android.ts
+@@ -13,13 +13,18 @@
+ //
+ // You should have received a copy of the GNU Affero General Public License
+ // along with this program.  If not, see <https://www.gnu.org/licenses/>.
++import { DBPushRegistration } from "@/api/types/hitypes.ts"
+ import { RoomID } from "@/api/types/mxtypes.ts"
+ 
+ export interface AndroidRegisterPushEvent {
+ 	type: "register_push"
+ 	device_id: string
+-	token: string
+-	encryption: { key: string }
++	// Push type and type-specific data (see DBPushRegistration). Older app versions only send
++	// an FCM token, so the push type defaults to fcm and the data to the token.
++	push_type?: DBPushRegistration["type"]
++	data?: unknown
++	token?: string
++	encryption?: { key: string }
+ 	expiration?: number
+ }
+ 
+-- 
+2.56.0
+
