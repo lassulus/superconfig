@@ -436,11 +436,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1795486111,
-        "narHash": "sha256-qlLGVjPU6/SU7px82Jzc/J+m+vIY2uE9XEpad2NKBv8=",
+        "lastModified": 1795569063,
+        "narHash": "sha256-7mrwRN46445EOwIYDBLZbJNAuWwfUazoQgS0AJ3yr3Y=",
         "owner": "numtide",
         "repo": "iets",
-        "rev": "7ea8a73eb761f25a4a5a69c2a6108bb3272b3e8b",
+        "rev": "675c61c9da07d082f71436f6dbd4d3d30e9f2527",
         "type": "github"
       },
       "original": {
@@ -492,11 +492,11 @@
         "treefmt-nix": "treefmt-nix_3"
       },
       "locked": {
-        "lastModified": 1795416666,
-        "narHash": "sha256-b1GmfrMPoZ2ANkR0we9Q9KQN6n1e+vNyDqt1p4CNEAY=",
+        "lastModified": 1795534330,
+        "narHash": "sha256-HUVg1F7c3btLD++JDjdTsSAwp50NvrciqTMFdCKEfAg=",
         "owner": "numtide",
         "repo": "llm-agents.nix",
-        "rev": "5330ee115c06d2b43f49e902130125eab579b22f",
+        "rev": "d70dfebdbd4616aa852fdb47c16588ec1ba8fc6f",
         "type": "github"
       },
       "original": {
@@ -611,11 +611,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1795018746,
-        "narHash": "sha256-glQAHvZGgBVjzGIWgIZYSf3X10gvtO2LPR4rtyP/Soc=",
+        "lastModified": 1795549782,
+        "narHash": "sha256-0mlYwyAv7lUDD6HBgPMqBXjMcIfIZBsLryNnkspeIGs=",
         "owner": "nixos",
         "repo": "nixos-hardware",
-        "rev": "33475966110df258f52d05ec4d4cd6394637cbb9",
+        "rev": "97a30ee0974b815496bec7b136af6b945bd65aef",
         "type": "github"
       },
       "original": {
@@ -634,11 +634,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1795468537,
-        "narHash": "sha256-kHzf0kyHE7gkUId06urKZyi0i8f4xoxNsnnH60wODgQ=",
+        "lastModified": 1795564455,
+        "narHash": "sha256-93rxnpffNTbh5zxz8JIHY3TbF/hbCVP29aUqe2NIKDk=",
         "owner": "simple-nixos-mailserver",
         "repo": "nixos-mailserver",
-        "rev": "3f3461ae8e2720430bcc1ac3c188061aacf13b4e",
+        "rev": "2704dc337ee21ce8028f30705d177c8a4f076e13",
         "type": "gitlab"
       },
       "original": {
