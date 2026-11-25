@@ -107,6 +107,9 @@
     # shared browser sessions on atlas (browser.lassul.us)
     ../../configs/services/browser-sessions/proxy.nix
 
+    # gomuks web on styx (gomuks.lassul.us)
+    ../../configs/services/gomuks/proxy.nix
+
     # synced 24/7 channel (glotz.lassul.us)
     ../../configs/tv.nix
 
