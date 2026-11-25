@@ -14,12 +14,12 @@
 
 stdenvNoCC.mkDerivation rec {
   pname = "gamarr";
-  version = "1.1.0.603";
+  version = "1.1.0.604";
 
   # framework-dependent release build; runs on the nixpkgs aspnetcore runtime
   src = fetchurl {
     url = "https://github.com/gamarr-app/Gamarr/releases/download/v${version}/Gamarr.${version}.linux-x64.tar.gz";
-    hash = "sha256-Uc36wkZJn+op2JFso2ZmAlrpc0aVms20QeWoTIYRnOY=";
+    hash = "sha256-xqjBa9BnRZxwzCUs7yq8MhIv02NW6YIRMtioVhH79jc=";
   };
 
   nativeBuildInputs = [ makeWrapper ];
