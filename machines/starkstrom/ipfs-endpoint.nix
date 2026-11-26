@@ -74,6 +74,29 @@ in
     '';
   };
 
+  # One-time switch to Provide.Strategy mfs: link every pin that existed
+  # before into /announced/, so it stays announced. Later uploads are linked
+  # by ipfs-upload itself.
+  systemd.services.ipfs-announce-migrate = {
+    description = "Link pins from before the mfs strategy into /announced";
+    after = [ "ipfs.service" ];
+    requires = [ "ipfs.service" ];
+    wantedBy = [ "multi-user.target" ];
+    unitConfig.ConditionPathExists = "!/var/lib/ipfs/announced-migrated";
+    serviceConfig = {
+      Type = "oneshot";
+      User = config.services.kubo.user;
+      Group = config.services.kubo.group;
+    };
+    script = ''
+      for cid in $(${ipfs} --api ${api} pin ls --type=recursive -q); do
+        ${ipfs} --api ${api} files stat "/announced/$cid" >/dev/null 2>&1 ||
+          ${ipfs} --api ${api} files cp --parents "/ipfs/$cid" "/announced/$cid"
+      done
+      touch /var/lib/ipfs/announced-migrated
+    '';
+  };
+
   # Explicit GC + gc-root management. Pins are the GC roots (persisted by kubo);
   # `ipfs-gc` reclaims everything not reachable from a pin. Prune first with
   # `ipfs-roots rm <cid>`, then `ipfs-gc`.
@@ -87,9 +110,21 @@ in
       case "$cmd" in
         list) exec ${ipfs} --api ${api} pin ls --type=recursive ;;
         ledger) exec ${pkgs.coreutils}/bin/cat /var/lib/ipfs/gc-roots ;;
-        rm) exec ${ipfs} --api ${api} pin rm "$@" ;;
+        rm)
+          # MFS also keeps blocks from GC: drop the /announced link too
+          for cid in "$@"; do
+            ${ipfs} --api ${api} files rm -r "/announced/$cid" 2>/dev/null || true
+          done
+          exec ${ipfs} --api ${api} pin rm "$@"
+          ;;
+        # announce a CID pinned with ?announce=0 after all
+        announce)
+          for cid in "$@"; do
+            ${ipfs} --api ${api} files cp --parents "/ipfs/$cid" "/announced/$cid"
+          done
+          ;;
         *)
-          echo "usage: ipfs-roots [list|ledger|rm <cid>...]" >&2
+          echo "usage: ipfs-roots [list|ledger|rm <cid>...|announce <cid>...]" >&2
           exit 1
           ;;
       esac

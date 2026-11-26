@@ -6,6 +6,11 @@ the blockstore -- NOT --nocopy), and recursively pinned. Each upload's pin is a
 GC root, so the content survives `ipfs repo gc` until an operator unpins it.
 The root CID is returned as JSON; the scratch files are then deleted.
 
+The node announces only what is in its MFS (Provide.Strategy = "mfs"), so
+each upload is also linked into MFS at /announced/<cid>, which lets public
+gateways find it. `POST /?announce=0` skips that: the content is pinned and
+served by this host's own gateway, but never announced to the DHT/IPNI.
+
 There is no mutable name: reads are immutable at /ipfs/<cid>/. Re-upload to
 "update" -- you get a new CID back.
 """
@@ -18,6 +23,7 @@ import subprocess
 import tarfile
 import tempfile
 import time
+import urllib.parse
 
 IPFS_BIN = os.environ.get("IPFS_BIN", "ipfs")
 IPFS_API = os.environ.get("IPFS_API", "/ip4/127.0.0.1/tcp/5001")
@@ -39,9 +45,11 @@ HELP = (
     "Upload a directory; the response is its CID. Read it at /ipfs/<cid>/.\n\n"
     "  tar -C mydir -c . | curl --data-binary @- %s/\n"
     "  # compressed tars work too (tar -cz / -cJ / -cj); do NOT set Content-Encoding.\n\n"
+    "  # ?announce=0: pinned and served here, but not announced to public gateways\n"
+    "  curl --data-binary @site.tar '%s/?announce=0'\n\n"
     "Re-upload to 'update' (new CID). Content stays pinned until an operator\n"
     "prunes it (ipfs-roots rm <cid> && ipfs-gc).\n"
-).encode() % (_HOST.encode(), GATEWAY_BASE.encode())
+).encode() % (_HOST.encode(), GATEWAY_BASE.encode(), GATEWAY_BASE.encode())
 
 
 def _add_to_ipfs(path):
@@ -51,6 +59,18 @@ def _add_to_ipfs(path):
         capture_output=True, text=True, check=True,
     )
     return out.stdout.strip().splitlines()[-1]
+
+
+def _announce(cid):
+    # MFS is all the node announces; a CID already linked there (same
+    # content uploaded twice) is fine
+    out = subprocess.run(
+        [IPFS_BIN, "--api", IPFS_API, "files", "cp", "--parents",
+         "/ipfs/%s" % cid, "/announced/%s" % cid],
+        capture_output=True, text=True,
+    )
+    if out.returncode != 0 and "already" not in out.stderr:
+        raise subprocess.CalledProcessError(out.returncode, out.args, out.stdout, out.stderr)
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -72,6 +92,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(HELP)
 
     def do_POST(self):
+        query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+        announce = query.get("announce", ["1"])[-1] != "0"
         try:
             free = shutil.disk_usage(DISK_PATH).free
         except OSError:
@@ -99,6 +121,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "error": "ipfs add failed",
                     "detail": (e.stderr or "").strip()[-500:],
                 })
+            if announce:
+                try:
+                    _announce(cid)
+                except subprocess.CalledProcessError as e:
+                    return self._json(500, {
+                        "error": "pinned, but linking into MFS (announce) failed",
+                        "cid": cid,
+                        "detail": (e.stderr or "").strip()[-500:],
+                    })
             try:
                 with open(ROOTS_FILE, "a") as f:
                     f.write("%s\t%s\t%s\n" % (

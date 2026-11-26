@@ -36,14 +36,16 @@
       #
       # autoclient = DHT client plus IPNI (cid.contact) announcements; the
       # gateways resolve providers through IPNI and can then pull content
-      # in bulk. Provide.Strategy pinned keeps the announcements to what
-      # is meant to be served; the nixpkgs module's default Reprovider
-      # block is the pre-0.40 name and must be nulled or kubo refuses to
-      # start.
+      # in bulk. Provide.Strategy mfs announces only what is linked into
+      # MFS: the upload endpoint links every upload to /announced/<cid>
+      # unless it was posted with ?announce=0 (pinned and served by our own
+      # gateway, but never announced). The nixpkgs module's default
+      # Reprovider block is the pre-0.40 name and must be nulled or kubo
+      # refuses to start.
       Routing.Type = "autoclient";
       Reprovider = null;
       Provide = {
-        Strategy = "pinned";
+        Strategy = "mfs";
         DHT.Interval = "12h";
       };
 
