@@ -594,6 +594,12 @@ in
         "/var/lib/browser-sessions"
         "/var/lib/private/browser-session"
       ];
+      # systemd creates it only when a session first starts; borg fails on a
+      # missing folder (modes as systemd's StateDirectory setup uses them)
+      systemd.tmpfiles.rules = [
+        "d /var/lib/private 0700 root root -"
+        "d /var/lib/private/browser-session 0755 root root -"
+      ];
 
       environment.etc = lib.listToAttrs (
         lib.imap0 (
