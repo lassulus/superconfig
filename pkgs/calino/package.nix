@@ -14,20 +14,20 @@
 # to allow the origin Calino is served from via CORS.
 stdenv.mkDerivation (finalAttrs: {
   pname = "calino";
-  version = "0.42.0";
+  version = "0.43.0";
 
   src = fetchFromGitHub {
     owner = "Ivan-Malinovski";
     repo = "calino";
     tag = "v${finalAttrs.version}";
-    hash = "sha256-zoBzuL1adjFG1EIwBfvM3VGefa+YKlGbLUSh/z9baAM=";
+    hash = "sha256-eSU57MOdgWCU1j94nX50owqi8W5egErWl8XsZxOGxas=";
   };
 
   pnpmDeps = fetchPnpmDeps {
     inherit (finalAttrs) pname version src;
     pnpm = pnpm_10;
     fetcherVersion = 4;
-    hash = "sha256-mmdOfwj7rlvI2KUYO/Z4xyEtvz4c+m4sCR9BGDiIxhQ=";
+    hash = "sha256-SXxtSCIXIWLTQDB/qfJKM2f4EJmjoraX08ImzEXYFqk=";
   };
 
   nativeBuildInputs = [
