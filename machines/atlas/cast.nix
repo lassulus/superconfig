@@ -25,6 +25,13 @@ let
   rtmpPort = 1935;
   port = config.lass.servicePorts.atlas-cast-control;
 
+  # wf-recorder stamps audio by counting samples. When its audio thread
+  # stalls, the lost samples shift all later audio earlier (one stall put the
+  # sound 8.5 s ahead of the picture). The patch fills such gaps with silence.
+  wf-recorder = pkgs.wf-recorder.overrideAttrs (old: {
+    patches = (old.patches or [ ]) ++ [ ./wf-recorder-audio-gaps.patch ];
+  });
+
   cast = pkgs.writeShellScript "atlas-cast" ''
     # the stream key ends up on the command line, readable by atlas' local
     # users
@@ -39,7 +46,7 @@ let
     # on another GPU. Resolved: wf-recorder compares the path with sway's
     # device and falls back to a broken hwupload (no DMA-BUF) when they
     # differ as strings
-    exec ${pkgs.wf-recorder}/bin/wf-recorder -o HEADLESS-1 -D -r 60 \
+    exec ${wf-recorder}/bin/wf-recorder -o HEADLESS-1 -D -r 60 \
       -c h264_vaapi -d "$(readlink -f /dev/dri/by-path/pci-0000:03:00.0-render)" \
       -F scale_vaapi=w=1920:h=1080:format=nv12 \
       -p bitrate=6000k -p g=60 \

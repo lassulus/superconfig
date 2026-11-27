@@ -1,0 +1,53 @@
+diff --git a/src/pulse.cpp b/src/pulse.cpp
+index 53e485a..cda276b 100644
+--- a/src/pulse.cpp
++++ b/src/pulse.cpp
+@@ -60,7 +60,36 @@ bool PulseReader::loop()
+         return false;
+     }
+ 
++    /* Audio timestamps come from counting samples. If the source delivers
++     * nothing for a while (the monitor of an idle sink), the count falls
++     * behind the clock and all later audio plays that much too early.
++     * Fill such gaps with silence so the count keeps up with the clock. */
++    const uint64_t frame_samples = buffer.size() / (2 * sizeof(float));
++    struct timespec ts;
++    clock_gettime(CLOCK_MONOTONIC, &ts);
++    int64_t now = ts.tv_sec * 1000000ll + ts.tv_nsec / 1000ll;
++    pa_usec_t latency = pa_simple_get_latency(pa, &perr);
++    if (latency != (pa_usec_t)-1)
++        now -= latency;
++    int64_t counted = monotonic_clock_start
++        + (samples_sent + frame_samples) * 1000000ll / params.sample_rate;
++    int64_t frame_usec = frame_samples * 1000000ll / params.sample_rate;
++    if (now - counted > 4 * frame_usec)
++    {
++        std::cerr << "Audio gap of " << (now - counted) / 1000
++            << " ms, filling with silence" << std::endl;
++        static std::vector<char> silence;
++        silence.assign(buffer.size(), 0);
++        while (now - counted > frame_usec)
++        {
++            frame_writer->add_audio(silence.data());
++            samples_sent += frame_samples;
++            counted += frame_usec;
++        }
++    }
++
+     frame_writer->add_audio(buffer.data());
++    samples_sent += frame_samples;
+     return !exit_main_loop;
+ }
+ 
+diff --git a/src/pulse.hpp b/src/pulse.hpp
+index eee5b91..070c46f 100644
+--- a/src/pulse.hpp
++++ b/src/pulse.hpp
+@@ -14,6 +14,7 @@ class PulseReader : public AudioReader
+     bool loop();
+     std::thread read_thread;
+     uint64_t monotonic_clock_start = 0;
++    uint64_t samples_sent = 0;
+ 
+     public:
+     ~PulseReader();
