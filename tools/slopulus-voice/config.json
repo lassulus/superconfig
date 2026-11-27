@@ -1,6 +1,6 @@
 {
   "voice": "willow",
-  "idle_seconds": 90,
+  "idle_seconds": 30,
   "glossary": [
     { "term": "nixos-rebuild switch", "spoken": "nix O S rebuild switch" },
     { "term": "NixOS", "spoken": "nix O S" },
@@ -13,5 +13,7 @@
     "ignavia",
     "lassulus",
     "slopulus"
-  ]
+  ],
+  "backend_model": "claude-sonnet-5",
+  "backend_instructions": "Mail walk-through: when the request answers a mail just read out (read, unread/keep, next/skip, repeat, a tag), do not load the mail-walkthrough skill; run its script directly in ONE terminal call, with M=~/.hermes/skills/email/mail-walkthrough/scripts/mailq.sh: `$M bulk read <n>` or `$M bulk unread <n>` for the number of the mail the answer is about (or `$M do read|unread|tag:<x>` when `$M cur` is still that mail), then `$M cur` and `$M ahead 5`; \"next\": `$M next`, \"repeat\": `$M cur`. Reply with the current mail (its number, sender, one or two sentences) and one-line summaries of the mails ahead, each with its number. Load the skill only to start a walk-through, for to-dos, unsubscribing or anything else."
 }

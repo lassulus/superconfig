@@ -26,6 +26,7 @@ class FakeRun:
         self.session = body["session_id"]
         self.input = body["input"]
         self.instructions = body["instructions"]
+        self.model = body.get("model")
         self.output = None
         self.approval = None
         self.answer = None
@@ -313,6 +314,17 @@ class TasksTest(unittest.TestCase):
             self.post("/tasks/stop", {"call": self.call, "task": "t1"})
         self.assertEqual(again.exception.code, 409)
         again.exception.close()
+
+    def test_backend_model_and_instructions(self):
+        Stream(self.url, self.call, "lights off")
+        self.assertIsNone(self.hermes.wait_runs(1)[0].model)
+        config = self.server.RequestHandlerClass.config
+        config.backend_model = "fast-model"
+        config.backend_instructions = "Mail fast path."
+        Stream(self.url, self.call, "read")
+        run = self.hermes.wait_runs(2)[1]
+        self.assertEqual(run.model, "fast-model")
+        self.assertIn("Mail fast path.", run.instructions)
 
     def test_task_list(self):
         stream = Stream(self.url, self.call, "check the backups")

@@ -178,6 +178,8 @@ Do not delegate to the backend when:
 
 Delegate before giving an answer that depends on backend work. Emit the delegation first; only together with it may you say briefly and cheerfully that you are on it, then wait for the result. Never say you are on it, promise an action ("I'll switch", "I'll set that up"), say it is done or describe the action without delegating it in the same turn. Never say slopulus is working on, looking into or waiting for something you have not delegated. Do not guess the result while waiting, and never report something as done until the backend result says so. While waiting you get notes on what slopulus is doing right now (its own words, its current tool and command); when the user asks what is taking so long or what is happening, describe only those notes in plain words, and if there is none yet, say slopulus is still working on it. Never invent what slopulus is doing. Every result also lands in the user's Matrix chat, so a result that comes in after the call still reaches them.
 
+Going through a list: when slopulus gives you the next items ahead (for example the next mails, each with a short summary) and the user answers one item with a short decision (read, keep, skip, a tag), delegate that answer and present the next item from what you already have right away, without waiting for the result. Do not say the decision was applied; just move on. Mention a result only if slopulus reports a failure. When you run out of items ahead, delegate and wait as usual.
+
 Approval policy:
 slopulus sometimes needs the user's approval before it runs a command. When you are told so, explain in plain words what slopulus wants to do and ask whether to approve or deny it. When the user answers, delegate to the backend so the answer reaches slopulus. Never decide an approval yourself."""
 
@@ -225,6 +227,10 @@ class Config:
         self.idle_seconds = int(raw.get("idle_seconds", DEFAULT_IDLE_SECONDS))
         self.glossary = raw.get("glossary", [])
         self.extra_instructions = raw.get("instructions", "").strip()
+        # Hermes model for the delegated tasks (default: Hermes's own), and
+        # extra instructions for them, e.g. fast paths that spare a skill load.
+        self.backend_model = raw.get("backend_model")
+        self.backend_instructions = raw.get("backend_instructions", "").strip()
         self.openai_key = openai_key
         self.hermes_url = hermes_url.rstrip("/")
         self.hermes_key = hermes_key
@@ -241,14 +247,15 @@ class Config:
         return "\n\n".join(parts)
 
     def backend_note(self, hung_up=False):
-        note = HUNG_UP_NOTE if hung_up else BACKEND_NOTE
-        if not self.glossary:
-            return note
-        return (
-            note
-            + "\n\nTerms the transcript may contain as phonetic misspellings:\n"
-            + glossary_text(self.glossary)
-        )
+        parts = [HUNG_UP_NOTE if hung_up else BACKEND_NOTE]
+        if self.glossary:
+            parts.append(
+                "Terms the transcript may contain as phonetic misspellings:\n"
+                + glossary_text(self.glossary)
+            )
+        if self.backend_instructions:
+            parts.append(self.backend_instructions)
+        return "\n\n".join(parts)
 
     def voices(self):
         """Voices the page may pick, name -> description: the built-ins plus
@@ -394,16 +401,14 @@ def hermes_start_run(config, session, lines, instructions):
     """Start one Hermes turn as a run; return its run id. Hermes runs the turns
     of one session one after the other, so every task has its own session."""
     # A plain string input: Hermes then loads the history of session_id itself.
-    return hermes_call(
-        config,
-        "POST",
-        "/v1/runs",
-        {
-            "input": transcript_message(lines),
-            "instructions": instructions,
-            "session_id": session,
-        },
-    )["run_id"]
+    body = {
+        "input": transcript_message(lines),
+        "instructions": instructions,
+        "session_id": session,
+    }
+    if config.backend_model:
+        body["model"] = config.backend_model
+    return hermes_call(config, "POST", "/v1/runs", body)["run_id"]
 
 
 def hermes_follow_run(config, run_id):
@@ -1169,7 +1174,11 @@ def main():
         help="webhook route like --matrix-webhook whose payload's thread_id picks the Matrix thread: "
         "receives the result and the approvals of every task in that task's thread",
     )
-    parser.add_argument("--config", help="JSON file: voice, model, idle_seconds, glossary, instructions")
+    parser.add_argument(
+        "--config",
+        help="JSON file: voice, model, idle_seconds, glossary, instructions, "
+        "backend_model, backend_instructions",
+    )
     parser.add_argument(
         "--static",
         default=os.environ.get("SLOPULUS_VOICE_STATIC"),
