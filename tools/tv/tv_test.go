@@ -2139,3 +2139,28 @@ func TestPlainVTT(t *testing.T) {
 		t.Errorf("not idempotent: %q", got)
 	}
 }
+
+func TestVary(t *testing.T) {
+	v := func(id, group string) candidate {
+		return candidate{ID: id, Kind: "youtube", Group: group, Duration: 600}
+	}
+	movie := candidate{ID: "jf:m", Kind: "movie", Duration: 6000}
+	ep1 := candidate{ID: "jf:e1", Kind: "episode", Group: "S", Duration: 2700}
+	ep2 := candidate{ID: "jf:e2", Kind: "episode", Group: "S", Duration: 2700}
+	// eight of one channel in a row, as the LLM answered
+	picks := []candidate{v("a1", "A"), v("a2", "A"), v("a3", "A"), v("a4", "A"), v("a5", "A"), v("a6", "A"), v("a7", "A"), v("a8", "A"),
+		movie, v("b1", "B"), ep1, ep2, v("c1", "C")}
+	got := ids(vary(picks, 2))
+	want := []string{"a1", "jf:m", "a2", "b1", "jf:e1", "c1", "jf:e2"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("vary: %v, want %v", got, want)
+	}
+	// no limit keeps every video, still spread out where possible
+	if got := vary(picks, 0); len(got) != len(picks) || got[0].ID != "a1" {
+		t.Errorf("no limit: %v", ids(got))
+	}
+	// only one channel left: nothing to put between, order kept
+	if got := ids(vary([]candidate{v("a1", "A"), v("a2", "A")}, 0)); !reflect.DeepEqual(got, []string{"a1", "a2"}) {
+		t.Errorf("one channel: %v", got)
+	}
+}

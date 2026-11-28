@@ -129,7 +129,7 @@ func (s *server) choose(ctx context.Context, cands []candidate, history []string
 		log.Printf("llm pick failed, picking at random: %v", err)
 		return s.randomPicks(cands)
 	}
-	return balance(picks, shuffled(cands), s.cfg.YouTubeShare, s.lookAhead)
+	return vary(balance(picks, shuffled(cands), s.cfg.YouTubeShare, s.lookAhead), s.cfg.MaxPerChannel)
 }
 
 func shuffled(cands []candidate) []candidate {
@@ -149,7 +149,7 @@ func (s *server) randomPicks(cands []candidate) []candidate {
 			break
 		}
 	}
-	return balance(cands[:n], cands, s.cfg.YouTubeShare, s.lookAhead)
+	return vary(balance(cands[:n], cands, s.cfg.YouTubeShare, s.lookAhead), s.cfg.MaxPerChannel)
 }
 
 // balance makes YouTube at least share of the airtime of picks, an ordered
@@ -210,6 +210,39 @@ func balance(picks, extra []candidate, share float64, lookAhead time.Duration) [
 	return out
 }
 
+// vary drops the YouTube videos of a batch beyond max per channel (0 = no
+// limit) and orders the rest so that a channel or series does not follow
+// itself where something else can go between; the first item stays first.
+// The LLM is asked for variety but does not always keep to it (8 videos of
+// one channel in a row). A batch covers the look-ahead, so max is per day
+// with look_ahead 24h.
+func vary(picks []candidate, max int) []candidate {
+	count := map[string]int{}
+	var rest []candidate
+	for _, c := range picks {
+		if c.Kind == "youtube" && max > 0 {
+			if count[c.Group] >= max {
+				continue
+			}
+			count[c.Group]++
+		}
+		rest = append(rest, c)
+	}
+	var out []candidate
+	for len(rest) > 0 {
+		i := 0
+		if len(out) > 0 {
+			last := out[len(out)-1].Group
+			if j := slices.IndexFunc(rest, func(c candidate) bool { return c.Group == "" || c.Group != last }); j >= 0 {
+				i = j
+			}
+		}
+		out = append(out, rest[i])
+		rest = slices.Delete(rest, i, i+1)
+	}
+	return out
+}
+
 func (s *server) askLLM(ctx context.Context, cands []candidate, history []string) ([]candidate, error) {
 	system, prompt := s.llmPrompt(cands, history)
 	content, err := s.chat(ctx, system, prompt)
@@ -229,6 +262,9 @@ func (s *server) llmPrompt(cands []candidate, history []string) (system, prompt 
 	share := ""
 	if s.cfg.YouTubeShare > 0 {
 		share = fmt.Sprintf("YouTube videos should fill about %.0f%% of the airtime. ", s.cfg.YouTubeShare*100)
+	}
+	if s.cfg.MaxPerChannel > 0 {
+		share += fmt.Sprintf("Pick at most %d videos of the same YouTube channel. ", s.cfg.MaxPerChannel)
 	}
 	system = fmt.Sprintf("You program a 24/7 TV channel. From the candidates, pick an ordered list for the next %s "+
 		"that makes a varied, enjoyable channel: mix movies, series episodes and YouTube videos, avoid the same "+

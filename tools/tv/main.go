@@ -53,6 +53,8 @@ type config struct {
 	YouTubeVideosPerChannel int `json:"youtube_videos_per_channel"`
 	// fraction of the picked airtime that is YouTube, 0 leaves it to the LLM
 	YouTubeShare float64 `json:"youtube_share"`
+	// YouTube videos of one channel per picked batch (about the look-ahead), 0 = no limit
+	MaxPerChannel int `json:"max_per_channel"`
 	// channels the LLM suggests once a week, 0 = off
 	ChannelSuggestionsPerWeek int `json:"channel_suggestions_per_week"`
 	// login for editors besides the admin key: OIDC issuer, the file with

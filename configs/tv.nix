@@ -26,6 +26,8 @@ let
       youtube_videos_per_channel = 30;
       # fraction of the picked airtime that goes to YouTube
       youtube_share = 0.5;
+      # YouTube videos of one channel per day (a picked batch covers the look-ahead)
+      max_per_channel = 2;
       # channels like the current ones the LLM adds to the suggestions every week
       channel_suggestions_per_week = 3;
       # yt-dlp master, built on first use: released versions break with YouTube's changes
