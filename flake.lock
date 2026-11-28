@@ -436,11 +436,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1795734577,
-        "narHash": "sha256-pQuXLVAMa5BRE7f6oGQcf30/3VfWsbx0XaehOcWYhi8=",
+        "lastModified": 1795831755,
+        "narHash": "sha256-CsQE8wkSybjYijbV7+VJENtrepcaIVNfbOcRAsP1bEs=",
         "owner": "numtide",
         "repo": "iets",
-        "rev": "8115b8b4674a01d94e5e9e2b336074471e9a392f",
+        "rev": "960d1189cbae55f6a9559ed9a8d2165d2cb1ff46",
         "type": "github"
       },
       "original": {
@@ -468,11 +468,11 @@
         "treefmt-nix": "treefmt-nix_2"
       },
       "locked": {
-        "lastModified": 1795269539,
-        "narHash": "sha256-Vga7dWkcwiHhK539k/ASDDjv8Mm1Ggn3GFLYlGxIQbM=",
+        "lastModified": 1795790458,
+        "narHash": "sha256-0jzImVxu5+LtIpM5AiMyZbDZ/DBu16oJq2vQQtAI444=",
         "owner": "krebs",
         "repo": "kartei",
-        "rev": "352c87e7b32159379e981654cf53c2991f9f3998",
+        "rev": "de56ffcf05bee99624a4790ebf0867c05630d5c2",
         "type": "github"
       },
       "original": {
@@ -492,11 +492,11 @@
         "treefmt-nix": "treefmt-nix_3"
       },
       "locked": {
-        "lastModified": 1795746211,
-        "narHash": "sha256-0woXliquA2AkYlSoNN/Fya0EXRWh0xqzev9p8x86VCA=",
+        "lastModified": 1795831089,
+        "narHash": "sha256-cwO9VHA37d4DCJOCBOHL0eFNVL6jCjLCNcREc7S8N+g=",
         "owner": "numtide",
         "repo": "llm-agents.nix",
-        "rev": "886acf449dac3514e93db1b55716f739abd187da",
+        "rev": "512d27e2882c99d80648a121b88de0c4b0426119",
         "type": "github"
       },
       "original": {
