@@ -147,6 +147,10 @@ in
       RAD_HOME = radHome;
     };
     path = [ pkgs.gitMinimal ];
+    # config.json is a symlink from tmpfiles, so the unit itself does not
+    # change with it: restart explicitly, or a seed list change (e.g. dropping
+    # iris) only takes effect at the next reboot.
+    restartTriggers = [ configFile ];
     serviceConfig = {
       User = "rad";
       Group = "rad";
